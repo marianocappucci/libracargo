@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  # Sin `push` a ramas: `develop` y `main` estan protegidas, asi que todo entra
+  # por PR y el run del PR verifica el MERGE -- que es exactamente lo que queda
+  # en la rama. El push repetia esa misma verificacion sobre un arbol identico.
+  # Mismo criterio que libradesk (2026-08-11).
+  pull_request:
+    branches: [develop, main]
+
+# Una sola corrida viva por rama. Si entra un push nuevo mientras esta
+# corriendo, se cancela la anterior en vez de pagar las dos: su resultado ya no
+# le sirve a nadie, porque reporta sobre un codigo que no es el que quedo.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # La MISMA imagen que producción (ver docker-compose.yml). No es un
+        # detalle de tamaño: el collation viene de la imagen y `-alpine` ordena
+        # por bytes, así que un `ORDER BY` sobre texto puede dar distinto. Un CI
+        # verde sobre otra imagen no dice nada sobre producción.
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: libracargo_test
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+        ports: ['5432:5432']
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/libracargo_test
+      TZ: America/Argentina/Buenos_Aires
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install -e '.[dev]'
+
+      - name: Lint
+        run: ruff check .
+
+      # La suite corre contra PostgreSQL real. Nunca contra SQLite: una suite
+      # verde sobre SQLite no dice nada del motor de producción.
+      - name: Tests
+        run: pytest -q --cov=app --cov-report=term-missing

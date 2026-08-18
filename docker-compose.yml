@@ -1,0 +1,42 @@
+# Entorno de desarrollo local.
+#
+# En el VPS cada instancia corre con su propia red y su sidecar PostgreSQL
+# **sin puerto publicado** — eso lo arma `panel_admin.py`, no este archivo.
+
+services:
+  db:
+    # La misma imagen que producción: el collation viene de la imagen y
+    # alpine ordena por bytes.
+    image: postgres:16
+    environment:
+      POSTGRES_USER: libracargo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-desarrollo}
+      POSTGRES_DB: libracargo
+      TZ: America/Argentina/Buenos_Aires
+    volumes:
+      - datos_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U libracargo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [interna]
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://libracargo:${POSTGRES_PASSWORD:-desarrollo}@db:5432/libracargo
+      ENTORNO: dev
+      TZ: America/Argentina/Buenos_Aires
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks: [interna]
+
+volumes:
+  datos_db:
+
+networks:
+  interna:
