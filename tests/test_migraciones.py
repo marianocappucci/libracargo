@@ -45,6 +45,19 @@ def _alembic(url: str) -> Config:
     return cfg
 
 
+@pytest.fixture(autouse=True)
+def _restaurar_database_url():
+    """`_alembic` pisa DATABASE_URL para apuntar a la base descartable, y esa
+    base se dropea al terminar. Sin restaurarla, cualquier test posterior que
+    llame a `inicializar()` se conecta a una base que ya no existe."""
+    previo = os.environ.get("DATABASE_URL")
+    yield
+    if previo is None:
+        os.environ.pop("DATABASE_URL", None)
+    else:
+        os.environ["DATABASE_URL"] = previo
+
+
 def test_upgrade_downgrade_upgrade(base_limpia):
     """El ciclo completo, que es donde apareció el defecto real.
 
