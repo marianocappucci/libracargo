@@ -12,6 +12,22 @@ from pathlib import Path
 # no hay aplicación instalable.
 TIPOS_PROPIOS = {".webmanifest": "application/manifest+json"}
 
+#: Prefijos que NO son de la SPA. Una ruta de API que no existe tiene que dar
+#: 404, no el `index.html`.
+PREFIJOS_DE_API = ("api", "auth")
+
+
+def es_ruta_de_api(ruta: str) -> bool:
+    """🔴 Sin esto, `/api/lo-que-sea` devuelve el `index.html` con **200**.
+
+    Medido en `dev` el 2026-08-18: `/api/inventado` contestaba 200. Un endpoint
+    mal escrito en el frontend no falla — recibe HTML y un 200—, y cualquier
+    chequeo apuntado a una ruta de API pasa exista o no, que es la peor clase
+    de monitoreo: el que no puede dar rojo.
+    """
+    primero = ruta.strip("/").split("/", 1)[0]
+    return primero in PREFIJOS_DE_API
+
 
 def archivo_publico(dist, ruta: str) -> Path | None:
     """El archivo real de `dist` que corresponde a `ruta`, o None para caer al index.
