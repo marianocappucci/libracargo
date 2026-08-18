@@ -133,8 +133,14 @@ class Vehiculo(Base, Auditable, Anotable):
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     __table_args__ = (
+        # 🔴 `NULLS NOT DISTINCT` (PostgreSQL 15+). Sin eso, como
+        # `patente_acoplado` es nullable y en SQL `NULL` no colisiona con
+        # `NULL`, **dos camiones sin acoplado con la misma patente entran los
+        # dos** — que es el caso mas comun, no el raro. La restriccion parecia
+        # proteger el equipo y no protegia nada en la mitad de las filas.
         UniqueConstraint(
-            "patente_chasis", "patente_acoplado", name="uq_vehiculos_equipo"
+            "patente_chasis", "patente_acoplado", name="uq_vehiculos_equipo",
+            postgresql_nulls_not_distinct=True,
         ),
         Index("ix_vehiculos_fletero", "fletero_id"),
     )
