@@ -4,10 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const get = vi.fn()
 vi.mock('libra-ui/api-client', async () => {
+  // Misma firma que la real: `ApiError(status, detail)`. Si el doble tuviera
+  // otra, el test pasaria y el codigo real recibiria algo distinto.
   class ApiError extends Error {
+    status: number
     detail: unknown
-    constructor(detail: unknown) {
-      super('api')
+    constructor(status: number, detail: unknown) {
+      super(String(detail))
+      this.status = status
       this.detail = detail
     }
   }
@@ -60,14 +64,17 @@ describe('AbmMaestro', () => {
 
 describe('mensajeDeError', () => {
   it('muestra el detalle de un 409 tal cual', () => {
-    const e = new ApiError('ya existe un registro que choca con la restriccion uq_x')
+    const e = new ApiError(409, 'ya existe un registro que choca con la restriccion uq_x')
     expect(mensajeDeError(e)).toContain('uq_x')
   })
 
   it('junta los errores de un 422 de pydantic', () => {
-    // Los 422 traen una LISTA de errores, no un string. Sin este caso la
-    // pantalla mostraria "[object Object]" y el usuario no sabria que corregir.
-    const e = new ApiError([{ msg: 'el tercero tiene que ser al menos una cosa' }])
+    // Los 422 traen una LISTA de errores, no un string. Y `libra-ui` tipa
+    // `detail` como `string`, asi que el tipo MIENTE sobre lo que manda el
+    // servidor: de ahi el cast, y de ahi que este caso exista. Sin el la
+    // pantalla mostraria "[object Object]" y nadie sabria que corregir.
+    const detalle = [{ msg: 'el tercero tiene que ser al menos una cosa' }]
+    const e = new ApiError(422, detalle as unknown as string)
     expect(mensajeDeError(e)).toBe('el tercero tiene que ser al menos una cosa')
   })
 
