@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+/* Tailwind v4 no escanea node_modules por defecto, y `libra-ui` usa clases de
+   utilidad en su propio JSX: sin esto el motor no las genera y el layout de la
+   familia sale sin estilos. Mismo patrón que el resto de los productos. */
+@source "../node_modules/libra-ui";
+
+@custom-variant dark (&:is(.dark *));
