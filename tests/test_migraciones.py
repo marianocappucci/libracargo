@@ -103,3 +103,39 @@ def test_los_modelos_no_tienen_cambios_sin_migrar(base_limpia):
     finally:
         if original:
             os.environ["DATABASE_URL"] = original
+
+
+def test_el_schema_migrado_rechaza_el_equipo_duplicado(base_limpia):
+    """La restriccion del equipo, sobre el schema que construye ALEMBIC.
+
+    Los tests del ABM corren contra las tablas que crea `Base.metadata`, o sea
+    el modelo. Eso no dice nada de la base real, que se construye migrando: las
+    dos pueden divergir y el sintoma aparece en produccion. Acá se prueba la
+    forma que va a tener la base de verdad.
+
+    El caso es el que estaba roto: dos camiones con la misma patente de chasis y
+    **sin acoplado**. Con la restriccion original —`UNIQUE` a secas sobre un par
+    con una columna nullable— los dos entraban, porque `NULL` no colisiona con
+    `NULL`.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    command.upgrade(_alembic(base_limpia), "head")
+    motor = create_engine(base_limpia)
+    with motor.begin() as con:
+        con.execute(text(
+            "insert into vehiculos (patente_chasis, activo) values ('AB123CD', true)"
+        ))
+    with pytest.raises(IntegrityError, match="uq_vehiculos_equipo"):
+        with motor.begin() as con:
+            con.execute(text(
+                "insert into vehiculos (patente_chasis, activo) values ('AB123CD', true)"
+            ))
+    # Control positivo: otra patente SÍ entra. Sin esto, un insert que fallara
+    # por cualquier otro motivo —una columna que falta, un default ausente—
+    # daria el mismo verde.
+    with motor.begin() as con:
+        con.execute(text(
+            "insert into vehiculos (patente_chasis, activo) values ('ZZ999ZZ', true)"
+        ))
+    motor.dispose()
