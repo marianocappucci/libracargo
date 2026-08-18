@@ -5,6 +5,9 @@ import Layout from '@/components/Layout'
 import { useAuth } from '@/context/AuthContext'
 import Inicio from '@/pages/Inicio'
 import Login from '@/pages/Login'
+import {
+  Choferes, Localidades, RazonesSociales, Terceros, TiposCarga, Vehiculos,
+} from '@/pages/maestros'
 
 function Privado({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
@@ -26,6 +29,12 @@ export default function App() {
             <Layout>
               <Routes>
                 <Route path="/" element={<Inicio />} />
+                <Route path="/terceros" element={<Terceros />} />
+                <Route path="/choferes" element={<Choferes />} />
+                <Route path="/vehiculos" element={<Vehiculos />} />
+                <Route path="/localidades" element={<Localidades />} />
+                <Route path="/tipos-carga" element={<TiposCarga />} />
+                <Route path="/razones-sociales" element={<RazonesSociales />} />
               </Routes>
             </Layout>
           </Privado>
