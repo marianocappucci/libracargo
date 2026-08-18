@@ -5,6 +5,7 @@ import Layout from '@/components/Layout'
 import { useAuth } from '@/context/AuthContext'
 import Inicio from '@/pages/Inicio'
 import Login from '@/pages/Login'
+import Ordenes from '@/pages/Ordenes'
 import {
   Choferes, Localidades, RazonesSociales, Terceros, TiposCarga, Vehiculos,
 } from '@/pages/maestros'
@@ -29,6 +30,7 @@ export default function App() {
             <Layout>
               <Routes>
                 <Route path="/" element={<Inicio />} />
+                <Route path="/ordenes" element={<Ordenes />} />
                 <Route path="/terceros" element={<Terceros />} />
                 <Route path="/choferes" element={<Choferes />} />
                 <Route path="/vehiculos" element={<Vehiculos />} />
