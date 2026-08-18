@@ -27,6 +27,15 @@ def engine():
     return _engine
 
 
+def fabrica_de_sesiones():
+    """El `sessionmaker`, que es a la vez el `session_factory` que espera
+    `libraauth.UserRepository`: un callable que devuelve una `Session` usable
+    como context manager."""
+    if _Sesion is None:
+        inicializar()
+    return _Sesion
+
+
 def obtener_sesion() -> Iterator[Session]:
     if _Sesion is None:
         inicializar()

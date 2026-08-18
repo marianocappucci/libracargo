@@ -13,6 +13,24 @@ URL = os.environ.get(
 )
 
 
+#: Secreto de firma de sesión para la suite. Fijo y evidente: no es una clave,
+#: es una constante de test.
+SECRETO_DE_PRUEBA = "libracargo-suite-no-es-un-secreto-real"
+
+
+@pytest.fixture(autouse=True)
+def _secreto_de_sesion(monkeypatch):
+    """`SessionAuth` no se construye sin `SECRET_KEY` (salvo `ENV=development`).
+
+    Va acá, autouse, porque si no la suite pasa o falla según lo que tenga
+    exportado el shell de quien la corre: local con `ENV=development` daba
+    verde, y el CI —que no lo tiene— habría dado rojo en tres tests con un
+    error que no habla de la causa. Un test tiene que traer su entorno, no
+    heredarlo.
+    """
+    monkeypatch.setenv("SECRET_KEY", SECRETO_DE_PRUEBA)
+
+
 @pytest.fixture(scope="session")
 def engine():
     """Los tests corren contra PostgreSQL real, nunca contra SQLite.

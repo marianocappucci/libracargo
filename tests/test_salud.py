@@ -17,9 +17,16 @@ from app.db import obtener_sesion
 from app.main import crear_app
 
 
+def _app():
+    """`sembrar_admin=False`: la sonda no tiene nada que ver con el usuario
+    inicial, y sembrarlo obligaría a estos tests a cargar la variable
+    fail-closed de `libraauth`. El login se prueba en `test_auth.py`."""
+    return crear_app(sembrar_admin=False)
+
+
 @pytest.fixture
 def cliente(sesion):
-    app = crear_app()
+    app = _app()
     app.dependency_overrides[obtener_sesion] = lambda: sesion
     return TestClient(app, raise_server_exceptions=False)
 
@@ -43,7 +50,7 @@ def test_falla_cerrado_si_la_base_no_responde():
         def execute(self, *_a, **_k):
             raise OperationalError("SELECT 1", {}, Exception("conexion rechazada"))
 
-    app = crear_app()
+    app = _app()
     app.dependency_overrides[obtener_sesion] = lambda: _BaseCaida()
     r = TestClient(app, raise_server_exceptions=False).get("/salud")
 
