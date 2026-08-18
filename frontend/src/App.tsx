@@ -4,6 +4,8 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import Layout from '@/components/Layout'
 import { useAuth } from '@/context/AuthContext'
 import Inicio from '@/pages/Inicio'
+import Caja from '@/pages/Caja'
+import CuentaCorriente from '@/pages/CuentaCorriente'
 import Login from '@/pages/Login'
 import Ordenes from '@/pages/Ordenes'
 import {
@@ -31,6 +33,8 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<Inicio />} />
                 <Route path="/ordenes" element={<Ordenes />} />
+                <Route path="/cuentas" element={<CuentaCorriente />} />
+                <Route path="/caja" element={<Caja />} />
                 <Route path="/terceros" element={<Terceros />} />
                 <Route path="/choferes" element={<Choferes />} />
                 <Route path="/vehiculos" element={<Vehiculos />} />
