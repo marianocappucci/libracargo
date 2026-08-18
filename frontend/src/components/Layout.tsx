@@ -1,15 +1,15 @@
 // Shim sobre libra-ui/Layout: branding y navegación propios de LibraCargo.
 //
-// Maestros llegó con F2, las órdenes con F3, cuentas y caja con F4. Los
-// comprobantes son F5 y **no están en el menú**: un link a una pantalla que no
-// existe es peor que la ausencia del link.
+// Maestros llegó con F2, las órdenes con F3, cuentas y caja con F4, y los
+// comprobantes con F5. Cada pantalla entra al menú cuando existe: un link a una
+// que no está es peor que la ausencia del link.
 //
 // Dos ítems del mismo menú no comparten dibujo — si no, el icono deja de
 // distinguir y hay que leer el texto igual.
 import { createLayout } from 'libra-ui/Layout'
 import {
   Building2, ClipboardList, LayoutDashboard, MapPin, Package, Truck, Users,
-  UserSquare, Wallet, BookOpen,
+  UserSquare, Wallet, BookOpen, Receipt,
 } from 'lucide-react'
 
 import { useAuth } from '@/context/AuthContext'
@@ -28,6 +28,7 @@ export const Layout = createLayout<Usuario>({
         { to: '/ordenes', label: 'Órdenes de carga', icon: ClipboardList },
         { to: '/cuentas', label: 'Cuenta corriente', icon: BookOpen },
         { to: '/caja', label: 'Caja', icon: Wallet },
+        { to: '/comprobantes', label: 'Comprobantes', icon: Receipt },
       ],
     },
     {
