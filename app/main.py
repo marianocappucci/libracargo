@@ -15,7 +15,7 @@ from app import db
 from app.auth import UserRepository, construir_session_auth
 from app.config import Config
 from app.routers import auth as auth_router
-from app.routers import maestros, ordenes, salud
+from app.routers import cuentas, maestros, ordenes, salud
 
 
 def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> FastAPI:
@@ -52,4 +52,5 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     for router in maestros.TODOS:
         app.include_router(router)
     app.include_router(ordenes.router)
+    app.include_router(cuentas.router)
     return app
