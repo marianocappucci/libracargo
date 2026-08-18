@@ -10,11 +10,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from fastapi import HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.main import crear_app
-from app.spa import TIPOS_PROPIOS, archivo_publico
+from app.spa import TIPOS_PROPIOS, archivo_publico, es_ruta_de_api
 
 app = crear_app()
 
@@ -29,6 +30,8 @@ if FRONTEND_DIST.is_dir():
 
     @app.get("/{ruta:path}", include_in_schema=False)
     async def spa(ruta: str):
+        if es_ruta_de_api(ruta):
+            raise HTTPException(404, "no existe esa ruta")
         archivo = archivo_publico(FRONTEND_DIST, ruta)
         if archivo is not None:
             return FileResponse(archivo, media_type=TIPOS_PROPIOS.get(archivo.suffix))
