@@ -48,7 +48,7 @@ def _a_salida(obj, salida, campo_activo: str):
     return salida.model_validate(datos)
 
 
-def _traducir_integridad(err: IntegrityError) -> HTTPException:
+def traducir_integridad(err: IntegrityError) -> HTTPException:
     """Una violación de unicidad es un 409, no un 500.
 
     El mensaje nombra la restricción y **nada más**: el `str()` de un error de
@@ -113,7 +113,7 @@ def construir_router(
             sesion.commit()
         except IntegrityError as err:
             sesion.rollback()
-            raise _traducir_integridad(err) from None
+            raise traducir_integridad(err) from None
         sesion.refresh(obj)
         return _a_salida(obj, salida, campo_activo)
 
@@ -127,7 +127,7 @@ def construir_router(
             sesion.commit()
         except IntegrityError as err:
             sesion.rollback()
-            raise _traducir_integridad(err) from None
+            raise traducir_integridad(err) from None
         sesion.refresh(obj)
         return _a_salida(obj, salida, campo_activo)
 
