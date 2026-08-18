@@ -5,11 +5,17 @@ esto no es un historial.
 
 ## En curso
 
-- [ ] **F1** — Integrar LibraAuth: login, sesión por cookie firmada, tabla
+- [x] **F1** — Integrar LibraAuth: login, sesión por cookie firmada, tabla
       `usuarios` en la misma base.
-- [ ] **F1** — Frontend sobre `libra-ui`: layout con sidebar, sin barra
+- [x] **F1** — Frontend sobre `libra-ui`: layout con sidebar, sin barra
       superior, mismo origen que la API.
-- [ ] **F1** — Desplegar en `dev.libracargo.com.ar` con `panel_admin.py`.
+- [ ] **F1** — Desplegar en `dev.libracargo.com.ar` con `docker compose`.
+      🔑 **No con `panel_admin.py`**, como decía acá: ese vive en
+      LibraCore —que este producto no consume hasta F7— y provisiona
+      instancias de **cliente** bajo `clientes/<slug>/`. Los `dev` del resto
+      de la familia corren por compose desde el clon del repo en el VPS,
+      sobre la red compartida `stack_stack-net`, y Nginx Proxy Manager los
+      alcanza por alias de contenedor.
 
 ## Próximas
 

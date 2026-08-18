@@ -20,7 +20,12 @@ Dirección estratégica. Las tareas concretas están en `TASKS.md`.
 - Resultado: se entra con usuario real; el layout de la familia responde.
 - Criterio: login funcionando en `dev`, healthcheck en verde, frontend servido
   desde el mismo origen que la API.
-- Dependencias: deploy keys de `libraauth` y `libra-ui` cargadas como secrets.
+- Dependencias: **ninguna pendiente**. Los repos-motor de la familia están
+  públicos hoy, así que `pip` y `npm ci` los alcanzan sin credenciales;
+  las deploy keys y sus secrets hacen falta recién cuando la familia pase a
+  privada.
+- Estado al 2026-08-18: LibraAuth y el frontend **hechos y mergeados**;
+  falta el alta de la instancia.
 
 ### F2 — Maestros
 
