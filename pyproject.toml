@@ -10,6 +10,12 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "alembic>=1.14",
     "pydantic>=2.9",
+    # El auth de toda la familia. Se declara con `git+https` a proposito: asi
+    # anda en dev local sin identidad SSH propia. El build de la imagen
+    # reescribe la URL a `git+ssh` con la deploy key de solo lectura del motor
+    # (ver Dockerfile), que es lo que va a hacer falta cuando la familia pase a
+    # repos privados.
+    "libraauth @ git+https://github.com/marianocappucci/libraauth.git@v0.26.1",
 ]
 
 # Los motores de la familia entran en F1, desde repos privados por deploy key.
@@ -17,7 +23,9 @@ dependencies = [
 # sin acceso a esos repos.
 [project.optional-dependencies]
 motores = [
-    # "libraauth @ git+https://github.com/marianocappucci/libraauth.git@v0.26.1",
+    # LibraCore entra en F7 (impresion via `pdf_generator`) y F8 (ARCA). Se
+    # consume PARCIAL, como LibraDesk: leer la seccion "consumo parcial" de la
+    # pagina de LibraCore en el wiki antes de descomentarlo.
     # "libracore @ git+https://github.com/marianocappucci/libracore.git@v1.39.2",
 ]
 dev = [
