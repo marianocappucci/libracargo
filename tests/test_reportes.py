@@ -114,9 +114,17 @@ def test_el_resumen_del_periodo_cuenta_lo_que_paso_en_el_periodo(cliente, escena
     assert agosto["desde"] == "2026-08-01" and agosto["hasta"] == "2026-08-31"
 
     # Sin rango, el universo es todo.
+    #
+    # 🔴 Los conteos de acá son los que encontraron un defecto real: `count()`
+    # sin columna pierde el `FROM` cuando la consulta no tiene `WHERE`, y
+    # devuelve **1** en vez de fallar. Con rango contaba bien; sin rango, el
+    # resumen de Suitrans decía "1 movimiento de caja" sobre 8.387.
     todo = cliente.get("/api/reportes/resumen").json()
     assert todo["ordenes"] == 4
     assert Decimal(todo["tarifa"]) == Decimal("15000.00")
+    assert todo["movimientos_caja"] == 2
+    assert todo["comprobantes"] == 1
+    assert todo["ordenes_anuladas"] == 1
 
 
 def test_el_ranking_de_clientes_ordena_por_facturado_y_trae_el_saldo(cliente, escenario):
