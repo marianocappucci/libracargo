@@ -53,7 +53,17 @@ def resumen(sesion: Session, desde: date | None, hasta: date | None) -> dict:
             func.coalesce(func.sum(columna), 0))
         return _suma(sesion, c)
 
-    contar = lambda c: sesion.scalar(c.with_only_columns(func.count()))  # noqa: E731
+    def contar(consulta, columna=OrdenCarga.id):
+        """🔴 `func.count()` **sin columna** pierde el `FROM`.
+
+        `select(Modelo).with_only_columns(func.count())` deja un `SELECT
+        count(*)` sin tabla cuando la consulta no tiene ningún `WHERE` que la
+        ancle, y eso devuelve **1** — no un error. Con filtro de fechas contaba
+        bien y sin filtro contaba 1: el reporte de todo el período decía que
+        había *un* movimiento de caja sobre 8.387. Contar por una columna de la
+        tabla mantiene el `FROM`.
+        """
+        return sesion.scalar(consulta.with_only_columns(func.count(columna)))
 
     caja = _entre(select(MovimientoCaja), MovimientoCaja.fecha, desde, hasta)
     ingresos = caja.where(MovimientoCaja.tipo == TipoMovimientoCaja.INGRESO)
@@ -72,9 +82,9 @@ def resumen(sesion: Session, desde: date | None, hasta: date | None) -> dict:
         "iva": sobre(OrdenCarga.iva),
         "total": sobre(OrdenCarga.total),
         "comision": sobre(OrdenCarga.comision),
-        "comprobantes": contar(comprobantes),
+        "comprobantes": contar(comprobantes, Comprobante.id),
         "facturado": sobre(Comprobante.total, comprobantes),
-        "movimientos_caja": contar(caja),
+        "movimientos_caja": contar(caja, MovimientoCaja.id),
         "cobrado": sobre(MovimientoCaja.importe, ingresos),
         "pagado": sobre(MovimientoCaja.importe, egresos),
     }
