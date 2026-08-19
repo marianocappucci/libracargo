@@ -122,14 +122,14 @@ describe('Comprobantes', () => {
     await abrirFacturar()
 
     await waitFor(() => expect(screen.getByLabelText(/#1 /)).toBeInTheDocument())
-    expect(screen.getByText('Total: 0.00')).toBeInTheDocument()
+    expect(screen.getByText('Total: $ 0,00')).toBeInTheDocument()
     expect(screen.getByText('Facturar')).toBeDisabled()
 
     fireEvent.click(screen.getByLabelText(/#1 /))
     fireEvent.click(screen.getByLabelText(/#2 /))
     // 0.10 + 0.20 en punto flotante da 0.30000000000000004: la suma va en
     // centavos enteros justamente por esto.
-    expect(screen.getByText('Total: 0.30')).toBeInTheDocument()
+    expect(screen.getByText('Total: $ 0,30')).toBeInTheDocument()
   })
 
   it('cambiar la razón social saca de la cuenta lo que ya no se puede facturar', async () => {
@@ -141,11 +141,11 @@ describe('Comprobantes', () => {
 
     await waitFor(() => expect(screen.getByLabelText(/#2 /)).toBeInTheDocument())
     fireEvent.click(screen.getByLabelText(/#2 /))
-    expect(screen.getByText('Total: 500.00')).toBeInTheDocument()
+    expect(screen.getByText('Total: $ 500,00')).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Razón social', { selector: '#n-razon' }),
                      { target: { value: '5' } })
-    expect(screen.getByText('Total: 0.00')).toBeInTheDocument()
+    expect(screen.getByText('Total: $ 0,00')).toBeInTheDocument()
     expect(screen.getByText('Facturar')).toBeDisabled()
   })
 

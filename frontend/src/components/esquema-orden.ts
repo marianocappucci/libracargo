@@ -63,6 +63,30 @@ export function hoyEnArgentina(): string {
   }).format(new Date())
 }
 
+/** Un importe en pesos: `$ 1.173.307.438,05`.
+ *
+ * 🔴 **Formatea sobre el TEXTO, no sobre un número.** Los importes llegan como
+ * string porque son `NUMERIC` en la base y `Decimal` en Python; pasarlos por
+ * `Number()` para poder usar `toLocaleString` los mete en un float binario, que
+ * es exactamente el defecto que este producto vino a reparar. Acá se separa la
+ * parte entera de la decimal con `split`, se agrupan los miles de a tres y se
+ * arma la cadena: ningún dígito pasa por punto flotante.
+ *
+ * El negativo lleva el signo **antes del peso** (`-$ 1.234,56`), como se escribe
+ * en Argentina.
+ */
+export function formatearImporte(valor: string | number | null | undefined): string {
+  if (valor == null || valor === '') return ''
+  const texto = String(valor).trim()
+  const negativo = texto.startsWith('-')
+  const [entero = '0', decimales = ''] = texto.replace(/^[-+]/, '').split('.')
+  // Si no vienen decimales, se completan: un importe con dos decimales siempre
+  // se lee igual, y una columna donde algunos tienen coma y otros no se lee mal.
+  const centavos = (decimales + '00').slice(0, 2)
+  const miles = entero.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return `${negativo ? '-' : ''}$ ${miles},${centavos}`
+}
+
 /** `dd-mm-aaaa HH:MM`, hora de Argentina, reloj de 24 h.
  *
  * El formato de la familia es de PRESENTACION: la API y la base siguen en ISO.

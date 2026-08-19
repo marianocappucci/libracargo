@@ -21,7 +21,7 @@ import type { Orden } from '@/api/ordenes'
 import { ordenes as apiOrdenes, cargarOpciones } from '@/api/ordenes'
 import type { Opciones } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
-import { hoyEnArgentina } from '@/components/esquema-orden'
+import { hoyEnArgentina, formatearImporte } from '@/components/esquema-orden'
 import { sumarImportes } from '@/api/comprobantes'
 
 /** El primer día del mes en curso, en hora de Argentina. */
@@ -100,25 +100,26 @@ export default function Inicio() {
                    valor={String(mes.ordenes)}
                    detalle={`${historico.ordenes} en total`} />
           <Tarjeta titulo="Facturado en el mes" icono={Receipt} a="/comprobantes"
-                   valor={mes.facturado}
+                   valor={formatearImporte(mes.facturado)}
                    detalle={`${mes.comprobantes} comprobante(s) en ${mesLegible}`} />
           <Tarjeta titulo="Cobrado en el mes" icono={Wallet} a="/caja"
-                   valor={mes.cobrado} detalle={`pagado ${mes.pagado}`} />
+                   valor={formatearImporte(mes.cobrado)}
+                   detalle={`pagado ${formatearImporte(mes.pagado)}`} />
           <Tarjeta titulo="Pendientes de facturar" icono={AlertTriangle}
                    a="/reportes/pendientes-de-facturar"
                    valor={String(historico.ordenes_pendientes)}
                    detalle="órdenes sin comprobante, de todo el histórico" />
           <Tarjeta titulo="Saldo de clientes" icono={BookOpen} a="/reportes/saldos"
-                   valor={porRol('cliente')}
+                   valor={formatearImporte(porRol('cliente'))}
                    detalle={`${saldos.filter((s) => s.rol === 'cliente').length} cuentas con saldo`} />
           <Tarjeta titulo="Saldo de fleteros" icono={BookOpen} a="/reportes/saldos"
-                   valor={porRol('fletero')}
+                   valor={formatearImporte(porRol('fletero'))}
                    detalle={`${saldos.filter((s) => s.rol === 'fletero').length} cuentas con saldo`} />
           <Tarjeta titulo="Saldo de proveedores" icono={BookOpen} a="/reportes/saldos"
-                   valor={porRol('proveedor')}
+                   valor={formatearImporte(porRol('proveedor'))}
                    detalle={`${saldos.filter((s) => s.rol === 'proveedor').length} cuentas con saldo`} />
           <Tarjeta titulo="Comisión del mes" icono={ClipboardList} a="/reportes/por-fletero"
-                   valor={mes.comision}
+                   valor={formatearImporte(mes.comision)}
                    detalle="de las órdenes del mes" />
         </div>
       )}
@@ -140,7 +141,8 @@ export default function Inicio() {
               accessorFn: (o: Orden) =>
                 `${nombre(opciones?.localidades, o.origen_id)} → ${nombre(opciones?.localidades, o.destino_id)}` },
             { id: 'estado', header: 'Estado', accessorFn: (o: Orden) => o.estado },
-            { id: 'total', header: 'Total', accessorFn: (o: Orden) => o.total },
+            { id: 'total', header: 'Total',
+              accessorFn: (o: Orden) => formatearImporte(o.total) },
           ]}
           data={ultimas}
           emptyMessage="Todavía no hay órdenes cargadas."
@@ -161,7 +163,8 @@ export default function Inicio() {
             { id: 'rol', header: 'Cuenta', accessorFn: (s: FilaDeSaldo) => s.rol },
             { id: 'ultimo', header: 'Último movimiento',
               accessorFn: (s: FilaDeSaldo) => s.ultimo_movimiento ?? '' },
-            { id: 'saldo', header: 'Saldo', accessorFn: (s: FilaDeSaldo) => s.saldo },
+            { id: 'saldo', header: 'Saldo',
+              accessorFn: (s: FilaDeSaldo) => formatearImporte(s.saldo) },
           ]}
           data={saldos.slice(0, 8)}
           emptyMessage="Ninguna cuenta tiene saldo."

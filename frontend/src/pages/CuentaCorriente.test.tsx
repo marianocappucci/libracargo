@@ -51,8 +51,8 @@ describe('CuentaCorriente', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
     expect(screen.getByRole('alert').textContent).toContain('NO coinciden')
     // Los dos numeros a la vista, no solo el de la base.
-    expect(screen.getByText('100.00')).toBeInTheDocument()
-    expect(screen.getByText('90.00')).toBeInTheDocument()
+    expect(screen.getByText('$ 100,00')).toBeInTheDocument()
+    expect(screen.getByText('$ 90,00')).toBeInTheDocument()
   })
 
   it('con los dos saldos iguales no aparece ninguna alarma', async () => {
@@ -64,7 +64,7 @@ describe('CuentaCorriente', () => {
     })
     render(<MemoryRouter><CuentaCorriente /></MemoryRouter>)
     await elegirTercero()
-    await waitFor(() => expect(screen.getAllByText('100.00').length).toBe(2))
+    await waitFor(() => expect(screen.getAllByText('$ 100,00').length).toBe(2))
     expect(screen.queryByRole('alert')).toBeNull()
   })
 })

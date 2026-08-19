@@ -11,6 +11,7 @@ import { cargarOpciones } from '@/api/ordenes'
 import type { FilaDeCuenta, Rol, ResumenDeCuenta } from '@/api/cuentas'
 import { cuentas } from '@/api/cuentas'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import { formatearImporte } from '@/components/esquema-orden'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir } from '@/components/impresion'
 import { Input } from '@/components/ui/input'
@@ -49,9 +50,9 @@ export default function CuentaCorriente() {
     { encabezado: 'Fecha', valor: (f) => f.movimiento.fecha },
     { encabezado: 'Concepto', valor: (f) => f.movimiento.concepto },
     { encabezado: 'Detalle', valor: (f) => f.movimiento.descripcion },
-    { encabezado: 'Debe', valor: (f) => f.movimiento.debe, numerica: true },
-    { encabezado: 'Haber', valor: (f) => f.movimiento.haber, numerica: true },
-    { encabezado: 'Saldo', valor: (f) => f.saldo, numerica: true },
+    { encabezado: 'Debe', valor: (f) => f.movimiento.debe, numerica: true, moneda: true },
+    { encabezado: 'Haber', valor: (f) => f.movimiento.haber, numerica: true, moneda: true },
+    { encabezado: 'Saldo', valor: (f) => f.saldo, numerica: true, moneda: true },
   ]
 
   const columnas = [
@@ -62,10 +63,11 @@ export default function CuentaCorriente() {
     { id: 'descripcion', header: 'Detalle',
       accessorFn: (f: FilaDeCuenta) => f.movimiento.descripcion ?? '' },
     { id: 'debe', header: 'Debe',
-      accessorFn: (f: FilaDeCuenta) => f.movimiento.debe },
+      accessorFn: (f: FilaDeCuenta) => formatearImporte(f.movimiento.debe) },
     { id: 'haber', header: 'Haber',
-      accessorFn: (f: FilaDeCuenta) => f.movimiento.haber },
-    { id: 'saldo', header: 'Saldo', accessorFn: (f: FilaDeCuenta) => f.saldo },
+      accessorFn: (f: FilaDeCuenta) => formatearImporte(f.movimiento.haber) },
+    { id: 'saldo', header: 'Saldo',
+      accessorFn: (f: FilaDeCuenta) => formatearImporte(f.saldo) },
   ]
 
   return (
@@ -94,7 +96,7 @@ export default function CuentaCorriente() {
       <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="grid gap-1">
           <Label htmlFor="cc-rol">Cuenta</Label>
-          <select id="cc-rol" className="h-9 rounded-md border px-2 text-sm"
+          <select id="cc-rol" className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
                   value={rol}
                   onChange={(e) => { setRol(e.target.value as Rol); setTerceroId(undefined) }}>
             {ROLES.map((r) => <option key={r.valor} value={r.valor}>{r.etiqueta}</option>)}
@@ -102,7 +104,7 @@ export default function CuentaCorriente() {
         </div>
         <div className="grid gap-1">
           <Label htmlFor="cc-tercero">Tercero</Label>
-          <select id="cc-tercero" className="h-9 rounded-md border px-2 text-sm"
+          <select id="cc-tercero" className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
                   value={terceroId ?? ''}
                   onChange={(e) => setTerceroId(e.target.value ? Number(e.target.value) : undefined)}>
             <option value="">Elegir…</option>
@@ -128,13 +130,15 @@ export default function CuentaCorriente() {
         <div className="mb-4 flex flex-wrap items-center gap-6 rounded border p-4">
           <div>
             <p className="text-muted-foreground text-xs">Saldo</p>
-            <p className="text-xl font-semibold">{datos.saldo}</p>
+            <p className="text-xl font-semibold">{formatearImporte(datos.saldo)}</p>
           </div>
           {/* Los dos numeros a la vista, y no solo uno. El criterio de F4 es que
               coincidan; esconder el segundo dejaria el control sin testigo. */}
           <div>
             <p className="text-muted-foreground text-xs">Recorriendo los movimientos</p>
-            <p className="text-xl font-semibold">{datos.saldo_recorriendo}</p>
+            <p className="text-xl font-semibold">
+              {formatearImporte(datos.saldo_recorriendo)}
+            </p>
           </div>
           {!datos.coinciden && (
             <p role="alert" className="text-destructive text-sm font-semibold">

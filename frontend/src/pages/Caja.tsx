@@ -12,7 +12,7 @@ import { mensajeDeError } from '@/components/AbmMaestro'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { sumarImportes } from '@/api/comprobantes'
-import { hoyEnArgentina } from '@/components/esquema-orden'
+import { hoyEnArgentina, formatearImporte } from '@/components/esquema-orden'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -59,7 +59,7 @@ function Opcion({ id, etiqueta, valor, alCambiar, deshabilitado, children }: {
   return (
     <div className="grid gap-1">
       <Label htmlFor={id}>{etiqueta}</Label>
-      <select id={id} className="h-9 rounded-md border px-2 text-sm"
+      <select id={id} className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
               disabled={deshabilitado} value={valor}
               onChange={(e) => alCambiar(e.target.value)}>
         {children}
@@ -124,7 +124,7 @@ export default function Caja() {
       valor: (m) => terceros.find((t) => t.id === m.tercero_id)?.etiqueta ?? '' },
     { encabezado: 'Medio', valor: (m) => m.medio_pago },
     { encabezado: 'Recibo', valor: (m) => m.recibo },
-    { encabezado: 'Importe', valor: (m) => m.importe, numerica: true },
+    { encabezado: 'Importe', valor: (m) => m.importe, numerica: true, moneda: true },
   ]
 
   const columnas = [
@@ -139,9 +139,10 @@ export default function Caja() {
     { id: 'tercero', header: 'Tercero',
       accessorFn: (m: MovimientoCaja) =>
         terceros.find((t) => t.id === m.tercero_id)?.etiqueta ?? '' },
-    { accessorKey: 'importe', header: sortableHeader('Importe') },
     { accessorKey: 'medio_pago', header: 'Medio' },
     { accessorKey: 'recibo', header: 'Recibo' },
+    { id: 'importe', header: sortableHeader('Importe'),
+      accessorFn: (m: MovimientoCaja) => formatearImporte(m.importe) },
   ]
 
   return (
