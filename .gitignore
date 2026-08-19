@@ -14,3 +14,10 @@ htmlcov/
 .obsidian/
 *.egg-info/
 .DS_Store
+
+# 🔴 El dump del legado de Suitrans tiene datos reales de clientes. No entra
+# al repo por ningun camino, y menos por un glob que alguien agrego sin mirar.
+dump-suitrans*
+*.sql.gz
+staging/
+informe-perfilado*.md
