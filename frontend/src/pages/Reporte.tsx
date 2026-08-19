@@ -14,6 +14,7 @@ import { reportes } from '@/api/reportes'
 import type { Opciones } from '@/api/ordenes'
 import { cargarOpciones } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import { Elegir as ElegirCompartido } from '@/components/Elegir'
 import { formatearImporte } from '@/components/esquema-orden'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir } from '@/components/impresion'
@@ -110,22 +111,10 @@ function Campo({ id, etiqueta, children }: {
   )
 }
 
-function Elegir({ id, etiqueta, valor, alCambiar, opciones, vacio }: {
-  id: string; etiqueta: string; valor: string
-  alCambiar: (v: string) => void
-  opciones: { id: number | string; etiqueta: string }[]
-  vacio: string
-}) {
-  return (
-    <Campo id={id} etiqueta={etiqueta}>
-      <select id={id} className="h-9 w-full min-w-0 rounded-md border px-2 text-sm" value={valor}
-              onChange={(e) => alCambiar(e.target.value)}>
-        <option value="">{vacio}</option>
-        {opciones.map((o) => <option key={o.id} value={o.id}>{o.etiqueta}</option>)}
-      </select>
-    </Campo>
-  )
-}
+// El mismo componente que el resto del producto: con buscador cuando la lista
+// lo amerita, sin el cuando son tres valores fijos. La decision no se repite
+// pantalla por pantalla.
+const Elegir = ElegirCompartido
 
 export default function Reporte() {
   const { slug = '' } = useParams()

@@ -9,6 +9,7 @@ import { caja } from '@/api/cuentas'
 import type { Opciones } from '@/api/ordenes'
 import { cargarOpciones } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import { Elegir } from '@/components/Elegir'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { sumarImportes } from '@/api/comprobantes'
@@ -207,11 +208,9 @@ export default function Caja() {
                    alCambiar={(v) => set({ concepto: v })} />
             <Texto id="m-importe" etiqueta="Importe" valor={borrador.importe}
                    alCambiar={(v) => set({ importe: v })} />
-            <Opcion id="m-tercero" etiqueta="Tercero" valor={borrador.tercero_id}
-                    alCambiar={(v) => set({ tercero_id: v })}>
-              <option value="">Ninguno (gasto general)</option>
-              {terceros.map((t) => <option key={t.id} value={t.id}>{t.etiqueta}</option>)}
-            </Opcion>
+            <Elegir id="m-tercero" etiqueta="Tercero" valor={borrador.tercero_id}
+                    vacio="Ninguno (gasto general)" opciones={terceros}
+                    alCambiar={(v) => set({ tercero_id: v })} />
             {/* Deshabilitado sin tercero: el rol sin tercero es un par
                 incompleto que el backend rechaza, y ofrecerlo invita a
                 mandarlo. */}
