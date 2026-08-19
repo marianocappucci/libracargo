@@ -9,7 +9,7 @@
 import { createLayout } from 'libra-ui/Layout'
 import {
   Building2, ClipboardList, LayoutDashboard, MapPin, Package, Truck, Users,
-  UserSquare, Wallet, BookOpen, Receipt,
+  UserSquare, Wallet, BookOpen, Receipt, UserCog,
 } from 'lucide-react'
 
 import { useAuth } from '@/context/AuthContext'
@@ -40,6 +40,15 @@ export const Layout = createLayout<Usuario>({
         { to: '/localidades', label: 'Localidades', icon: MapPin },
         { to: '/tipos-carga', label: 'Tipos de carga', icon: Package },
         { to: '/razones-sociales', label: 'Razones sociales', icon: Building2 },
+      ],
+    },
+    {
+      label: 'Administración',
+      items: [
+        // : el router del backend exige rol admin, asi que a un
+        // operador el link le daria 403. Un menu que ofrece lo que no se puede
+        // usar es peor que no ofrecerlo.
+        { to: '/usuarios', label: 'Usuarios', icon: UserCog, adminOnly: true },
       ],
     },
   ],
