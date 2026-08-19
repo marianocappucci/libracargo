@@ -10,7 +10,8 @@ import CuentaCorriente from '@/pages/CuentaCorriente'
 import Login from '@/pages/Login'
 import Logs from '@/pages/Logs'
 import Ordenes from '@/pages/Ordenes'
-import Reportes from '@/pages/Reportes'
+import Reporte from '@/pages/Reporte'
+import ReportesIndice from '@/pages/ReportesIndice'
 import Usuarios from '@/pages/Usuarios'
 import {
   Choferes, Localidades, RazonesSociales, Terceros, TiposCarga, Vehiculos,
@@ -40,7 +41,8 @@ export default function App() {
                 <Route path="/cuentas" element={<CuentaCorriente />} />
                 <Route path="/caja" element={<Caja />} />
                 <Route path="/comprobantes" element={<Comprobantes />} />
-                <Route path="/reportes" element={<Reportes />} />
+                <Route path="/reportes" element={<ReportesIndice />} />
+                <Route path="/reportes/:slug" element={<Reporte />} />
                 <Route path="/usuarios" element={<Usuarios />} />
                 <Route path="/logs" element={<Logs />} />
                 <Route path="/terceros" element={<Terceros />} />
