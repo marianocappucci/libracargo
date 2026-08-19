@@ -9,6 +9,9 @@ import { useForm } from 'react-hook-form'
 import type { Filtros, Opciones, Orden } from '@/api/ordenes'
 import { cargarOpciones, ordenes as api } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import type { Columna } from '@/components/impresion'
+import { BotonImprimir, traerTodo } from '@/components/impresion'
+import { sumarImportes } from '@/api/comprobantes'
 import type { DatosOrden, EntradaOrden } from '@/components/esquema-orden'
 import { ORDEN_VACIA, esquemaOrden } from '@/components/esquema-orden'
 import { FiltrosOrdenes } from '@/components/FiltrosOrdenes'
@@ -21,6 +24,16 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
 type Form = UseFormReturn<EntradaOrden, unknown, DatosOrden>
+
+/** Los filtros activos, en texto, para el encabezado de la hoja impresa.
+ *  Dos papeles del mismo listado con filtros distintos tienen que poder
+ *  distinguirse sin leer las filas. */
+function describirFiltros(filtros: Filtros): string {
+  const partes = Object.entries(filtros)
+    .filter(([, v]) => v != null && v !== '')
+    .map(([k, v]) => `${k.replace(/_id$/, '')}: ${v}`)
+  return partes.length ? partes.join(' · ') : 'sin filtros'
+}
 
 const nombreDe = (
   lista: { id: number; etiqueta: string }[] | undefined, id: number | null,
@@ -122,6 +135,19 @@ export default function Ordenes() {
     }
   }
 
+  const COLUMNAS_IMPRESAS: Columna<Orden>[] = [
+    { encabezado: 'Fecha', valor: (o: Orden) => o.fecha },
+    { encabezado: 'Cliente', valor: (o: Orden) => nombreDe(opciones?.clientes, o.cliente_id) },
+    { encabezado: 'Origen', valor: (o: Orden) => nombreDe(opciones?.localidades, o.origen_id) },
+    { encabezado: 'Destino', valor: (o: Orden) => nombreDe(opciones?.localidades, o.destino_id) },
+    { encabezado: 'Fletero', valor: (o: Orden) => nombreDe(opciones?.fleteros, o.fletero_id) },
+    { encabezado: 'Remito', valor: (o: Orden) => o.remito },
+    { encabezado: 'Estado', valor: (o: Orden) => o.estado },
+    { encabezado: 'Tarifa', valor: (o: Orden) => o.tarifa, numerica: true },
+    { encabezado: 'Total', valor: (o: Orden) => o.total, numerica: true },
+    { encabezado: 'Comisión', valor: (o: Orden) => o.comision, numerica: true },
+  ]
+
   const columnas = [
     { accessorKey: 'fecha', header: sortableHeader('Fecha') },
     { id: 'cliente', header: sortableHeader('Cliente'),
@@ -158,7 +184,24 @@ export default function Ordenes() {
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Órdenes de carga</h1>
-        <Button onClick={() => abrir(null)}><Plus className="size-4" /> Nueva</Button>
+        <div className="flex gap-2">
+          {/* La hoja NO imprime lo que hay en pantalla: vuelve a pedir el
+              listado con los mismos filtros. La grilla muestra una pagina y
+              quien imprime un listado filtrado espera el listado. */}
+          <BotonImprimir
+            titulo="Órdenes de carga"
+            filtros={describirFiltros(filtros)}
+            columnas={COLUMNAS_IMPRESAS}
+            traer={() => traerTodo((desplazamiento, limite) =>
+              api.listar({ ...filtros, desplazamiento, limite }))}
+            totales={(filas) => [
+              { etiqueta: 'Órdenes', valor: String(filas.length) },
+              { etiqueta: 'Total', valor: sumarImportes(filas.map((o) => o.total)) },
+              { etiqueta: 'Comisión', valor: sumarImportes(filas.map((o) => o.comision)) },
+            ]}
+          />
+          <Button onClick={() => abrir(null)}><Plus className="size-4" /> Nueva</Button>
+        </div>
       </div>
 
       <FiltrosOrdenes valor={filtros} opciones={opciones} alCambiar={setFiltros} />

@@ -63,6 +63,22 @@ export function hoyEnArgentina(): string {
   }).format(new Date())
 }
 
+/** `dd-mm-aaaa HH:MM`, hora de Argentina, reloj de 24 h.
+ *
+ * El formato de la familia es de PRESENTACION: la API y la base siguen en ISO.
+ * Vive aca, al lado de `hoyEnArgentina`, para que el producto tenga un solo
+ * lugar donde se decide como se ve una fecha -- y no uno por vista.
+ */
+export function formatearFechaHora(valor: Date): string {
+  const partes = new Intl.DateTimeFormat('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(valor)
+  const d = Object.fromEntries(partes.map((p) => [p.type, p.value]))
+  return `${d.day}-${d.month}-${d.year} ${d.hour}:${d.minute}`
+}
+
 export const ORDEN_VACIA: Partial<EntradaOrden> = {
   fecha: hoyEnArgentina(),
   tarifa: '0.00',

@@ -44,6 +44,10 @@ export type Filtros = {
   estado?: string
   facturada?: boolean
   q?: string
+  /** Paginación. La grilla no la usa —muestra la primera página— pero la hoja
+   *  impresa sí: pide de a mil hasta traer el listado entero. */
+  limite?: number
+  desplazamiento?: number
 }
 
 export function consulta(filtros: Filtros): string {

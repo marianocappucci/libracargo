@@ -9,7 +9,7 @@
 import { createLayout } from 'libra-ui/Layout'
 import {
   Building2, ClipboardList, LayoutDashboard, MapPin, Package, Truck, Users,
-  UserSquare, Wallet, BookOpen, Receipt, UserCog,
+  UserSquare, Wallet, BookOpen, Receipt, UserCog, BarChart3,
 } from 'lucide-react'
 
 import { useAuth } from '@/context/AuthContext'
@@ -29,6 +29,7 @@ export const Layout = createLayout<Usuario>({
         { to: '/cuentas', label: 'Cuenta corriente', icon: BookOpen },
         { to: '/caja', label: 'Caja', icon: Wallet },
         { to: '/comprobantes', label: 'Comprobantes', icon: Receipt },
+        { to: '/reportes', label: 'Reportes', icon: BarChart3 },
       ],
     },
     {

@@ -18,6 +18,8 @@ import { NOMBRE_DE_TIPO, comprobantes, numeroDe, sumarImportes } from '@/api/com
 import type { Opcion, Opciones, Orden } from '@/api/ordenes'
 import { cargarOpciones, ordenes as apiOrdenes } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import type { Columna } from '@/components/impresion'
+import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { hoyEnArgentina } from '@/components/esquema-orden'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -221,6 +223,17 @@ export default function Comprobantes() {
     }
   }
 
+  const COLUMNAS_IMPRESAS: Columna<Comprobante>[] = [
+    { encabezado: 'Fecha', valor: (c) => c.fecha },
+    { encabezado: 'Comprobante', valor: (c) => `${NOMBRE_DE_TIPO[c.tipo]} ${numeroDe(c)}` },
+    { encabezado: 'Cliente',
+      valor: (c) => nombre(opciones?.clientes ?? [], c.cliente_id) },
+    { encabezado: 'Estado', valor: (c) => (c.anulado ? 'anulado' : 'vigente') },
+    { encabezado: 'Neto', valor: (c) => c.neto, numerica: true },
+    { encabezado: 'IVA', valor: (c) => c.iva, numerica: true },
+    { encabezado: 'Total', valor: (c) => c.total, numerica: true },
+  ]
+
   const columnas = [
     { accessorKey: 'fecha', header: sortableHeader('Fecha') },
     { id: 'comprobante', header: 'Comprobante',
@@ -251,9 +264,25 @@ export default function Comprobantes() {
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Comprobantes</h1>
-        <Button onClick={() => { setBorrador(VACIO); setElegidas([]); setError(null); setAbierto(true) }}>
-          <Plus className="size-4" /> Facturar pendientes
-        </Button>
+        <div className="flex gap-2">
+          <BotonImprimir
+            titulo="Comprobantes"
+            filtros={[desde && `desde ${desde}`, hasta && `hasta ${hasta}`,
+                      razonFiltro && 'una razón social'].filter(Boolean).join(' · ')
+                     || 'sin filtros'}
+            columnas={COLUMNAS_IMPRESAS}
+            traer={() => traerTodo(async (desplazamiento, limite) =>
+              comprobantes.listar({ desde, hasta, razon_social_id: razonFiltro,
+                                    desplazamiento, limite }))}
+            totales={(f) => [
+              { etiqueta: 'Comprobantes', valor: String(f.length) },
+              { etiqueta: 'Total', valor: sumarImportes(f.map((c) => c.total)) },
+            ]}
+          />
+          <Button onClick={() => { setBorrador(VACIO); setElegidas([]); setError(null); setAbierto(true) }}>
+            <Plus className="size-4" /> Facturar pendientes
+          </Button>
+        </div>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">

@@ -9,6 +9,9 @@ import { caja } from '@/api/cuentas'
 import type { Opciones } from '@/api/ordenes'
 import { cargarOpciones } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import type { Columna } from '@/components/impresion'
+import { BotonImprimir, traerTodo } from '@/components/impresion'
+import { sumarImportes } from '@/api/comprobantes'
 import { hoyEnArgentina } from '@/components/esquema-orden'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -113,6 +116,17 @@ export default function Caja() {
     }
   }
 
+  const COLUMNAS_IMPRESAS: Columna<MovimientoCaja>[] = [
+    { encabezado: 'Fecha', valor: (m) => m.fecha },
+    { encabezado: 'Tipo', valor: (m) => m.tipo },
+    { encabezado: 'Concepto', valor: (m) => m.concepto },
+    { encabezado: 'Tercero',
+      valor: (m) => terceros.find((t) => t.id === m.tercero_id)?.etiqueta ?? '' },
+    { encabezado: 'Medio', valor: (m) => m.medio_pago },
+    { encabezado: 'Recibo', valor: (m) => m.recibo },
+    { encabezado: 'Importe', valor: (m) => m.importe, numerica: true },
+  ]
+
   const columnas = [
     { accessorKey: 'fecha', header: sortableHeader('Fecha') },
     { id: 'tipo', header: 'Tipo', accessorFn: (m: MovimientoCaja) => m.tipo,
@@ -134,9 +148,25 @@ export default function Caja() {
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Caja</h1>
-        <Button onClick={() => { setBorrador(VACIO); setError(null); setAbierto(true) }}>
-          <Plus className="size-4" /> Nuevo movimiento
-        </Button>
+        <div className="flex gap-2">
+          <BotonImprimir
+            titulo="Movimientos de caja"
+            filtros={[desde && `desde ${desde}`, hasta && `hasta ${hasta}`,
+                      tipo && `tipo ${tipo}`].filter(Boolean).join(' · ') || 'sin filtros'}
+            columnas={COLUMNAS_IMPRESAS}
+            traer={() => traerTodo(async (desplazamiento, limite) =>
+              desplazamiento > 0 ? [] : caja.listar({ desde, hasta, tipo, limite }))}
+            totales={(f) => [
+              { etiqueta: 'Ingresos',
+                valor: sumarImportes(f.filter((m) => m.tipo === 'ingreso').map((m) => m.importe)) },
+              { etiqueta: 'Egresos',
+                valor: sumarImportes(f.filter((m) => m.tipo === 'egreso').map((m) => m.importe)) },
+            ]}
+          />
+          <Button onClick={() => { setBorrador(VACIO); setError(null); setAbierto(true) }}>
+            <Plus className="size-4" /> Nuevo movimiento
+          </Button>
+        </div>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
