@@ -17,6 +17,10 @@ from app.config import Config
 from app.routers import auth as auth_router
 from app.routers import comprobantes, cuentas, maestros, ordenes, salud
 
+# Con alias: mas abajo hay una variable local llamada usuarios con el
+# repositorio, y sin el alias el import queda pisado.
+from app.routers import usuarios as usuarios_router
+
 
 def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> FastAPI:
     db.inicializar(config)
@@ -54,4 +58,5 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     app.include_router(ordenes.router)
     app.include_router(cuentas.router)
     app.include_router(comprobantes.router)
+    app.include_router(usuarios_router.router)
     return app
