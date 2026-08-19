@@ -18,6 +18,7 @@ import { NOMBRE_DE_TIPO, comprobantes, numeroDe, sumarImportes } from '@/api/com
 import type { Opcion, Opciones, Orden } from '@/api/ordenes'
 import { cargarOpciones, ordenes as apiOrdenes } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import { Elegir } from '@/components/Elegir'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { hoyEnArgentina, formatearImporte } from '@/components/esquema-orden'
@@ -319,13 +320,9 @@ export default function Comprobantes() {
           <div className="grid gap-3 md:grid-cols-2">
             <Campo id="n-fecha" etiqueta="Fecha" tipo="date" valor={borrador.fecha}
                    alCambiar={(v) => set({ fecha: v })} />
-            <Eleccion id="n-cliente" etiqueta="Cliente" valor={borrador.cliente_id}
-                      alCambiar={(v) => { set({ cliente_id: v }); setElegidas([]) }}>
-              <option value="">Elegir…</option>
-              {(opciones?.clientes ?? []).map((c) => (
-                <option key={c.id} value={c.id}>{c.etiqueta}</option>
-              ))}
-            </Eleccion>
+            <Elegir id="n-cliente" etiqueta="Cliente" vacio="Elegir…"
+                    valor={borrador.cliente_id} opciones={opciones?.clientes ?? []}
+                    alCambiar={(v) => { set({ cliente_id: v }); setElegidas([]) }} />
             <Eleccion id="n-razon" etiqueta="Razón social" valor={borrador.razon_social_id}
                       alCambiar={(v) => set({ razon_social_id: v })}>
               <option value="">Elegir…</option>

@@ -11,6 +11,7 @@ import { cargarOpciones } from '@/api/ordenes'
 import type { FilaDeCuenta, Rol, ResumenDeCuenta } from '@/api/cuentas'
 import { cuentas } from '@/api/cuentas'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import { Elegir } from '@/components/Elegir'
 import { formatearImporte } from '@/components/esquema-orden'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir } from '@/components/impresion'
@@ -102,17 +103,10 @@ export default function CuentaCorriente() {
             {ROLES.map((r) => <option key={r.valor} value={r.valor}>{r.etiqueta}</option>)}
           </select>
         </div>
-        <div className="grid gap-1">
-          <Label htmlFor="cc-tercero">Tercero</Label>
-          <select id="cc-tercero" className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
-                  value={terceroId ?? ''}
-                  onChange={(e) => setTerceroId(e.target.value ? Number(e.target.value) : undefined)}>
-            <option value="">Elegir…</option>
-            {listaDeTerceros.map((o) => (
-              <option key={o.id} value={o.id}>{o.etiqueta}</option>
-            ))}
-          </select>
-        </div>
+        <Elegir id="cc-tercero" etiqueta="Tercero" vacio="Elegir…"
+                valor={terceroId === undefined ? '' : String(terceroId)}
+                opciones={listaDeTerceros}
+                alCambiar={(v) => setTerceroId(v ? Number(v) : undefined)} />
         <div className="grid gap-1">
           <Label htmlFor="cc-hasta">Saldo al</Label>
           <Input id="cc-hasta" type="date" value={hasta}
