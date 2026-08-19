@@ -14,12 +14,13 @@ from sqlalchemy import String, cast, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth import require_staff
+from app.auth import get_current_user, require_staff
 from app.db import obtener_sesion
-from app.models.enums import EstadoOrden
+from app.models.enums import AccionAuditoria, EstadoOrden
 from app.models.operacion import OrdenCarga
 from app.routers.maestros import traducir_integridad
 from app.schemas.ordenes import OrdenIn, OrdenOut, calcular_importes
+from app.servicios import auditoria
 
 router = APIRouter(prefix="/api/ordenes", tags=["ordenes"],
                    dependencies=[Depends(require_staff)])
@@ -104,7 +105,8 @@ def traer(id_: int, sesion: Session = Depends(obtener_sesion)):
 
 
 @router.post("", response_model=OrdenOut, status_code=201)
-def crear(datos: OrdenIn, sesion: Session = Depends(obtener_sesion)):
+def crear(datos: OrdenIn, sesion: Session = Depends(obtener_sesion),
+          actual: dict = Depends(get_current_user)):
     orden = OrdenCarga(**datos.model_dump())
     # Nace pendiente y sin comprobante: facturar es F5, y el CHECK de la base no
     # deja que una orden diga "facturada" sin uno.
@@ -113,6 +115,9 @@ def crear(datos: OrdenIn, sesion: Session = Depends(obtener_sesion)):
     _aplicar_importes(orden, datos)
     sesion.add(orden)
     try:
+        sesion.flush()
+        auditoria.registrar(sesion, actual, "orden_carga", orden.id,
+                            AccionAuditoria.ALTA, despues=orden)
         sesion.commit()
     except IntegrityError as err:
         sesion.rollback()
@@ -122,7 +127,8 @@ def crear(datos: OrdenIn, sesion: Session = Depends(obtener_sesion)):
 
 
 @router.put("/{id_}", response_model=OrdenOut)
-def editar(id_: int, datos: OrdenIn, sesion: Session = Depends(obtener_sesion)):
+def editar(id_: int, datos: OrdenIn, sesion: Session = Depends(obtener_sesion),
+           actual: dict = Depends(get_current_user)):
     orden = _traer(sesion, id_)
     if orden.estado is EstadoOrden.FACTURADA:
         # Ya salió en un comprobante: cambiarle la tarifa deja el comprobante
@@ -130,10 +136,13 @@ def editar(id_: int, datos: OrdenIn, sesion: Session = Depends(obtener_sesion)):
         raise HTTPException(409, "la orden esta facturada: no se puede modificar")
     if orden.estado is EstadoOrden.ANULADA:
         raise HTTPException(409, "la orden esta anulada: no se puede modificar")
+    antes = auditoria.instantanea(orden)
     for campo, valor in datos.model_dump().items():
         setattr(orden, campo, valor)
     _aplicar_importes(orden, datos)
     try:
+        auditoria.registrar(sesion, actual, "orden_carga", orden.id,
+                            AccionAuditoria.MODIFICACION, antes=antes, despues=orden)
         sesion.commit()
     except IntegrityError as err:
         sesion.rollback()
@@ -143,7 +152,8 @@ def editar(id_: int, datos: OrdenIn, sesion: Session = Depends(obtener_sesion)):
 
 
 @router.delete("/{id_}", response_model=OrdenOut)
-def anular(id_: int, sesion: Session = Depends(obtener_sesion)):
+def anular(id_: int, sesion: Session = Depends(obtener_sesion),
+           actual: dict = Depends(get_current_user)):
     """Anular, no borrar.
 
     La orden es la contrapartida de los movimientos de cuenta del cliente y del
@@ -155,7 +165,10 @@ def anular(id_: int, sesion: Session = Depends(obtener_sesion)):
         raise HTTPException(
             409, "la orden esta facturada: primero hay que anular el comprobante"
         )
+    antes = auditoria.instantanea(orden)
     orden.estado = EstadoOrden.ANULADA
+    auditoria.registrar(sesion, actual, "orden_carga", orden.id,
+                        AccionAuditoria.BAJA, antes=antes, despues=orden)
     sesion.commit()
     sesion.refresh(orden)
     return orden

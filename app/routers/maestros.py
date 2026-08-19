@@ -18,8 +18,9 @@ from sqlalchemy import String, cast, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth import require_staff
+from app.auth import get_current_user, require_staff
 from app.db import obtener_sesion
+from app.models.enums import AccionAuditoria
 from app.models.maestros import Chofer, Localidad, RazonSocial, Tercero, TipoCarga, Vehiculo
 from app.schemas.maestros import (
     ChoferIn,
@@ -35,6 +36,7 @@ from app.schemas.maestros import (
     VehiculoIn,
     VehiculoOut,
 )
+from app.servicios import auditoria
 
 
 def _a_salida(obj, salida, campo_activo: str):
@@ -105,11 +107,17 @@ def construir_router(
         return _a_salida(_traer(sesion, id_), salida, campo_activo)
 
     @router.post("", response_model=salida, status_code=201)
-    def crear(datos: entrada, sesion: Session = Depends(obtener_sesion)):
+    def crear(datos: entrada, sesion: Session = Depends(obtener_sesion),
+              actual: dict = Depends(get_current_user)):
         obj = modelo(**datos.model_dump(exclude={"activo"}))
         setattr(obj, campo_activo, datos.activo)
         sesion.add(obj)
         try:
+            # `flush` antes del asiento: sin id, la auditoría no puede decir a
+            # qué fila se refiere.
+            sesion.flush()
+            auditoria.registrar(sesion, actual, prefijo, obj.id,
+                                AccionAuditoria.ALTA, despues=obj)
             sesion.commit()
         except IntegrityError as err:
             sesion.rollback()
@@ -118,12 +126,16 @@ def construir_router(
         return _a_salida(obj, salida, campo_activo)
 
     @router.put("/{id_}", response_model=salida)
-    def editar(id_: int, datos: entrada, sesion: Session = Depends(obtener_sesion)):
+    def editar(id_: int, datos: entrada, sesion: Session = Depends(obtener_sesion),
+               actual: dict = Depends(get_current_user)):
         obj = _traer(sesion, id_)
+        antes = auditoria.instantanea(obj)
         for campo, valor in datos.model_dump(exclude={"activo"}).items():
             setattr(obj, campo, valor)
         setattr(obj, campo_activo, datos.activo)
         try:
+            auditoria.registrar(sesion, actual, prefijo, obj.id,
+                                AccionAuditoria.MODIFICACION, antes=antes, despues=obj)
             sesion.commit()
         except IntegrityError as err:
             sesion.rollback()
@@ -132,7 +144,8 @@ def construir_router(
         return _a_salida(obj, salida, campo_activo)
 
     @router.delete("/{id_}", response_model=salida)
-    def dar_de_baja(id_: int, sesion: Session = Depends(obtener_sesion)):
+    def dar_de_baja(id_: int, sesion: Session = Depends(obtener_sesion),
+                    actual: dict = Depends(get_current_user)):
         """Baja **lógica**, siempre.
 
         Un tercero borrado de verdad se lleva puesto el historial: las órdenes y
@@ -142,7 +155,10 @@ def construir_router(
         peores que una fila inactiva.
         """
         obj = _traer(sesion, id_)
+        antes = auditoria.instantanea(obj)
         setattr(obj, campo_activo, False)
+        auditoria.registrar(sesion, actual, prefijo, obj.id,
+                            AccionAuditoria.BAJA, antes=antes, despues=obj)
         sesion.commit()
         sesion.refresh(obj)
         return _a_salida(obj, salida, campo_activo)

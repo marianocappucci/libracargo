@@ -9,7 +9,7 @@
 import { createLayout } from 'libra-ui/Layout'
 import {
   Building2, ClipboardList, LayoutDashboard, MapPin, Package, Truck, Users,
-  UserSquare, Wallet, BookOpen, Receipt, UserCog, BarChart3,
+  UserSquare, Wallet, BookOpen, Receipt, UserCog, BarChart3, ScrollText,
 } from 'lucide-react'
 
 import { useAuth } from '@/context/AuthContext'
@@ -50,6 +50,9 @@ export const Layout = createLayout<Usuario>({
         // operador el link le daria 403. Un menu que ofrece lo que no se puede
         // usar es peor que no ofrecerlo.
         { to: '/usuarios', label: 'Usuarios', icon: UserCog, adminOnly: true },
+        // Junto a Usuarios: se mira para responder "quién hizo esto", que es
+        // una pregunta de administración y no de operación.
+        { to: '/logs', label: 'Log de actividad', icon: ScrollText, adminOnly: true },
       ],
     },
   ],
