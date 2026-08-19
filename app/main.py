@@ -14,8 +14,16 @@ from libraauth.models import Base as AuthBase
 from app import db
 from app.auth import UserRepository, construir_session_auth
 from app.config import Config
+from app.routers import (
+    auditoria,
+    comprobantes,
+    cuentas,
+    maestros,
+    ordenes,
+    reportes,
+    salud,
+)
 from app.routers import auth as auth_router
-from app.routers import comprobantes, cuentas, maestros, ordenes, reportes, salud
 
 # Con alias: mas abajo hay una variable local llamada usuarios con el
 # repositorio, y sin el alias el import queda pisado.
@@ -60,4 +68,5 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     app.include_router(comprobantes.router)
     app.include_router(usuarios_router.router)
     app.include_router(reportes.router)
+    app.include_router(auditoria.router)
     return app

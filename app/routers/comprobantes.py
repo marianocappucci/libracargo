@@ -14,10 +14,15 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth import require_staff
+from app.auth import get_current_user, require_staff
 from app.db import obtener_sesion
 from app.models.cuentas import MovimientoCuenta
-from app.models.enums import EstadoOrden, RolCuenta, TipoComprobante
+from app.models.enums import (
+    AccionAuditoria,
+    EstadoOrden,
+    RolCuenta,
+    TipoComprobante,
+)
 from app.models.maestros import RazonSocial, Tercero
 from app.models.operacion import Comprobante, OrdenCarga
 from app.routers.maestros import traducir_integridad
@@ -28,6 +33,7 @@ from app.schemas.comprobantes import (
     FacturarIn,
     TotalDeRazonSocial,
 )
+from app.servicios import auditoria
 from app.servicios.comprobantes import etiqueta, sumar_ordenes, totales_por_razon_social
 
 router = APIRouter(prefix="/api/comprobantes", tags=["comprobantes"],
@@ -119,7 +125,8 @@ def traer(id_: int, sesion: Session = Depends(obtener_sesion)):
 
 
 @router.post("", response_model=ComprobanteOut, status_code=201)
-def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion)):
+def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
+             actual: dict = Depends(get_current_user)):
     """Agrupa órdenes pendientes en un comprobante, en una sola transacción.
 
     El número lo tipea una persona: el sistema **registra**, no emite. La
@@ -197,6 +204,8 @@ def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion)):
             descripcion="Ordenes " + ", ".join(str(o.id) for o in ordenes),
             debe=suma.total, haber=0, comprobante_id=comprobante.id,
         ))
+        auditoria.registrar(sesion, actual, "comprobante", comprobante.id,
+                            AccionAuditoria.ALTA, despues=comprobante)
         sesion.commit()
     except IntegrityError as err:
         sesion.rollback()
@@ -206,7 +215,8 @@ def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion)):
 
 
 @router.delete("/{id_}", response_model=ComprobanteOut)
-def anular(id_: int, sesion: Session = Depends(obtener_sesion)):
+def anular(id_: int, sesion: Session = Depends(obtener_sesion),
+           actual: dict = Depends(get_current_user)):
     """Anular, no borrar: las órdenes vuelven a pendientes y la cuenta se revierte.
 
     La reversión es **un movimiento nuevo**, no el borrado del original: la
@@ -222,6 +232,7 @@ def anular(id_: int, sesion: Session = Depends(obtener_sesion)):
     if comprobante.anulado:
         raise HTTPException(409, f"el comprobante {id_} ya esta anulado")
 
+    antes = auditoria.instantanea(comprobante)
     ordenes = _ordenes_de(sesion, id_)
     for orden in ordenes:
         orden.comprobante_id = None
@@ -235,6 +246,8 @@ def anular(id_: int, sesion: Session = Depends(obtener_sesion)):
         descripcion="Ordenes " + ", ".join(str(o.id) for o in ordenes),
         debe=0, haber=comprobante.total, comprobante_id=comprobante.id,
     ))
+    auditoria.registrar(sesion, actual, "comprobante", comprobante.id,
+                        AccionAuditoria.BAJA, antes=antes, despues=comprobante)
     try:
         sesion.commit()
     except IntegrityError as err:

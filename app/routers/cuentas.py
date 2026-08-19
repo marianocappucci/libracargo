@@ -13,10 +13,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth import require_staff
+from app.auth import get_current_user, require_staff
 from app.db import obtener_sesion
 from app.models.cuentas import MovimientoCaja, MovimientoCuenta
-from app.models.enums import RolCuenta, TipoMovimientoCaja
+from app.models.enums import AccionAuditoria, RolCuenta, TipoMovimientoCaja
 from app.routers.maestros import traducir_integridad
 from app.schemas.cuentas import (
     FilaDeCuenta,
@@ -24,6 +24,7 @@ from app.schemas.cuentas import (
     MovimientoCajaOut,
     ResumenDeCuenta,
 )
+from app.servicios import auditoria
 from app.servicios.cuentas import movimientos_con_saldo, saldo, saldo_recorriendo
 
 router = APIRouter(prefix="/api", tags=["cuentas"], dependencies=[Depends(require_staff)])
@@ -77,7 +78,8 @@ def listar_caja(
 
 
 @router.post("/caja", response_model=MovimientoCajaOut, status_code=201)
-def registrar_caja(datos: MovimientoCajaIn, sesion: Session = Depends(obtener_sesion)):
+def registrar_caja(datos: MovimientoCajaIn, sesion: Session = Depends(obtener_sesion),
+                   actual: dict = Depends(get_current_user)):
     """Registra el movimiento y su contrapartida, o no registra ninguno.
 
     La contrapartida sólo existe si hay tercero: un gasto general de la agencia
@@ -116,6 +118,8 @@ def registrar_caja(datos: MovimientoCajaIn, sesion: Session = Depends(obtener_se
                 haber=datos.importe if es_ingreso else 0,
                 movimiento_caja_id=movimiento.id,
             ))
+        auditoria.registrar(sesion, actual, "movimiento_caja", movimiento.id,
+                            AccionAuditoria.ALTA, despues=movimiento)
         sesion.commit()
     except IntegrityError as err:
         sesion.rollback()
