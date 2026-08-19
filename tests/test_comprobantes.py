@@ -396,3 +396,35 @@ def test_el_iva_del_comprobante_es_la_suma_del_de_cada_orden(cliente, datos):
     assert Decimal(comp["total"]) == Decimal("24.28")
     # Y el gate no marca alarma: los dos lados suman lo mismo por construccion.
     assert cliente.get(f"/api/comprobantes/{comp['id']}").json()["coinciden"] is True
+
+
+def test_una_orden_migrada_con_origen_igual_a_destino_se_puede_leer(cliente, datos, sesion):
+    """🔴 La regla de entrada no puede rechazar lo que **ya está guardado**.
+
+    `OrdenOut` heredaba de `OrdenIn`, y con la herencia se llevaba su validador.
+    Sobre los datos de Suitrans —33 órdenes que salen y llegan a la misma
+    localidad, legítimas y admitidas por el `CHECK` desde ADR-015— el listado
+    devolvía **500**, y sólo con un límite chico parecía andar, porque esas filas
+    no entraban en la página.
+
+    La fila se inserta por SQL con `origen_legado`, que es exactamente como
+    entra por la migración; la API no la deja crear, y eso lo prueba el control
+    de abajo.
+    """
+    a = orden(cliente, datos, "1000.00")
+    sesion.execute(text(
+        "UPDATE ordenes_carga SET destino_id = origen_id, origen_legado = 'carga:99' "
+        "WHERE id = :id"), {"id": a["id"]})
+    sesion.commit()
+
+    listado = cliente.get("/api/ordenes")
+    assert listado.status_code == 200, listado.text[:300]
+    assert [o["id"] for o in listado.json()] == [a["id"]]
+    assert cliente.get(f"/api/ordenes/{a['id']}").status_code == 200
+
+    # Control: por la API sigue sin poder crearse una así.
+    rechazada = cliente.post("/api/ordenes", json={
+        "fecha": "2026-08-10", "cliente_id": datos["cliente"],
+        "origen_id": datos["origen"], "destino_id": datos["origen"], "tarifa": "100.00"})
+    assert rechazada.status_code == 422
+    assert "origen y el destino" in rechazada.text
