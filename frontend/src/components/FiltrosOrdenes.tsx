@@ -1,5 +1,7 @@
 /** La barra de filtros. Es la razon de ser de F3: en el legado cada
  *  combinacion era una pantalla distinta, copiada de la anterior. */
+import { SelectBuscable } from 'libra-ui/SelectBuscable'
+
 import type { Filtros, Opciones } from '@/api/ordenes'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,17 +20,24 @@ function Select({ id, etiqueta, valor, opciones, alCambiar }: {
   opciones: { id: number; etiqueta: string }[]
   alCambiar: (v: number | undefined) => void
 }) {
+  // 🔑 Con buscador y no `<select>` nativo: hay 186 fleteros, 195 choferes y
+  // 121 localidades, y el desplegable del navegador no filtra — encontrar uno
+  // es recorrer la lista a ojo. Los filtros de tres valores fijos (estado,
+  // facturación) siguen siendo `<select>`: ahí un buscador es ruido.
   return (
-    <div className="grid gap-1">
+    <div className="grid min-w-0 gap-1">
       <Label htmlFor={id}>{etiqueta}</Label>
-      <select
-        id={id} className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
-        value={valor ?? ''}
-        onChange={(e) => alCambiar(e.target.value === '' ? undefined : Number(e.target.value))}
-      >
-        <option value="">Todos</option>
-        {opciones.map((o) => <option key={o.id} value={o.id}>{o.etiqueta}</option>)}
-      </select>
+      <SelectBuscable
+        id={id}
+        value={valor === undefined ? '' : String(valor)}
+        onChange={(v) => alCambiar(v === '' ? undefined : Number(v))}
+        opciones={[{ value: '', label: 'Todos' },
+                   ...opciones.map((o) => ({ value: String(o.id), label: o.etiqueta }))]}
+        placeholder="Todos"
+        emptyMessage="No hay ninguno con ese nombre."
+        ariaLabel={etiqueta}
+        className="w-full min-w-0"
+      />
     </div>
   )
 }

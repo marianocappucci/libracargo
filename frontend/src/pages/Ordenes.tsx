@@ -1,14 +1,17 @@
 /** El listado de órdenes: una pantalla con filtros, no once pantallas. */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
-import { Ban, Pencil, Plus } from 'lucide-react'
+import { SelectBuscable } from 'libra-ui/SelectBuscable'
+import { Ban, Eye, Pencil, Plus, Printer } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { UseFormReturn } from 'react-hook-form'
 import { useForm } from 'react-hook-form'
 
 import type { Filtros, Opciones, Orden } from '@/api/ordenes'
 import { cargarOpciones, ordenes as api } from '@/api/ordenes'
+import { useConfiguracion } from '@/api/configuracion'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import { OrdenImpresa } from '@/components/OrdenImpresa'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { sumarImportes } from '@/api/comprobantes'
@@ -60,14 +63,26 @@ function Elegir({ form, nombre, etiqueta, opciones, opcional }: {
   opcional?: boolean
 }) {
   const error = form.formState.errors[nombre]
+  // 🔑 Con buscador: cargar una orden es elegir entre 75 clientes, 186 fleteros
+  // y 121 localidades, y el desplegable nativo obliga a encontrarlos a ojo.
+  // `watch`/`setValue` en vez de `register` porque el control no es un `<input>`
+  // y react-hook-form no puede engancharse solo.
+  const valor = form.watch(nombre)
   return (
-    <div className="grid gap-1">
+    <div className="grid min-w-0 gap-1">
       <Label htmlFor={nombre}>{etiqueta}</Label>
-      <select id={nombre} className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
-              {...form.register(nombre)}>
-        <option value="">{opcional ? 'Sin asignar' : 'Elegir…'}</option>
-        {opciones.map((o) => <option key={o.id} value={o.id}>{o.etiqueta}</option>)}
-      </select>
+      <SelectBuscable
+        id={nombre}
+        value={valor === undefined || valor === null ? '' : String(valor)}
+        onChange={(v) => form.setValue(nombre, v as never, { shouldValidate: true })}
+        opciones={[{ value: '', label: opcional ? 'Sin asignar' : 'Elegir…' },
+                   ...opciones.map((o) => ({ value: String(o.id), label: o.etiqueta }))]}
+        placeholder={opcional ? 'Sin asignar' : 'Elegir…'}
+        emptyMessage="No hay ninguno con ese nombre."
+        ariaLabel={etiqueta}
+        className="w-full min-w-0"
+        aria-invalid={error ? true : undefined}
+      />
       {error && <p className="text-destructive text-xs">{String(error.message)}</p>}
     </div>
   )
@@ -77,6 +92,12 @@ export default function Ordenes() {
   const [filas, setFilas] = useState<Orden[]>([])
   const [opciones, setOpciones] = useState<Opciones | null>(null)
   const [filtros, setFiltros] = useState<Filtros>({})
+  const [detalle, setDetalle] = useState<Orden | null>(null)
+  // La orden que se esta por imprimir. Se monta la hoja, se espera un
+  // cuadro para que este en el DOM, y recien ahi se abre el dialogo del
+  // navegador: `print()` fotografia lo que hay.
+  const [aImprimir, setAImprimir] = useState<Orden | null>(null)
+  const empresa = useConfiguracion()
   const [cargando, setCargando] = useState(true)
   const [abierto, setAbierto] = useState(false)
   const [editando, setEditando] = useState<Orden | null>(null)
@@ -148,6 +169,14 @@ export default function Ordenes() {
     { encabezado: 'Comisión', valor: (o: Orden) => o.comision, numerica: true, moneda: true },
   ]
 
+  function imprimir(orden: Orden) {
+    setAImprimir(orden)
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      window.print()
+      setAImprimir(null)
+    }))
+  }
+
   const columnas = [
     { accessorKey: 'fecha', header: sortableHeader('Fecha') },
     { id: 'cliente', header: sortableHeader('Cliente'),
@@ -169,6 +198,14 @@ export default function Ordenes() {
     { id: 'acciones', header: '',
       cell: ({ row }: { row: { original: Orden } }) => (
         <div className="flex justify-end gap-1">
+          <Button variant="ghost" size="icon" aria-label="Ver detalle"
+                  onClick={() => setDetalle(row.original)}>
+            <Eye className="size-4" />
+          </Button>
+          <Button variant="ghost" size="icon" aria-label="Imprimir orden"
+                  onClick={() => imprimir(row.original)}>
+            <Printer className="size-4" />
+          </Button>
           <Button variant="ghost" size="icon" aria-label="Editar"
                   onClick={() => abrir(row.original)}>
             <Pencil className="size-4" />
@@ -264,6 +301,73 @@ export default function Ordenes() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* El detalle: click en "ver" y toda la orden en una ficha. Hasta ahora
+          la unica forma de ver los campos que no entran en la grilla era abrir
+          el formulario de edicion, que es otra cosa: ahi se toca. */}
+      <Dialog open={detalle != null} onOpenChange={(v) => { if (!v) setDetalle(null) }}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {detalle && `Orden Nº ${String(detalle.id).padStart(8, '0')}`}
+            </DialogTitle>
+          </DialogHeader>
+          {detalle && (
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              {([
+                ['Fecha', detalle.fecha],
+                ['Estado', detalle.estado],
+                ['Cliente', nombreDe(opciones?.clientes, detalle.cliente_id)],
+                ['Remito', detalle.remito ?? '—'],
+                ['Origen', nombreDe(opciones?.localidades, detalle.origen_id)],
+                ['Destino', nombreDe(opciones?.localidades, detalle.destino_id)],
+                ['Fletero', nombreDe(opciones?.fleteros, detalle.fletero_id) || '—'],
+                ['Chofer', nombreDe(opciones?.choferes, detalle.chofer_id) || '—'],
+                ['Vehículo', nombreDe(opciones?.vehiculos, detalle.vehiculo_id) || '—'],
+                ['Tipo de carga', nombreDe(opciones?.tipos, detalle.tipo_carga_id) || '—'],
+                ['Cantidad',
+                 [detalle.cantidad, detalle.unidad].filter(Boolean).join(' ')
+                   || detalle.cantidad_legado || '—'],
+                ['Tarifa', formatearImporte(detalle.tarifa)],
+                [`IVA (${detalle.alicuota_iva}%)`, formatearImporte(detalle.iva)],
+                ['Total', formatearImporte(detalle.total)],
+                ['Comisión', formatearImporte(detalle.comision)],
+                ['Comprobante', detalle.comprobante_id ? `#${detalle.comprobante_id}` : '—'],
+              ] as [string, string][]).map(([etiqueta, valor]) => (
+                <div key={etiqueta}>
+                  <p className="text-muted-foreground text-xs">{etiqueta}</p>
+                  <p className="font-medium">{valor}</p>
+                </div>
+              ))}
+              {detalle.observaciones && (
+                <div className="col-span-2">
+                  <p className="text-muted-foreground text-xs">Observaciones</p>
+                  <p>{detalle.observaciones}</p>
+                </div>
+              )}
+              {detalle.origen_legado && (
+                <div className="col-span-2">
+                  <p className="text-muted-foreground text-xs">
+                    Viene del sistema anterior: {detalle.origen_legado}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            {detalle && (
+              <Button variant="outline" onClick={() => imprimir(detalle)}>
+                <Printer className="size-4" /> Imprimir orden
+              </Button>
+            )}
+            <Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {aImprimir && (
+        <OrdenImpresa orden={aImprimir} opciones={opciones} empresa={empresa} />
+      )}
     </div>
   )
 }

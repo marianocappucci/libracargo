@@ -8,9 +8,8 @@
 // distinguir y hay que leer el texto igual.
 import { createLayout } from 'libra-ui/Layout'
 import {
-  Building2, ClipboardList, LayoutDashboard, MapPin, Package, Truck, Users,
-  UserSquare, Wallet, BookOpen, Receipt, UserCog, BarChart3, ScrollText,
-  Settings,
+  BarChart3, BookOpen, ClipboardList, LayoutDashboard, Receipt, ScrollText,
+  Settings, UserCog, Wallet,
 } from 'lucide-react'
 
 import { useConfiguracion } from '@/api/configuracion'
@@ -52,18 +51,12 @@ export const Layout = createLayout<Usuario>({
       ],
     },
     {
-      // Los maestros son configuracion: se cargan una vez y despues se los
-      // toca poco. Tenerlos como seccion propia les daba el mismo peso en el
-      // menu que las pantallas de todos los dias.
-      label: 'Configuración',
+      // Una sola entrada, como en Contalibra: la rueda en la barra y las
+      // opciones en pestañas del otro lado. Los maestros y los datos de la
+      // empresa se cargan una vez y despues se los toca poco; como siete items
+      // de menu tenian el mismo peso que las pantallas de todos los dias.
       items: [
-        { to: '/configuracion', label: 'Datos de la empresa', icon: Settings },
-        { to: '/terceros', label: 'Terceros', icon: Users },
-        { to: '/choferes', label: 'Choferes', icon: UserSquare },
-        { to: '/vehiculos', label: 'Vehículos', icon: Truck },
-        { to: '/localidades', label: 'Localidades', icon: MapPin },
-        { to: '/tipos-carga', label: 'Tipos de carga', icon: Package },
-        { to: '/razones-sociales', label: 'Razones sociales', icon: Building2 },
+        { to: '/configuracion', label: 'Configuración', icon: Settings },
       ],
     },
     {
