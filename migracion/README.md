@@ -12,9 +12,9 @@ de saber si la migración salió bien o sólo salió sin errores.
 | 1. Extraer | `01-extraer.sh` en la cuenta cPanel | El dump termina con la marca `Dump completed` | ✅ corrido el 2026-08-18 |
 | 2. Cargar | `cargar.py` — dump → staging, todo `TEXT` | Conteos iguales al origen y sin doble encoding | ✅ |
 | 3. Perfilar | `perfilar.py` — mide, no arregla | El informe, leído por una persona | ✅ |
-| 4. Decidir | Cada caso raro del informe, uno por uno | Escrito en `DECISIONS.md` | ✅ ADR-009 a ADR-014 |
-| 5. Transformar y cargar | staging → schema de LibraCargo | Sin huérfanos, secuencias al día | ▶ siguiente |
-| 6. Verificar | Saldo viejo contra saldo nuevo, por tercero | **El reporte de diferencias, validado por el cliente** | ⏳ |
+| 4. Decidir | Cada caso raro del informe, uno por uno | Escrito en `DECISIONS.md` | ✅ ADR-009 a ADR-015 |
+| 5. Transformar y cargar | staging → schema de LibraCargo | Sin huérfanos, secuencias al día | ✅ **corrida sobre los datos reales** |
+| 6. Verificar | Saldo viejo contra saldo nuevo, por tercero | **El reporte de diferencias, validado por el cliente** | ✅ generado — ⏳ falta la validación |
 
 ## 1. Extraer
 

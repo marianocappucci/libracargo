@@ -221,3 +221,31 @@ reemplazadas.
 - Alternativas descartadas: interpretar `832.23 x 6988.46` como un producto o
   `27.73 (28)` como 28. Es adivinar sobre plata ajena. Y "completar" el texto
   truncado: el final de la cadena no está en ningún lado.
+
+## ADR-015 — Las restricciones de forma valen para lo que se carga de ahora en adelante
+
+- Estado: aceptada
+- Fecha: 2026-08-19
+- Contexto: al escribir la transformación aparecieron **42 filas que los `CHECK`
+  rechazan**, y que el perfilado no había levantado porque medía el legado y no
+  las restricciones del modelo nuevo: **33 órdenes con origen = destino** —viajes
+  dentro de la misma localidad, repartidos en 6 localidades y 3 años—, **36
+  asientos de cuenta con debe y haber en cero**, y **6 movimientos de caja con
+  importe cero** que tienen descripción real ("echeq 5948941", "recibí
+  $7.000.000") y a los que nadie les cargó el importe.
+- Decisión: los tres `CHECK` pasan a condicionarse a `origen_legado IS NULL`
+  (migración `0003`). Rigen para **todo lo que se carga desde el sistema nuevo** y
+  no para el histórico migrado, que entra completo y marcado.
+- Consecuencias: el conteo por tabla cierra contra el legado —que es el gate del
+  paso 5— y ninguna fila se pierde. Un alta nueva sigue sin poder salir y llegar
+  al mismo lugar, ni asentar un movimiento que no mueve plata. El `downgrade` de
+  la migración **falla a propósito** si hay histórico cargado: reponer la regla
+  estricta con esas filas adentro dejaría la base violando su propia restricción.
+- El criterio general, que es lo que hay que recordar: se **adapta la forma**
+  cuando la adaptación no cambia el significado —invertir el signo de un asiento,
+  ADR-009— y se **relaja la regla** cuando adaptarla exigiría inventar un dato que
+  no está en ningún lado. Nunca al revés.
+- Alternativas descartadas: **no migrar las 42 filas** —el saldo no cambiaría,
+  porque suman cero, pero se perderían 42 registros con su descripción y el
+  conteo dejaría de cuadrar— y **relajar los `CHECK` para todos**, que le regala
+  al sistema nuevo, para siempre, dos de las cosas que vino a impedir.

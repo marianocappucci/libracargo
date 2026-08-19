@@ -21,7 +21,8 @@ INSERT INTO clientes VALUES
 -- Fleteros: sin patología, son el control del bloque de maestros.
 INSERT INTO fleteros VALUES
  (1,'Transportes Aguirre','Ruta 5 km 100',6600,'Mercedes','','','','','MT','20-24567890-1','',''),
- (2,'Cargas del Sur','Alsina 900',8000,'Bahía Blanca','','','','','RI','20-11223344-5','','');
+ (2,'Cargas del Sur','Alsina 900',8000,'Bahía Blanca','','','','','RI','20-11223344-5','',''),
+ (3,'OFICINA','',0,'','','','','','RI','','','');
 
 INSERT INTO proveedores VALUES
  (1,'Gomería Central','Mitre 30',6600,'Mercedes','','','','','RI','30-55667788-9','','');
@@ -55,7 +56,9 @@ INSERT INTO facturas VALUES ('2026-08-10',1,'A',1041,845000.00,177450.00,1022450
 INSERT INTO clientectacte VALUES
  (1,1,'2026-08-03',1041,1,'FACTURA A 0001-1041','Venta',1022450.00,0.00,NULL),
  (2,NULL,'2026-08-14',NULL,1,'AJUSTE','Ajuste de saldo',5000.00,5000.00,NULL),
- (3,NULL,'2026-08-15',NULL,2,'COBRO','SUIPACHA - BUENOS AIRES - 30000 - CEREAL - 0001-00012345',0.00,300000.00,1);
+ (3,NULL,'2026-08-15',NULL,2,'COBRO','SUIPACHA - BUENOS AIRES - 30000 - CEREAL - 0001-00012345',0.00,300000.00,1),
+ (4,NULL,'2026-08-16',NULL,1,'AJUSTE','Ajuste con el signo al reves',0.00,-5000.00,NULL),
+ (5,NULL,'0000-00-00',NULL,1,'COBRO','Fecha en cero, con contrapartida',1000.00,0.00,1);
 
 -- Cuenta corriente de fleteros: la fila 1 tiene el tipo_mov cortado en 50.
 INSERT INTO fleteroctacte VALUES

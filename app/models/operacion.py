@@ -141,7 +141,14 @@ class OrdenCarga(Base, Auditable, Anotable):
     comprobante: Mapped[Comprobante | None] = relationship("Comprobante", lazy="raise")
 
     __table_args__ = (
-        CheckConstraint("origen_id <> destino_id", name="ck_ordenes_origen_distinto_destino"),
+        # El escape por `origen_legado` es para el histórico migrado: hay 33
+        # órdenes del legado que salen y llegan a la misma localidad, y son
+        # viajes reales. La regla sigue rigiendo para toda alta nueva. Ver
+        # ADR-015 y la migración 0003.
+        CheckConstraint(
+            "origen_id <> destino_id OR origen_legado IS NOT NULL",
+            name="ck_ordenes_origen_distinto_destino",
+        ),
         CheckConstraint("tarifa >= 0 AND total >= 0", name="ck_ordenes_importes_no_negativos"),
         CheckConstraint(
             "alicuota_iva >= 0 AND alicuota_iva <= 100", name="ck_ordenes_alicuota"
