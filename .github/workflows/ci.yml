@@ -53,7 +53,10 @@ jobs:
       # La suite corre contra PostgreSQL real. Nunca contra SQLite: una suite
       # verde sobre SQLite no dice nada del motor de producción.
       - name: Tests
-        run: pytest -q --cov=app --cov-report=term-missing
+        # La opcion -rs lista los tests SALTEADOS con su motivo. Sin eso, un modulo que
+        # se saltea entero --por una dependencia que falta en el runner-- deja
+        # el job igual de verde que uno que corrio todo.
+        run: pytest -q -rs --cov=app --cov-report=term-missing
 
   frontend:
     runs-on: ubuntu-latest

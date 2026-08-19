@@ -30,8 +30,18 @@ RAIZ = Path(__file__).resolve().parent.parent
 SCHEMA_LEGADO = RAIZ / "migracion" / "legado-schema.sql"
 DATOS_SINTETICOS = Path(__file__).with_name("legado_sintetico.sql")
 
+_SIN_DOCKER = shutil.which("docker") is None
+
+# 🔴 En el CI estos tests NO se saltean: fallan. Un skip silencioso deja el job
+# en verde habiendo probado nada, que es exactamente lo que el job existe para
+# impedir. Afuera del CI el skip es legítimo --no todas las máquinas tienen
+# Docker-- y sale con su motivo, no en silencio.
+if _SIN_DOCKER and os.environ.get("CI"):
+    raise RuntimeError(
+        "el CI corre sin Docker: los tests de la migracion no se pueden saltear aca")
+
 pytestmark = pytest.mark.skipif(
-    shutil.which("docker") is None,
+    _SIN_DOCKER,
     reason="hace falta Docker: el dump de prueba se arma con un MariaDB real",
 )
 
