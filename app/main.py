@@ -17,6 +17,7 @@ from app.config import Config
 from app.routers import (
     auditoria,
     comprobantes,
+    configuracion,
     cuentas,
     maestros,
     ordenes,
@@ -69,4 +70,5 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     app.include_router(usuarios_router.router)
     app.include_router(reportes.router)
     app.include_router(auditoria.router)
+    app.include_router(configuracion.router)
     return app

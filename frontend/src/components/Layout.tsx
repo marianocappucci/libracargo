@@ -10,11 +10,30 @@ import { createLayout } from 'libra-ui/Layout'
 import {
   Building2, ClipboardList, LayoutDashboard, MapPin, Package, Truck, Users,
   UserSquare, Wallet, BookOpen, Receipt, UserCog, BarChart3, ScrollText,
+  Settings,
 } from 'lucide-react'
 
+import { useConfiguracion } from '@/api/configuracion'
 import { useAuth } from '@/context/AuthContext'
 
-type Usuario = { role?: string; name?: string }
+type Usuario = { role?: string; name?: string; empresa?: string }
+
+/** La sesion, mas el nombre de la empresa.
+ *
+ * `createLayout` recibe un `useAuth` y le pide el usuario: agregandole ahi la
+ * empresa, el encabezado se actualiza solo cuando la configuracion carga o
+ * cambia, sin que el Layout tenga que saber de donde salio.
+ */
+function useAuthConEmpresa() {
+  const sesion = useAuth() as { user: Usuario | null; logout: () => Promise<void> }
+  const empresa = useConfiguracion()
+  return {
+    ...sesion,
+    user: sesion.user
+      ? { ...sesion.user, empresa: empresa.nombre_fantasia || empresa.razon_social }
+      : null,
+  }
+}
 
 export const Layout = createLayout<Usuario>({
   productName: 'LibraCargo',
@@ -33,8 +52,12 @@ export const Layout = createLayout<Usuario>({
       ],
     },
     {
-      label: 'Maestros',
+      // Los maestros son configuracion: se cargan una vez y despues se los
+      // toca poco. Tenerlos como seccion propia les daba el mismo peso en el
+      // menu que las pantallas de todos los dias.
+      label: 'Configuración',
       items: [
+        { to: '/configuracion', label: 'Datos de la empresa', icon: Settings },
         { to: '/terceros', label: 'Terceros', icon: Users },
         { to: '/choferes', label: 'Choferes', icon: UserSquare },
         { to: '/vehiculos', label: 'Vehículos', icon: Truck },
@@ -57,7 +80,11 @@ export const Layout = createLayout<Usuario>({
     },
   ],
   getUserName: (u) => u.name ?? '',
-  useAuth,
+  // El nombre de la empresa, debajo del producto. `libra-ui` lo dibuja con
+  // `getUserSubtitle`; en el resto de la familia viene en el usuario, y acá sale
+  // de la configuracion de la instancia — que es donde el cliente la edita.
+  getUserSubtitle: (u) => u.empresa || undefined,
+  useAuth: useAuthConEmpresa,
 })
 
 export default Layout

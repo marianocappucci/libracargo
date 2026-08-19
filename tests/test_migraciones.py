@@ -25,17 +25,31 @@ def _url_con_base(url: str, base: str) -> str:
     return urlunsplit(partes._replace(path=f"/{base}"))
 
 
+def _soltar(con) -> None:
+    """Cierra las sesiones que hayan quedado abiertas y tira la base.
+
+    🔴 Sin esto, **un test que falla rompe a los que siguen**: PostgreSQL no deja
+    borrar una base con una sesion viva, y la conexion del test que se cayo sigue
+    ahi. El resultado es un fallo real seguido de tres errores de arrastre, y el
+    que mira el resumen no sabe cual fue el que importo.
+    """
+    con.execute(text(
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+        f"WHERE datname = '{BASE_SCRATCH}' AND pid <> pg_backend_pid()"))
+    con.execute(text(f"DROP DATABASE IF EXISTS {BASE_SCRATCH}"))
+
+
 @pytest.fixture
 def base_limpia():
     """Una base descartable, aparte de la de la suite."""
     admin = create_engine(_url_con_base(BASE_URL, "postgres"), isolation_level="AUTOCOMMIT")
     with admin.connect() as con:
-        con.execute(text(f"DROP DATABASE IF EXISTS {BASE_SCRATCH}"))
+        _soltar(con)
         con.execute(text(f"CREATE DATABASE {BASE_SCRATCH}"))
     url = _url_con_base(BASE_URL, BASE_SCRATCH)
     yield url
     with admin.connect() as con:
-        con.execute(text(f"DROP DATABASE IF EXISTS {BASE_SCRATCH}"))
+        _soltar(con)
     admin.dispose()
 
 
@@ -86,7 +100,10 @@ def test_upgrade_downgrade_upgrade(base_limpia):
                 "SELECT count(*) FROM information_schema.tables "
                 "WHERE table_schema = 'public'"
             )).scalar_one()
-        assert tablas == 12  # 11 del dominio + alembic_version
+            # 12 del dominio + alembic_version. Sube cuando entra una tabla nueva,
+        # y ese es el punto: el numero se toca a mano al agregarla, asi una
+        # tabla que aparece sin querer --por un modelo importado de mas-- se ve.
+        assert tablas == 13
         eng.dispose()
     finally:
         if original:

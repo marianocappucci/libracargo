@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext'
 import Inicio from '@/pages/Inicio'
 import Caja from '@/pages/Caja'
 import Comprobantes from '@/pages/Comprobantes'
+import Configuracion from '@/pages/Configuracion'
 import CuentaCorriente from '@/pages/CuentaCorriente'
 import Login from '@/pages/Login'
 import Logs from '@/pages/Logs'
@@ -45,6 +46,7 @@ export default function App() {
                 <Route path="/reportes/:slug" element={<Reporte />} />
                 <Route path="/usuarios" element={<Usuarios />} />
                 <Route path="/logs" element={<Logs />} />
+                <Route path="/configuracion" element={<Configuracion />} />
                 <Route path="/terceros" element={<Terceros />} />
                 <Route path="/choferes" element={<Choferes />} />
                 <Route path="/vehiculos" element={<Vehiculos />} />
