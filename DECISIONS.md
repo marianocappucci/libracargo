@@ -106,3 +106,118 @@ reemplazadas.
 - Consecuencias: se puede comparar totales contra el sistema viejo durante la
   migración. Si se mezclaran, una diferencia tendría dos causas posibles y
   ninguna forma de separarlas.
+
+## ADR-009 — Los importes negativos se normalizan invirtiendo la columna
+
+- Estado: aceptada
+- Fecha: 2026-08-18
+- Contexto: el perfilado sobre el dump real encontró **1.779 importes negativos**
+  en las tres cuentas corrientes (101 en clientes, 1.664 en fleteros, 14 en
+  proveedores), casi todos en la columna del haber. El caso más grande son dos
+  asientos de "ajuste" por −108.357.828 sobre una cuenta de seguros. El resto de
+  la lectura se confirmó: `importe1`/`importe2` **sí** son debe y haber —cero
+  filas mueven las dos columnas a la vez—, así que el signo negativo se estuvo
+  usando como "el asiento va para el otro lado".
+- Decisión: un haber de −X entra como **debe de +X**, y viceversa. Se anota en
+  `observaciones` que el signo se normalizó, con el valor original.
+- Consecuencias: el saldo de cada tercero queda **idéntico** al del legado
+  —invertir columna y signo es la identidad sobre `debe − haber`— y el `CHECK`
+  `(debe > 0 AND haber = 0) OR (haber > 0 AND debe = 0)` se cumple sin relajarlo.
+- Alternativas descartadas: **relajar el `CHECK`** y migrar tal cual — el sistema
+  nuevo heredaría para siempre la ambigüedad que vino a corregir, y un asiento
+  podría significar dos cosas según el signo. **Frenar y consultar al cliente**:
+  la inversión no pierde información ni cambia ningún saldo, así que no hay nada
+  que consultar; lo que sí se le va a preguntar es qué fue el ajuste de −108 M,
+  pero eso es una pregunta de negocio, no un bloqueo de la migración.
+
+## ADR-010 — Las 17 órdenes sin factura entran con un comprobante de apertura
+
+- Estado: aceptada
+- Fecha: 2026-08-18
+- Contexto: **17 órdenes de agosto de 2023** —los primeros días del sistema—
+  están marcadas `carga_facturado = 1` pero con `carga_factura = 0` y
+  `carga_razonsocial = 0`: no hay ninguna fila en `facturas` que las respalde.
+  Suman $2.950.434,06. El modelo nuevo tiene un `CHECK` que no deja una orden en
+  `facturada` sin comprobante.
+- Decisión: se crea **un comprobante de apertura** —punto de venta `0`, número
+  `0`, `origen_legado = 'apertura'`— que agrupa las 17. Sus importes son la suma
+  de esas órdenes, como cualquier otro comprobante.
+- Consecuencias: se conserva que ya estaban facturadas y cobradas, no aparecen en
+  "facturar pendientes" como plata por cobrar que no existe, y **el gate de F5
+  sigue cerrando**: el total del comprobante es exactamente el de sus órdenes.
+  El comprobante es identificable por su numeración en cero.
+- Alternativas descartadas: migrarlas como **pendientes** —17 órdenes de 2023
+  aparecerían como cobranza pendiente— o como **anuladas**, que dice algo falso:
+  se hicieron y se cobraron.
+
+## ADR-011 — Las cuentas internas entran como terceros, marcadas
+
+- Estado: aceptada
+- Fecha: 2026-08-18
+- Contexto: **19 de los 186 "fleteros" nunca aparecen en una orden de carga**.
+  Son cuentas internas: la oficina, el galpón, un auto, el contador, los seguros
+  de carga. La cuenta corriente de fleteros se usa además como caja de gastos —de
+  hecho el mayor saldo del sistema (−30,4 M) es una cuenta de seguros, no un
+  transportista.
+- Decisión: entran como **terceros con rol fletero**, como cualquier otro, con la
+  marca en `observaciones`. No se crea una categoría nueva.
+- Consecuencias: ningún saldo ni movimiento se pierde ni se mueve de lugar, y la
+  migración no toma una decisión de producto. La reorganización —si hace falta un
+  concepto de centro de costos— se decide con el cliente **después**, con los
+  datos ya adentro y sobre la lista concreta de 19.
+- Alternativas descartadas: inventar el rol o el tipo "cuenta interna" durante la
+  migración. Es diseño de producto decidido sobre la marcha, sin el cliente, y
+  sobre una lista que él todavía no vio.
+
+## ADR-012 — Las fechas `0000-00-00` se infieren del id vecino, con su contrapartida como control
+
+- Estado: aceptada
+- Fecha: 2026-08-18
+- Contexto: hay **4 filas con `0000-00-00`**, que son **2 operaciones** con su
+  contrapartida: la novedad 483 con su asiento en `clientectacte` ($42.000), y un
+  par `fleteroctacte`/`ctacteprov` ($28.245,32). `date NOT NULL` de MySQL admite
+  la fecha cero; `date` de PostgreSQL no.
+- Decisión: se toma la fecha de los **ids vecinos**, que en estas tablas son
+  cronológicos, y se confirma cruzando con la contrapartida. Da **2023-10-23**
+  para la primera operación (vecinos 482 y 484, los dos ese día) y **2025-01-06**
+  para la segunda (vecinos 6704 y 6706, los dos ese día). Se anota en
+  `observaciones` que la fecha es inferida.
+- Consecuencias: 4 filas con una fecha inventada, marcadas como tales, en vez de
+  4 filas rechazadas o puestas en una fecha centinela que después nadie entiende.
+- Alternativas descartadas: fecha centinela (`1900-01-01`) —mete un movimiento
+  fuera de todo rango real y descuadra cualquier corte por fecha— o descartar las
+  filas, que cambiaría el saldo de dos terceros.
+
+## ADR-013 — Una sola razón social: el `2` del legado no existe en los datos
+
+- Estado: aceptada
+- Fecha: 2026-08-18
+- Contexto: el `<select>` del legado ofrece `1 = Suitrans` y `2 = Mauricio`, y
+  `bajarpendientes.php` usa además un `0`. Medido sobre el dump: **las 741
+  facturas y 4.317 de las 4.337 órdenes usan `1`**; las otras 20 usan `0`; **el
+  `2` no aparece en ninguna fila de ninguna tabla**.
+- Decisión: se crea **una** razón social, Suitrans, con `codigo_legado = 1`. El
+  `0` no crea una segunda: las 17 órdenes que lo llevan quedan bajo el
+  comprobante de apertura (ADR-010) con la razón social Suitrans, y las 3
+  restantes —no facturadas— entran con razón social nula, que el modelo permite.
+- Consecuencias: el maestro refleja lo que el cliente usa, no lo que el
+  formulario ofrecía. Si Mauricio vuelve a facturar, es un alta de una fila.
+- Alternativas descartadas: crear las dos "porque estaban en el `<select>`" —un
+  maestro con una fila que nadie usó, y un valor más para elegir mal.
+
+## ADR-014 — Lo que no entra en el modelo nuevo se conserva, no se corrige
+
+- Estado: aceptada
+- Fecha: 2026-08-18
+- Contexto: tres clases de valor del legado no encajan en las columnas nuevas.
+  Medidas, son pocas: **12 de 4.337** `carga_cantidad` no numéricas (`shap +
+  later`, `832.23 x 6988.46`, `27.73 (28)`, `.`), más 11 vacías; **2 CUITs** de
+  más de 13 caracteres; y **551 descripciones truncadas** a 50 por MySQL.
+- Decisión: la cantidad no numérica va a **`cantidad_legado`** con `cantidad` en
+  nulo —la columna existe para esto—; el CUIT se **normaliza** sacándole guiones y
+  espacios antes de guardarlo; el texto truncado se migra **tal cual**.
+- Consecuencias: no se pierde ningún dato y ninguno se inventa. Las 12 cantidades
+  quedan visibles para que una persona las cargue bien cuando toque esa orden.
+- Alternativas descartadas: interpretar `832.23 x 6988.46` como un producto o
+  `27.73 (28)` como 28. Es adivinar sobre plata ajena. Y "completar" el texto
+  truncado: el final de la cadena no está en ningún lado.

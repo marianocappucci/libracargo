@@ -9,11 +9,11 @@ de saber si la migración salió bien o sólo salió sin errores.
 
 | Paso | Qué hace | Gate | Estado |
 |---|---|---|---|
-| 1. Extraer | `01-extraer.sh` en la cuenta cPanel | El dump termina con la marca `Dump completed` | ▶ listo para correr |
+| 1. Extraer | `01-extraer.sh` en la cuenta cPanel | El dump termina con la marca `Dump completed` | ✅ corrido el 2026-08-18 |
 | 2. Cargar | `cargar.py` — dump → staging, todo `TEXT` | Conteos iguales al origen y sin doble encoding | ✅ |
 | 3. Perfilar | `perfilar.py` — mide, no arregla | El informe, leído por una persona | ✅ |
-| 4. Decidir | Cada caso raro del informe, uno por uno | Escrito en `DECISIONS.md` | ⏳ necesita el informe |
-| 5. Transformar y cargar | staging → schema de LibraCargo | Sin huérfanos, secuencias al día | ⏳ necesita las decisiones |
+| 4. Decidir | Cada caso raro del informe, uno por uno | Escrito en `DECISIONS.md` | ✅ ADR-009 a ADR-014 |
+| 5. Transformar y cargar | staging → schema de LibraCargo | Sin huérfanos, secuencias al día | ▶ siguiente |
 | 6. Verificar | Saldo viejo contra saldo nuevo, por tercero | **El reporte de diferencias, validado por el cliente** | ⏳ |
 
 ## 1. Extraer
