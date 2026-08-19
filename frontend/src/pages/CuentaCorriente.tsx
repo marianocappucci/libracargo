@@ -11,6 +11,8 @@ import { cargarOpciones } from '@/api/ordenes'
 import type { FilaDeCuenta, Rol, ResumenDeCuenta } from '@/api/cuentas'
 import { cuentas } from '@/api/cuentas'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import type { Columna } from '@/components/impresion'
+import { BotonImprimir } from '@/components/impresion'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
@@ -43,6 +45,15 @@ export default function CuentaCorriente() {
   const listaDeTerceros =
     rol === 'fletero' ? (opciones?.fleteros ?? []) : (opciones?.clientes ?? [])
 
+  const COLUMNAS_IMPRESAS: Columna<FilaDeCuenta>[] = [
+    { encabezado: 'Fecha', valor: (f) => f.movimiento.fecha },
+    { encabezado: 'Concepto', valor: (f) => f.movimiento.concepto },
+    { encabezado: 'Detalle', valor: (f) => f.movimiento.descripcion },
+    { encabezado: 'Debe', valor: (f) => f.movimiento.debe, numerica: true },
+    { encabezado: 'Haber', valor: (f) => f.movimiento.haber, numerica: true },
+    { encabezado: 'Saldo', valor: (f) => f.saldo, numerica: true },
+  ]
+
   const columnas = [
     { accessorKey: 'movimiento.fecha', header: 'Fecha',
       accessorFn: (f: FilaDeCuenta) => f.movimiento.fecha },
@@ -59,7 +70,26 @@ export default function CuentaCorriente() {
 
   return (
     <div className="p-6">
-      <h1 className="mb-4 text-2xl font-semibold">Cuenta corriente</h1>
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Cuenta corriente</h1>
+        {datos && (
+          <BotonImprimir
+            titulo="Cuenta corriente"
+            filtros={`${listaDeTerceros.find((o) => o.id === terceroId)?.etiqueta ?? ''} · cuenta ${rol}`
+                     + (hasta ? ` · al ${hasta}` : '')}
+            columnas={COLUMNAS_IMPRESAS}
+            traer={async () => ({ filas: datos.movimientos, truncado: false })}
+            totales={() => [
+              { etiqueta: 'Saldo', valor: datos.saldo },
+              // Los dos saldos tambien en el papel: si no coinciden, el que
+              // mira la hoja impresa tiene que poder verlo igual que en pantalla.
+              { etiqueta: 'Saldo recorriendo los movimientos',
+                valor: datos.saldo_recorriendo },
+              { etiqueta: 'Coinciden', valor: datos.coinciden ? 'sí' : '🔴 NO' },
+            ]}
+          />
+        )}
+      </div>
 
       <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="grid gap-1">
