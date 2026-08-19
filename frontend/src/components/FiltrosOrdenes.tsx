@@ -22,7 +22,7 @@ function Select({ id, etiqueta, valor, opciones, alCambiar }: {
     <div className="grid gap-1">
       <Label htmlFor={id}>{etiqueta}</Label>
       <select
-        id={id} className="h-9 rounded-md border px-2 text-sm"
+        id={id} className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
         value={valor ?? ''}
         onChange={(e) => alCambiar(e.target.value === '' ? undefined : Number(e.target.value))}
       >
@@ -66,7 +66,7 @@ export function FiltrosOrdenes({ valor, opciones, alCambiar }: Props) {
 
       <div className="grid gap-1">
         <Label htmlFor="f-estado">Estado</Label>
-        <select id="f-estado" className="h-9 rounded-md border px-2 text-sm"
+        <select id="f-estado" className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
                 value={valor.estado ?? ''}
                 onChange={(e) => set({ estado: e.target.value || undefined })}>
           <option value="">Todos</option>
@@ -82,7 +82,7 @@ export function FiltrosOrdenes({ valor, opciones, alCambiar }: Props) {
             La segunda es la que en el legado era la pantalla de facturar
             pendientes. */}
         <select
-          id="f-facturada" className="h-9 rounded-md border px-2 text-sm"
+          id="f-facturada" className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
           value={valor.facturada === undefined ? '' : String(valor.facturada)}
           onChange={(e) => set({
             facturada: e.target.value === '' ? undefined : e.target.value === 'true',

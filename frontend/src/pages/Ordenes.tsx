@@ -13,7 +13,7 @@ import type { Columna } from '@/components/impresion'
 import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { sumarImportes } from '@/api/comprobantes'
 import type { DatosOrden, EntradaOrden } from '@/components/esquema-orden'
-import { ORDEN_VACIA, esquemaOrden } from '@/components/esquema-orden'
+import { ORDEN_VACIA, esquemaOrden, formatearImporte } from '@/components/esquema-orden'
 import { FiltrosOrdenes } from '@/components/FiltrosOrdenes'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -63,7 +63,7 @@ function Elegir({ form, nombre, etiqueta, opciones, opcional }: {
   return (
     <div className="grid gap-1">
       <Label htmlFor={nombre}>{etiqueta}</Label>
-      <select id={nombre} className="h-9 rounded-md border px-2 text-sm"
+      <select id={nombre} className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
               {...form.register(nombre)}>
         <option value="">{opcional ? 'Sin asignar' : 'Elegir…'}</option>
         {opciones.map((o) => <option key={o.id} value={o.id}>{o.etiqueta}</option>)}
@@ -143,9 +143,9 @@ export default function Ordenes() {
     { encabezado: 'Fletero', valor: (o: Orden) => nombreDe(opciones?.fleteros, o.fletero_id) },
     { encabezado: 'Remito', valor: (o: Orden) => o.remito },
     { encabezado: 'Estado', valor: (o: Orden) => o.estado },
-    { encabezado: 'Tarifa', valor: (o: Orden) => o.tarifa, numerica: true },
-    { encabezado: 'Total', valor: (o: Orden) => o.total, numerica: true },
-    { encabezado: 'Comisión', valor: (o: Orden) => o.comision, numerica: true },
+    { encabezado: 'Tarifa', valor: (o: Orden) => o.tarifa, numerica: true, moneda: true },
+    { encabezado: 'Total', valor: (o: Orden) => o.total, numerica: true, moneda: true },
+    { encabezado: 'Comisión', valor: (o: Orden) => o.comision, numerica: true, moneda: true },
   ]
 
   const columnas = [
@@ -157,7 +157,8 @@ export default function Ordenes() {
     { id: 'fletero', header: sortableHeader('Fletero'),
       accessorFn: (o: Orden) => nombreDe(opciones?.fleteros, o.fletero_id) },
     { accessorKey: 'remito', header: 'Remito' },
-    { accessorKey: 'total', header: sortableHeader('Total') },
+    { id: 'total', header: sortableHeader('Total'),
+      accessorFn: (o: Orden) => formatearImporte(o.total) },
     { id: 'estado', header: sortableHeader('Estado'),
       accessorFn: (o: Orden) => o.estado,
       cell: ({ row }: { row: { original: Orden } }) => (

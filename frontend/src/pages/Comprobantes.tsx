@@ -20,7 +20,7 @@ import { cargarOpciones, ordenes as apiOrdenes } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir, traerTodo } from '@/components/impresion'
-import { hoyEnArgentina } from '@/components/esquema-orden'
+import { hoyEnArgentina, formatearImporte } from '@/components/esquema-orden'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -64,7 +64,7 @@ function Eleccion({ id, etiqueta, valor, alCambiar, children }: {
   return (
     <div className="grid gap-1">
       <Label htmlFor={id}>{etiqueta}</Label>
-      <select id={id} className="h-9 rounded-md border px-2 text-sm" value={valor}
+      <select id={id} className="h-9 w-full min-w-0 rounded-md border px-2 text-sm" value={valor}
               onChange={(e) => alCambiar(e.target.value)}>
         {children}
       </select>
@@ -229,9 +229,9 @@ export default function Comprobantes() {
     { encabezado: 'Cliente',
       valor: (c) => nombre(opciones?.clientes ?? [], c.cliente_id) },
     { encabezado: 'Estado', valor: (c) => (c.anulado ? 'anulado' : 'vigente') },
-    { encabezado: 'Neto', valor: (c) => c.neto, numerica: true },
-    { encabezado: 'IVA', valor: (c) => c.iva, numerica: true },
-    { encabezado: 'Total', valor: (c) => c.total, numerica: true },
+    { encabezado: 'Neto', valor: (c) => c.neto, numerica: true, moneda: true },
+    { encabezado: 'IVA', valor: (c) => c.iva, numerica: true, moneda: true },
+    { encabezado: 'Total', valor: (c) => c.total, numerica: true, moneda: true },
   ]
 
   const columnas = [
@@ -242,9 +242,12 @@ export default function Comprobantes() {
       accessorFn: (c: Comprobante) => nombre(opciones?.razones ?? [], c.razon_social_id) },
     { id: 'cliente', header: 'Cliente',
       accessorFn: (c: Comprobante) => nombre(opciones?.clientes ?? [], c.cliente_id) },
-    { accessorKey: 'neto', header: 'Neto' },
-    { accessorKey: 'iva', header: 'IVA' },
-    { accessorKey: 'total', header: sortableHeader('Total') },
+    { id: 'neto', header: 'Neto',
+      accessorFn: (c: Comprobante) => formatearImporte(c.neto) },
+    { id: 'iva', header: 'IVA',
+      accessorFn: (c: Comprobante) => formatearImporte(c.iva) },
+    { id: 'total', header: sortableHeader('Total'),
+      accessorFn: (c: Comprobante) => formatearImporte(c.total) },
     { id: 'estado', header: 'Estado',
       accessorFn: (c: Comprobante) => (c.anulado ? 'anulado' : 'vigente'),
       cell: ({ row }: { row: { original: Comprobante } }) => (
@@ -380,7 +383,9 @@ export default function Comprobantes() {
             {/* Vista previa: el importe que queda guardado lo calcula el
                 servidor sobre las mismas ordenes. La suma de aca va en
                 centavos enteros, no en punto flotante. */}
-            <span className="text-lg font-semibold">Total: {totalPrevio}</span>
+            <span className="text-lg font-semibold">
+              Total: {formatearImporte(totalPrevio)}
+            </span>
           </div>
 
           <DialogFooter>
@@ -404,7 +409,9 @@ export default function Comprobantes() {
               <div className="flex flex-wrap gap-6">
                 <div>
                   <p className="text-muted-foreground text-xs">Total del comprobante</p>
-                  <p className="text-lg font-semibold">{detalle.comprobante.total}</p>
+                  <p className="text-lg font-semibold">
+                    {formatearImporte(detalle.comprobante.total)}
+                  </p>
                 </div>
                 {/* Los dos numeros a la vista, igual que en la cuenta
                     corriente: el encabezado y lo que suman sus ordenes. */}
@@ -412,7 +419,9 @@ export default function Comprobantes() {
                   <p className="text-muted-foreground text-xs">
                     Suma de sus {detalle.suma_de_ordenes.cantidad} orden/es
                   </p>
-                  <p className="text-lg font-semibold">{detalle.suma_de_ordenes.total}</p>
+                  <p className="text-lg font-semibold">
+                    {formatearImporte(detalle.suma_de_ordenes.total)}
+                  </p>
                 </div>
               </div>
               {!detalle.coinciden && (

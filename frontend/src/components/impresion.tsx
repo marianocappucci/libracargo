@@ -15,7 +15,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { Button } from '@/components/ui/button'
-import { formatearFechaHora } from '@/components/esquema-orden'
+import { formatearFechaHora, formatearImporte } from '@/components/esquema-orden'
 
 /** Tope de filas que se piden para una hoja. Con 4.337 órdenes, imprimir todo
  *  sin filtrar son ~90 páginas: el tope está para que el navegador no se
@@ -26,8 +26,12 @@ const POR_PEDIDO = 1000
 export type Columna<T> = {
   encabezado: string
   valor: (fila: T) => string | number | null | undefined
-  /** Los importes van a la derecha, como en cualquier planilla. */
+  /** Los números van a la derecha, como en cualquier planilla. */
   numerica?: boolean
+  /** Además, es plata: se imprime `$1.234,56`. No todas las columnas numéricas
+   *  lo son —una cantidad de órdenes o de toneladas no lleva signo pesos—, así
+   *  que la marca es explícita. */
+  moneda?: boolean
 }
 
 export type Total = { etiqueta: string; valor: string }
@@ -84,7 +88,7 @@ export function HojaImpresa<T>({ titulo, filtros, columnas, filas, totales, trun
             <tr key={i}>
               {columnas.map((c) => (
                 <td key={c.encabezado} className={c.numerica ? 'derecha' : undefined}>
-                  {c.valor(fila) ?? ''}
+                  {c.moneda ? formatearImporte(c.valor(fila)) : (c.valor(fila) ?? '')}
                 </td>
               ))}
             </tr>

@@ -14,6 +14,7 @@ import { reportes } from '@/api/reportes'
 import type { Opciones } from '@/api/ordenes'
 import { cargarOpciones } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import { formatearImporte } from '@/components/esquema-orden'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir } from '@/components/impresion'
 import { Input } from '@/components/ui/input'
@@ -27,56 +28,62 @@ const COLUMNAS: Record<string, Columna<Fila>[]> = {
   'por-cliente': [
     { encabezado: 'Cliente', valor: (f) => f.tercero },
     { encabezado: 'Órdenes', valor: (f) => f.ordenes, numerica: true },
-    { encabezado: 'Facturado', valor: (f) => f.facturado, numerica: true },
-    { encabezado: 'Comisión', valor: (f) => f.comision, numerica: true },
-    { encabezado: 'Saldo hoy', valor: (f) => f.saldo, numerica: true },
+    { encabezado: 'Facturado', valor: (f) => f.facturado, numerica: true, moneda: true },
+    { encabezado: 'Comisión', valor: (f) => f.comision, numerica: true, moneda: true },
+    { encabezado: 'Saldo hoy', valor: (f) => f.saldo, numerica: true, moneda: true },
   ],
   'por-fletero': [
     { encabezado: 'Fletero', valor: (f) => f.tercero },
     { encabezado: 'Órdenes', valor: (f) => f.ordenes, numerica: true },
-    { encabezado: 'Facturado', valor: (f) => f.facturado, numerica: true },
-    { encabezado: 'Comisión', valor: (f) => f.comision, numerica: true },
-    { encabezado: 'Saldo hoy', valor: (f) => f.saldo, numerica: true },
+    { encabezado: 'Facturado', valor: (f) => f.facturado, numerica: true, moneda: true },
+    { encabezado: 'Comisión', valor: (f) => f.comision, numerica: true, moneda: true },
+    { encabezado: 'Saldo hoy', valor: (f) => f.saldo, numerica: true, moneda: true },
   ],
   'pendientes-de-facturar': [
     { encabezado: 'Cliente', valor: (f) => f.cliente },
     { encabezado: 'Órdenes', valor: (f) => f.ordenes, numerica: true },
     { encabezado: 'La más vieja', valor: (f) => f.desde },
     { encabezado: 'La más nueva', valor: (f) => f.hasta },
-    { encabezado: 'Total', valor: (f) => f.total, numerica: true },
+    { encabezado: 'Total', valor: (f) => f.total, numerica: true, moneda: true },
   ],
   saldos: [
     { encabezado: 'Tercero', valor: (f) => f.tercero },
     { encabezado: 'Cuenta', valor: (f) => f.rol },
     { encabezado: 'Movimientos', valor: (f) => f.movimientos, numerica: true },
     { encabezado: 'Último', valor: (f) => f.ultimo_movimiento },
-    { encabezado: 'Saldo', valor: (f) => f.saldo, numerica: true },
+    { encabezado: 'Saldo', valor: (f) => f.saldo, numerica: true, moneda: true },
   ],
   caja: [
     { encabezado: 'Tipo', valor: (f) => f.tipo },
     { encabezado: 'Medio de pago', valor: (f) => f.medio_pago },
     { encabezado: 'Movimientos', valor: (f) => f.movimientos, numerica: true },
-    { encabezado: 'Importe', valor: (f) => f.importe, numerica: true },
+    { encabezado: 'Importe', valor: (f) => f.importe, numerica: true, moneda: true },
   ],
   'por-razon-social': [
     { encabezado: 'Razón social', valor: (f) => f.razon_social },
     { encabezado: 'Comprobantes', valor: (f) => f.comprobantes, numerica: true },
-    { encabezado: 'Neto', valor: (f) => f.neto, numerica: true },
-    { encabezado: 'IVA', valor: (f) => f.iva, numerica: true },
-    { encabezado: 'Total', valor: (f) => f.total, numerica: true },
+    { encabezado: 'Neto', valor: (f) => f.neto, numerica: true, moneda: true },
+    { encabezado: 'IVA', valor: (f) => f.iva, numerica: true, moneda: true },
+    { encabezado: 'Total', valor: (f) => f.total, numerica: true, moneda: true },
   ],
   'por-ruta': [
     { encabezado: 'Origen', valor: (f) => f.origen },
     { encabezado: 'Destino', valor: (f) => f.destino },
     { encabezado: 'Órdenes', valor: (f) => f.ordenes, numerica: true },
     { encabezado: 'Cantidad', valor: (f) => f.cantidad, numerica: true },
-    { encabezado: 'Total', valor: (f) => f.total, numerica: true },
-    { encabezado: 'Comisión', valor: (f) => f.comision, numerica: true },
+    { encabezado: 'Total', valor: (f) => f.total, numerica: true, moneda: true },
+    { encabezado: 'Comisión', valor: (f) => f.comision, numerica: true, moneda: true },
   ],
 }
 
 /** El resumen no es una tabla: es una lista de conceptos. Se arma igual para que
  *  se pueda imprimir con la misma hoja que los demás. */
+//: Cuáles de los conceptos del resumen son plata. Los otros son cantidades:
+//: "12 órdenes" no lleva signo pesos.
+const CONCEPTOS_EN_PESOS = new Set([
+  'tarifa', 'iva', 'total', 'comision', 'facturado', 'cobrado', 'pagado',
+])
+
 const CONCEPTOS_DEL_RESUMEN: [string, string][] = [
   ['Órdenes', 'ordenes'],
   ['Órdenes pendientes de facturar', 'ordenes_pendientes'],
@@ -111,7 +118,7 @@ function Elegir({ id, etiqueta, valor, alCambiar, opciones, vacio }: {
 }) {
   return (
     <Campo id={id} etiqueta={etiqueta}>
-      <select id={id} className="h-9 rounded-md border px-2 text-sm" value={valor}
+      <select id={id} className="h-9 w-full min-w-0 rounded-md border px-2 text-sm" value={valor}
               onChange={(e) => alCambiar(e.target.value)}>
         <option value="">{vacio}</option>
         {opciones.map((o) => <option key={o.id} value={o.id}>{o.etiqueta}</option>)}
@@ -161,7 +168,9 @@ export default function Reporte() {
   const columnas = COLUMNAS[slug] ?? []
   const filasDelResumen: Fila[] = resumen
     ? CONCEPTOS_DEL_RESUMEN.map(([etiqueta, clave]) => ({
-        concepto: etiqueta, valor: resumen[clave] ?? '',
+        concepto: etiqueta,
+        valor: CONCEPTOS_EN_PESOS.has(clave)
+          ? formatearImporte(resumen[clave]) : (resumen[clave] ?? ''),
       }))
     : []
 
@@ -294,7 +303,11 @@ export default function Reporte() {
           {CONCEPTOS_DEL_RESUMEN.map(([etiqueta, clave]) => (
             <div key={clave} className="rounded border p-4">
               <p className="text-muted-foreground text-xs">{etiqueta}</p>
-              <p className="text-xl font-semibold tabular-nums">{resumen[clave] ?? '—'}</p>
+              <p className="text-xl font-semibold tabular-nums">
+                {CONCEPTOS_EN_PESOS.has(clave)
+                  ? formatearImporte(resumen[clave])
+                  : (resumen[clave] ?? '—')}
+              </p>
             </div>
           ))}
         </div>
@@ -302,7 +315,8 @@ export default function Reporte() {
         <DataTable
           columns={columnas.map((c) => ({
             id: c.encabezado, header: c.encabezado,
-            accessorFn: (f: Fila) => c.valor(f) ?? '',
+            accessorFn: (f: Fila) =>
+              c.moneda ? formatearImporte(c.valor(f)) : (c.valor(f) ?? ''),
           }))}
           data={filas}
           emptyMessage={cargando ? 'Calculando…' : 'No hay datos con esos filtros.'}

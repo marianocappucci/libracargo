@@ -104,7 +104,7 @@ export default function Logs() {
 
       <div className="no-imprimir mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
         <Campo id="l-entidad" etiqueta="Entidad">
-          <select id="l-entidad" className="h-9 rounded-md border px-2 text-sm"
+          <select id="l-entidad" className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
                   value={filtros.entidad ?? ''}
                   onChange={(e) => set({ entidad: e.target.value || undefined })}>
             <option value="">Todas</option>
@@ -112,7 +112,7 @@ export default function Logs() {
           </select>
         </Campo>
         <Campo id="l-usuario" etiqueta="Usuario">
-          <select id="l-usuario" className="h-9 rounded-md border px-2 text-sm"
+          <select id="l-usuario" className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
                   value={filtros.usuario ?? ''}
                   onChange={(e) => set({ usuario: e.target.value || undefined })}>
             <option value="">Todos</option>
@@ -120,7 +120,7 @@ export default function Logs() {
           </select>
         </Campo>
         <Campo id="l-accion" etiqueta="Acción">
-          <select id="l-accion" className="h-9 rounded-md border px-2 text-sm"
+          <select id="l-accion" className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
                   value={filtros.accion ?? ''}
                   onChange={(e) => set({ accion: e.target.value || undefined })}>
             <option value="">Todas</option>
