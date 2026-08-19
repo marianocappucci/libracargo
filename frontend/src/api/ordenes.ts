@@ -26,6 +26,12 @@ export type Orden = {
   estado: 'pendiente' | 'facturada' | 'anulada'
   comprobante_id: number | null
   observaciones: string | null
+  /** Lo que el legado tenia en  cuando no era un numero
+   *  ("140 bultos", "varios"): se conserva tal cual, sin interpretarlo. */
+  cantidad_legado: string | null
+  /** El id de la fila en el sistema viejo. Sirve para rastrear una orden
+   *  migrada hasta su origen cuando el cliente pregunta por una. */
+  origen_legado: string | null
 }
 
 /** Los doce filtros del listado. `undefined` es "sin filtrar", y para

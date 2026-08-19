@@ -204,6 +204,157 @@
     font-size: 9pt;
   }
 
+
+  /* ---------------------------------------------- la orden de carga en papel
+     No es un listado: es un documento. Va con membrete, los datos en bloques,
+     los importes en una tabla chica a la derecha y las dos firmas abajo — el
+     papel viaja con el camión y vuelve firmado. */
+  .hoja-orden .membrete {
+    display: flex;
+    align-items: flex-start;
+    gap: 6mm;
+    border-bottom: 0.4mm solid #000;
+    padding-bottom: 3mm;
+  }
+
+  .hoja-orden .membrete .logo {
+    max-height: 20mm;
+    max-width: 45mm;
+    object-fit: contain;
+  }
+
+  .hoja-orden .membrete .quien {
+    flex: 1;
+  }
+
+  .hoja-orden .membrete .empresa {
+    font-size: 13pt;
+    font-weight: 700;
+    margin: 0 0 1mm;
+  }
+
+  .hoja-orden .membrete .quien p {
+    margin: 0;
+    font-size: 8pt;
+  }
+
+  .hoja-orden .membrete .titulo {
+    text-align: right;
+  }
+
+  .hoja-orden .membrete .que {
+    font-size: 12pt;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: 0.4mm;
+  }
+
+  .hoja-orden .membrete .numero {
+    font-size: 12pt;
+    margin: 0.5mm 0 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .hoja-orden .membrete .fecha {
+    margin: 0.5mm 0 0;
+    font-size: 9pt;
+  }
+
+  .hoja-orden .bloque {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2mm 4mm;
+    margin-top: 4mm;
+    border-bottom: 0.2mm solid #999;
+    padding-bottom: 3mm;
+  }
+
+  .hoja-orden .dato.ancho {
+    grid-column: span 2;
+  }
+
+  .hoja-orden .etiqueta {
+    display: block;
+    font-size: 7pt;
+    text-transform: uppercase;
+    letter-spacing: 0.2mm;
+    color: #444;
+  }
+
+  .hoja-orden .valor {
+    font-size: 10pt;
+  }
+
+  .hoja-orden .importes {
+    width: 70mm;
+    margin: 4mm 0 0 auto;
+    border-collapse: collapse;
+  }
+
+  .hoja-orden .importes th,
+  .hoja-orden .importes td {
+    border: none;
+    border-bottom: 0.2mm solid #ccc;
+    padding: 1mm 2mm;
+    font-size: 9pt;
+  }
+
+  .hoja-orden .importes td {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .hoja-orden .importes .total th,
+  .hoja-orden .importes .total td {
+    font-weight: 700;
+    font-size: 11pt;
+    border-bottom-width: 0.4mm;
+  }
+
+  .hoja-orden .observaciones {
+    margin-top: 4mm;
+    font-size: 9pt;
+  }
+
+  .hoja-orden .observaciones p {
+    margin: 0;
+  }
+
+  /* Las firmas, empujadas hacia abajo pero sin forzar una segunda hoja. */
+  .hoja-orden .firmas {
+    display: flex;
+    gap: 20mm;
+    margin-top: 20mm;
+    font-size: 8pt;
+    text-align: center;
+  }
+
+  .hoja-orden .firmas > div {
+    flex: 1;
+  }
+
+  .hoja-orden .firmas .linea {
+    display: block;
+    border-top: 0.2mm solid #000;
+    margin-bottom: 1mm;
+  }
+
+  .hoja-orden .pie {
+    margin-top: 8mm;
+    border-top: 0.2mm solid #ccc;
+    padding-top: 2mm;
+    font-size: 8pt;
+  }
+
+  .hoja-orden .pie p {
+    margin: 0;
+  }
+
+  .hoja-orden .pie .chico {
+    color: #555;
+    font-size: 7pt;
+  }
+
   .no-imprimir {
     display: none !important;
   }
