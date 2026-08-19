@@ -33,7 +33,18 @@ def calcular_importes(tarifa: Decimal, alicuota: Decimal) -> tuple[Decimal, Deci
     return iva, (tarifa + iva).quantize(centavo, rounding=ROUND_HALF_UP)
 
 
-class OrdenIn(BaseModel):
+class CamposDeOrden(BaseModel):
+    """Los campos que comparten la entrada y la salida, **sin ninguna regla**.
+
+    🔴 Existe porque `OrdenOut` heredaba de `OrdenIn`, y con la herencia se
+    llevaba también su validador. Una regla de entrada aplicada a la salida no
+    valida nada: rechaza lo que **ya está guardado**. Con las 33 órdenes
+    migradas que salen y llegan a la misma localidad —legítimas, ver ADR-015—,
+    `GET /api/ordenes` devolvía **500** con el límite por omisión; con
+    `limite=3` andaba, porque esas filas no entraban en la página. La pantalla
+    de órdenes quedaba inutilizable justo sobre los datos del cliente.
+    """
+
     model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
 
     fecha: date
@@ -55,6 +66,9 @@ class OrdenIn(BaseModel):
     comision: Decimal = Field(default=Decimal(0), ge=0)
     observaciones: str | None = None
 
+class OrdenIn(CamposDeOrden):
+    """Lo que se acepta al crear o modificar. Acá sí van las reglas."""
+
     @model_validator(mode="after")
     def _origen_distinto_de_destino(self):
         """La misma regla que el `CHECK` de la base, adelantada.
@@ -69,7 +83,11 @@ class OrdenIn(BaseModel):
         return self
 
 
-class OrdenOut(OrdenIn):
+class OrdenOut(CamposDeOrden):
+    """Lo que se devuelve. **No hereda de `OrdenIn` a propósito**: lo que ya está
+    en la base se muestra tal como está, y lo que no se pueda cargar de nuevo se
+    rechaza al entrar, no al salir."""
+
     id: int
     estado: EstadoOrden
     comprobante_id: int | None = None
