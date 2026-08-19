@@ -211,3 +211,97 @@ def test_sin_sesion_no_se_ven_los_reportes(engine, monkeypatch):
             assert anonimo.get(f"/api/reportes/{ruta}").status_code == 401
     finally:
         AuthBase.metadata.drop_all(engine)
+
+
+# ------------------------------------------ el catálogo y los parámetros nuevos
+
+def test_el_catalogo_dice_que_hay_y_que_acepta_cada_uno(cliente):
+    """La pantalla se arma con esto, no con una lista repetida en el frontend.
+
+    Si el catálogo y los endpoints se separan, la pantalla ofrece un filtro que
+    el reporte ya no acepta —o esconde uno que sí—. Por eso el test recorre el
+    catálogo y **pide cada reporte**: un slug que no responde es un ítem de menú
+    roto.
+    """
+    catalogo = cliente.get("/api/reportes").json()
+    assert len(catalogo) >= 8
+    for reporte in catalogo:
+        assert reporte["descripcion"].strip(), reporte["slug"]
+        assert reporte["parametros"], reporte["slug"]
+        r = cliente.get(f"/api/reportes/{reporte['slug']}")
+        assert r.status_code == 200, f"{reporte['slug']}: {r.text[:200]}"
+
+
+def test_el_resumen_se_puede_acotar_a_un_cliente(cliente, escenario):
+    """El mismo reporte con el universo más chico, no otro reporte."""
+    todo = cliente.get("/api/reportes/resumen").json()
+    uno = cliente.get(
+        f"/api/reportes/resumen?cliente_id={escenario['cliente_b']}").json()
+    assert todo["ordenes"] == 4
+    assert uno["ordenes"] == 1
+    assert Decimal(uno["tarifa"]) == Decimal("4000.00")
+    # Y devuelve con qué se calculó, para que el papel lo pueda imprimir.
+    assert uno["cliente_id"] == escenario["cliente_b"]
+
+
+def test_el_ranking_acotado_a_un_tercero_lo_muestra_aunque_este_en_cero(cliente, escenario):
+    """La respuesta a "¿cómo viene este cliente?" es "en cero", no una tabla vacía.
+
+    Sin tercero elegido, los que no movieron nada quedan afuera —son 276 y el
+    papel se llenaría de ceros—. Con uno elegido, se muestra igual.
+    """
+    quieto = cliente.post("/api/terceros", json={
+        "razon_social": "Sin movimiento", "es_cliente": True}).json()["id"]
+
+    ranking = cliente.get("/api/reportes/por-cliente").json()
+    assert quieto not in [f["tercero_id"] for f in ranking]
+
+    ficha = cliente.get(f"/api/reportes/por-cliente?cliente_id={quieto}").json()
+    assert len(ficha) == 1
+    assert ficha[0]["ordenes"] == 0
+    assert Decimal(ficha[0]["saldo"]) == Decimal("0.00")
+
+
+def test_la_caja_se_puede_acotar_por_tercero_y_medio_de_pago(cliente, escenario):
+    solo_transferencia = cliente.get("/api/reportes/caja?medio_pago=transferencia").json()
+    assert len(solo_transferencia) == 1
+    assert Decimal(solo_transferencia[0]["importe"]) == Decimal("1500.00")
+
+    del_fletero = cliente.get(
+        f"/api/reportes/caja?tercero_id={escenario['fletero']}").json()
+    assert len(del_fletero) == 1
+    assert del_fletero[0]["tipo"] == "egreso"
+    assert Decimal(del_fletero[0]["importe"]) == Decimal("300.00")
+
+
+def test_las_rutas_se_pueden_acotar_por_origen_y_por_cliente(cliente, escenario):
+    desde_suipacha = cliente.get(
+        f"/api/reportes/por-ruta?origen_id={escenario['suipacha']}").json()
+    assert {f["origen"] for f in desde_suipacha} == {"Suipacha"}
+    assert sum(f["ordenes"] for f in desde_suipacha) == 3
+
+    del_cliente_b = cliente.get(
+        f"/api/reportes/por-ruta?cliente_id={escenario['cliente_b']}").json()
+    assert len(del_cliente_b) == 1
+    assert (del_cliente_b[0]["origen"], del_cliente_b[0]["destino"]) == ("Suipacha", "Mercedes")
+
+
+def test_los_pendientes_de_facturar_agrupan_por_cliente(cliente, escenario):
+    """El reporte que en el legado era una pantalla propia (`facturarpedientes`).
+
+    De las 4 órdenes vigentes, 2 se facturaron: quedan las del cliente B y la de
+    agosto del cliente A.
+    """
+    filas = cliente.get("/api/reportes/pendientes-de-facturar").json()
+    por_cliente = {f["cliente"]: f for f in filas}
+    assert Decimal(por_cliente["Agro Norte"]["total"]) == Decimal("9680.00")   # 8000 * 1.21
+    assert por_cliente["Agro Norte"]["ordenes"] == 1
+    assert Decimal(por_cliente["Molino Sur"]["total"]) == Decimal("4840.00")
+    # El rango de fechas de lo pendiente de cada cliente, para saber qué tan
+    # viejo es lo que no se facturó.
+    assert por_cliente["Agro Norte"]["desde"] == "2026-08-10"
+
+    # Acotado a un cliente, sólo ese.
+    solo_b = cliente.get(
+        f"/api/reportes/pendientes-de-facturar?cliente_id={escenario['cliente_b']}").json()
+    assert [f["cliente"] for f in solo_b] == ["Molino Sur"]
