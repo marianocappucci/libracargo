@@ -10,6 +10,8 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "alembic>=1.14",
     "pydantic>=2.9",
+    # La subida del logo del membrete: FastAPI necesita esto para UploadFile.
+    "python-multipart>=0.0.9",
     # El auth de toda la familia. Se declara con `git+https` a proposito: asi
     # anda en dev local sin identidad SSH propia. El build de la imagen
     # reescribe la URL a `git+ssh` con la deploy key de solo lectura del motor
@@ -63,7 +65,9 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.flake8-bugbear]
 # `Depends()` en el default es el idioma de FastAPI, no un descuido.
-extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path"]
+extend-immutable-calls = [
+    "fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.File",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
