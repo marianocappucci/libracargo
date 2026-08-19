@@ -19,6 +19,8 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import psycopg
@@ -93,9 +95,9 @@ def staging(dump):
 
 def test_llegan_todas_las_filas_de_todas_las_tablas(staging):
     esperado = {
-        "clientes": 3, "fleteros": 2, "proveedores": 1, "choferes": 2,
+        "clientes": 3, "fleteros": 3, "proveedores": 1, "choferes": 2,
         "origen": 2, "destino": 2, "orden_carga": 5, "facturas": 1,
-        "clientectacte": 3, "fleteroctacte": 3, "ctacteprov": 2,
+        "clientectacte": 5, "fleteroctacte": 3, "ctacteprov": 2,
         "novedades": 3, "sucesos": 2, "usuarios": 1,
     }
     for tabla, filas in esperado.items():
@@ -249,7 +251,7 @@ def test_la_fila_que_mueve_las_dos_columnas_a_la_vez(staging):
     éstas necesita una decisión antes de migrar.
     """
     texto = perfilar.signo_de_los_importes(staging)
-    assert "| `clientectacte` | 3 | 1 | 1 | 🔴 1 | 0 |" in texto
+    assert "| `clientectacte` | 5 | 2 | 2 | 🔴 1 | 🔴 1 |" in texto
     assert "| `fleteroctacte` | 3 | 2 | 1 | 0 | 0 |" in texto
 
 
@@ -264,7 +266,7 @@ def test_el_saldo_viejo_sale_por_tercero(staging):
     """El lado izquierdo del gate: contra esto se compara el sistema nuevo."""
     texto = perfilar.saldos(staging)
     # Cliente 1: 1.022.450 de la factura + el ajuste que suma y resta lo mismo.
-    assert "| 1 | Agro del Oeste | 2 | 1022450.00 |" in texto
+    assert "| 1 | Agro del Oeste | 4 | 1028450.00 |" in texto
     # Cliente 2: sólo un cobro, saldo negativo.
     assert "| 2 | Molinos Suipacha | 1 | -300000.00 |" in texto
     # Y una cuenta cuyo tercero no existe en el maestro se marca, no se esconde.
@@ -278,3 +280,204 @@ def test_el_informe_entero_se_arma(staging):
                    "texto libre", "CUITs repetidos", "Pérdida del `float",
                    "¿debe y haber?", "Razón social", "Saldo por tercero"):
         assert titulo in texto
+
+
+# ----------------------------------------------------- transformación y gate
+
+@pytest.fixture
+def migrado(staging, engine):
+    """El legado sintético, ya transformado al schema de LibraCargo.
+
+    Migra a las tablas del **mismo** PostgreSQL de la suite: el staging vive en
+    el schema `legado` y el destino en `public`, así que no hace falta una base
+    aparte. Se vacía antes y después para no depender del orden de los tests.
+    """
+    from sqlalchemy import text as sql
+
+    from app.models import Base
+    from migracion import transformar
+
+    def vaciar():
+        with engine.begin() as con:
+            for tabla in reversed(Base.metadata.sorted_tables):
+                con.execute(sql(f'TRUNCATE TABLE "{tabla.name}" RESTART IDENTITY CASCADE'))
+
+    vaciar()
+    # La orden 2 apunta a un cliente que no existe: está puesta así para el
+    # perfilado. Acá se le da un cliente real, porque la transformación **se
+    # planta** ante un huérfano —eso lo prueba el test de más abajo— y lo que
+    # este fixture tiene que ejercitar es el traspaso, no el rechazo.
+    staging.execute(
+        "UPDATE legado.orden_carga SET carga_cliente_id = '1' WHERE carga_id = '2'")
+    staging.commit()
+
+    with psycopg.connect(_url_psycopg()) as destino:
+        inferidas = transformar.fechas_inferidas(staging)
+        conteos = transformar.migrar(staging, destino, inferidas)
+        destino.commit()
+    with psycopg.connect(_url_psycopg()) as con:
+        yield con, conteos, inferidas
+    vaciar()
+
+
+def test_la_migracion_traslada_todas_las_filas(migrado):
+    """El conteo por tabla, que es la mitad del gate del paso 5."""
+    con, conteos, _ = migrado
+    assert conteos["terceros"] == 7          # 3 clientes + 3 fleteros + 1 proveedor
+    assert conteos["orden_carga"] == 5
+    assert conteos["movimientos_cuenta"] == 10   # 5 + 3 + 2
+    assert conteos["novedades"] == 3
+    assert con.execute("SELECT count(*) FROM terceros").fetchone()[0] == 7
+    # Las localidades se unifican: 2 orígenes + 2 destinos, sin nombres repetidos.
+    assert conteos["localidades"] == 4
+
+
+def test_el_signo_negativo_cambia_de_columna_y_el_saldo_no(migrado):
+    """ADR-009. El asiento entra al revés y **el saldo del tercero no se mueve**.
+
+    Es la prueba de que la normalización es la identidad sobre `debe − haber`:
+    si en vez de invertir se tomara el valor absoluto, este saldo daría 5.000
+    menos y el gate lo marcaría.
+    """
+    con, _, _ = migrado
+    debe, haber, descripcion = con.execute(
+        "SELECT debe, haber, descripcion FROM movimientos_cuenta "
+        "WHERE origen_legado = 'clientectacte:4'").fetchone()
+    assert (debe, haber) == (Decimal("5000.00"), Decimal("0.00"))
+    assert "signo normalizado" in descripcion
+
+    saldo = con.execute("""
+        SELECT sum(debe) - sum(haber) FROM movimientos_cuenta m
+        JOIN terceros t ON t.id = m.tercero_id
+        WHERE t.origen_legado = 'cliente:1' AND m.rol = 'cliente'""").fetchone()[0]
+    assert saldo == Decimal("1028450.00")
+
+
+def test_la_fecha_en_cero_sale_de_la_contrapartida_y_no_del_vecino(migrado):
+    """ADR-012. El asiento sin fecha se enlaza a la novedad 1, del 2026-08-15.
+
+    El vecino por id habría dado el 2026-08-16 —la fila de al lado—, así que
+    este test distingue las dos reglas en vez de dar por buena cualquiera.
+    """
+    con, _, inferidas = migrado
+    assert inferidas["clientectacte:5"] == date(2026, 8, 15)
+    fecha_migrada = con.execute(
+        "SELECT fecha FROM movimientos_cuenta WHERE origen_legado = 'clientectacte:5'"
+    ).fetchone()[0]
+    assert fecha_migrada == date(2026, 8, 15)
+
+
+def test_la_orden_sin_factura_entra_con_el_comprobante_de_apertura(migrado):
+    """ADR-010. Y el `CHECK` del modelo obliga: facturada exige comprobante."""
+    con, _, _ = migrado
+    apertura = con.execute(
+        "SELECT id, punto_venta, numero, total FROM comprobantes "
+        "WHERE origen_legado = 'apertura'").fetchone()
+    assert apertura is not None, "tiene que existir el comprobante de apertura"
+    assert (apertura[1], apertura[2]) == (0, 0)
+
+    estado, comprobante = con.execute(
+        "SELECT estado, comprobante_id FROM ordenes_carga "
+        "WHERE origen_legado = 'carga:4'").fetchone()
+    assert estado == "facturada"
+    assert comprobante == apertura[0]
+    # Y su importe es el de las órdenes que agrupa, como cualquier comprobante.
+    assert apertura[3] == con.execute(
+        "SELECT sum(total) FROM ordenes_carga WHERE comprobante_id = %s", (apertura[0],)
+    ).fetchone()[0]
+
+
+def test_la_cuenta_sin_viajes_queda_marcada(migrado):
+    """ADR-011: entra como tercero normal, pero anotada.
+
+    El control es el fletero que sí viajó: si la marca la llevaran los dos, no
+    distinguiría nada.
+    """
+    con, _, _ = migrado
+    sin_viajes = con.execute(
+        "SELECT observaciones FROM terceros WHERE origen_legado = 'fletero:3'").fetchone()[0]
+    assert "cuenta interna" in sin_viajes
+    con_viajes = con.execute(
+        "SELECT observaciones FROM terceros WHERE origen_legado = 'fletero:1'").fetchone()[0]
+    assert con_viajes is None or "cuenta interna" not in con_viajes
+
+
+def test_la_cantidad_que_no_es_numero_se_guarda_como_texto(migrado):
+    """ADR-014: `140 bultos` no se interpreta, se conserva."""
+    con, _, _ = migrado
+    cantidad, legado = con.execute(
+        "SELECT cantidad, cantidad_legado FROM ordenes_carga "
+        "WHERE origen_legado = 'carga:3'").fetchone()
+    assert cantidad is None
+    assert legado == "140 bultos"
+    # Control: la que sí es un número entra como número.
+    cantidad_ok, legado_ok = con.execute(
+        "SELECT cantidad, cantidad_legado FROM ordenes_carga "
+        "WHERE origen_legado = 'carga:1'").fetchone()
+    assert cantidad_ok == Decimal("30000.000")
+    assert legado_ok is None
+
+
+def test_las_secuencias_quedan_adelantadas(migrado):
+    """Los ids los puso el script: si la secuencia sigue en 1, el primer alta choca."""
+    con, _, _ = migrado
+    for tabla in ("terceros", "ordenes_carga", "movimientos_cuenta", "comprobantes"):
+        filas = con.execute(f"SELECT count(*) FROM {tabla}").fetchone()[0]
+        siguiente = con.execute(
+            f"SELECT nextval(pg_get_serial_sequence('{tabla}', 'id'))").fetchone()[0]
+        assert siguiente > filas, f"{tabla}: la secuencia quedo en {siguiente}"
+
+
+def test_el_gate_da_cero_y_sabe_dar_distinto_de_cero(migrado):
+    """El reporte de diferencias, con su control.
+
+    Un reporte que dijera "cero" pase lo que pase pasaría la primera mitad de
+    este test. Por eso la segunda le mueve un centavo a un asiento y exige que
+    lo encuentre, con el nombre del tercero y el signo.
+    """
+    from migracion import reporte
+
+    con, _, _ = migrado
+    texto, limpio = reporte.diferencias(_conexion_staging(con), con)
+    assert limpio is True
+    assert "Cuentas con alguna diferencia: **0**" in texto
+
+    con.execute("UPDATE movimientos_cuenta SET debe = debe + 0.01 "
+                "WHERE origen_legado = 'clientectacte:1'")
+    texto_roto, limpio_roto = reporte.diferencias(_conexion_staging(con), con)
+    assert limpio_roto is True, "un centavo no dispara la alarma de orden de magnitud"
+    assert "Cuentas con alguna diferencia: **1**" in texto_roto
+    assert "0.01" in texto_roto
+    con.execute("UPDATE movimientos_cuenta SET debe = debe - 0.01 "
+                "WHERE origen_legado = 'clientectacte:1'")
+
+
+def _conexion_staging(con):
+    """El staging y el destino viven en la misma base: la conexión es la misma."""
+    return con
+
+
+def test_la_transformacion_se_planta_ante_un_huerfano(staging):
+    """Un tercero que no existe no se inventa ni se saltea: se avisa y se corta.
+
+    El legado real no tiene ninguno —el perfilado midió cero en las 20
+    relaciones—, así que esta guarda existe para el dump del corte, donde puede
+    aparecer uno. Sin ella, el traspaso moría con un `KeyError` que no dice qué
+    fila ni por qué.
+    """
+    from migracion import transformar
+
+    # El fixture `migrado` arregla esta fila; acá se la deja rota a propósito.
+    staging.execute(
+        "UPDATE legado.orden_carga SET carga_cliente_id = '999' WHERE carga_id = '2'")
+    problemas = transformar.verificar_integridad(staging)
+    assert any("carga_cliente_id" in p and "999" in p for p in problemas)
+
+    with pytest.raises(SystemExit) as e:
+        transformar.migrar(staging, staging, {})
+    assert "999" in str(e.value)
+
+    # Control: con la referencia arreglada no queda ningún problema.
+    staging.execute(
+        "UPDATE legado.orden_carga SET carga_cliente_id = '1' WHERE carga_id = '2'")
+    assert transformar.verificar_integridad(staging) == []

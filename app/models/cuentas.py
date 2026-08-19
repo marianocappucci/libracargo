@@ -55,7 +55,11 @@ class MovimientoCaja(Base, Auditable):
     origen_legado: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     __table_args__ = (
-        CheckConstraint("importe > 0", name="ck_caja_importe_positivo"),
+        # Mismo escape, por lo mismo: 6 movimientos del legado tienen
+        # descripción real y ningún importe cargado. Ver ADR-015.
+        CheckConstraint(
+            "importe > 0 OR origen_legado IS NOT NULL", name="ck_caja_importe_positivo"
+        ),
         Index("ix_caja_fecha", "fecha"),
         Index("ix_caja_tercero_fecha", "tercero_id", "fecha"),
         Index("ix_caja_origen_legado", "origen_legado", unique=True),
@@ -109,8 +113,12 @@ class MovimientoCuenta(Base, Auditable):
     __table_args__ = (
         CheckConstraint("debe >= 0 AND haber >= 0", name="ck_cuenta_signos"),
         # Un asiento mueve una columna o la otra, nunca las dos ni ninguna.
+        # El escape por `origen_legado` es para el histórico: el legado tiene 36
+        # asientos con las dos en cero, y ponerles un importe sería inventarlo.
+        # Ver ADR-015 y la migración 0003.
         CheckConstraint(
-            "(debe > 0 AND haber = 0) OR (haber > 0 AND debe = 0)",
+            "((debe > 0 AND haber = 0) OR (haber > 0 AND debe = 0)) "
+            "OR origen_legado IS NOT NULL",
             name="ck_cuenta_debe_o_haber",
         ),
         Index("ix_cuenta_saldo", "tercero_id", "rol", "fecha"),
