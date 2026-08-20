@@ -34,5 +34,7 @@ esto no es un historial.
 ## Deuda asumida a propósito
 
 - Sin frontend: la API existe y nadie la consume todavía.
-- `libracore` y `libraauth` están declarados y comentados en `pyproject.toml`:
-  el esqueleto se construye y se prueba sin acceso a esos repos privados.
+- ~~`libracore` y `libraauth` están declarados y comentados en
+  `pyproject.toml`~~ — los dos son dependencias reales desde que entraron el
+  auth y el backup. Lo que sigue difiriéndose de LibraCore es su **alcance**
+  (`pdf_generator` en F7, ARCA en F8), no el paquete. Ver ADR-016.

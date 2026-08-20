@@ -249,3 +249,29 @@ reemplazadas.
   porque suman cero, pero se perderían 42 registros con su descripción y el
   conteo dejaría de cuadrar— y **relajar los `CHECK` para todos**, que le regala
   al sistema nuevo, para siempre, dos de las cosas que vino a impedir.
+
+## ADR-016 — LibraCore entra por el backup, antes que por la impresión
+
+**Fecha**: 2026-08-19 · **Estado**: aceptada
+
+El plan tenía a LibraCore entrando en F7, para la impresión de comprobantes. El
+backup se pidió antes, y el backup de la familia vive en ese mismo paquete.
+
+Se adelanta **el paquete, no el alcance**: hoy este producto importa
+`libracore.respaldo` y `libracore.config_router.build_backup_router`, y nada
+más. `pdf_generator` sigue siendo F7 y ARCA sigue siendo F8.
+
+La advertencia sobre el consumo parcial de LibraCore —las tres trampas que
+documenta LibraDesk— **no aplica a este tramo**: las tres son de la capa de
+datos (el `PRAGMA foreign_keys` no configurable, `init_core_schema()` que no es
+componible por tabla, y el DDL que no es el schema real porque hay columnas que
+agrega una migración aparte). `respaldo` no toca ninguna: recibe una URL de
+conexión y corre `pg_dump`. La advertencia sigue vigente para F7 y F8.
+
+**La alternativa descartada** era escribir un backup propio. Se descartó porque
+ese módulo es, casi entero, una lista de modos de falla que ya se pagaron en la
+familia: el backup que sale vacío y no se queja, el restore que contesta `ok`
+sin efecto porque el proceso no soltó la conexión, el ZIP de otro producto que
+se restaura encima, el `pg_restore` de otra major que aborta la transacción
+entera. Reimplementarlo era volver a aprenderlos de a uno.
+
