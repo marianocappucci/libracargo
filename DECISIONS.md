@@ -350,3 +350,45 @@ esté entre ellas.
   factura, y ese asiento lo hace el comprobante — duplicarlo en el alta contaría
   el importe dos veces. La diferencia visible para el cliente es que su cuenta
   corriente lleva **una línea por factura** y no una por orden.
+
+
+## ADR-019 — Provincias y localidades se eligen de un catálogo, pero el campo sigue guardando texto
+
+- Estado: aceptada
+- Fecha: 2026-08-20
+- Contexto: el cliente pidió *"que no se carguen mal y sólo se seleccionen"*. El
+  maestro de localidades —el que se usa como origen y destino de una orden—
+  tenía **121 filas cargadas a mano y ninguna con provincia**: en el legado,
+  `origen` y `destino` eran dos tablas con una sola columna de nombre. Adentro
+  conviven `Gral Paz` **y** `Gral. Paz`, `Pto San Martín` **y**
+  `Pto. San Martín`, `Pilar` **y** `Pilar (BA)`, junto a `Campo`, `Shap`,
+  `Coincer` y `(sin nombre)`.
+- Decisión:
+  1. El catálogo —24 provincias y 4.027 localidades— vive en **LibraCore**
+     (`libracore.geografia`), no acá: los seis productos manejan direcciones y
+     ninguno lo tenía. Se monta con `build_geo_router()` y la dependencia de rol
+     de este producto, igual que el router de backup.
+  2. Se usa en **los dos lugares**: el maestro de localidades y la dirección del
+     tercero.
+  3. 🔑 **El campo sigue guardando texto, no un id del catálogo.**
+- Por qué texto y no una clave foránea al catálogo, que es lo que primero se
+  quiere hacer:
+  - **Los datos viejos no se pierden.** Al abrir un tercero cuya localidad dice
+    `Cnel. Bogado` —que no está en el catálogo con esa abreviatura— el campo
+    arranca **en modo texto con el valor puesto**. Un desplegable que no
+    encuentra el valor guardado lo mostraría vacío, y guardar sin tocar nada
+    borraría el dato. Hay un test de eso, verificado en rojo.
+  - **Hay lugares reales que no están en ningún recurso oficial.** Tomás Jofré
+    no está ni en `localidades`, ni en `localidades-censales`, ni en
+    `asentamientos`. Con un desplegable cerrado, ese viaje no se puede cargar.
+  - Una FK obligaría además a migrar las 121 filas a ids antes de poder guardar
+    nada, y 58 de ellas no tienen a dónde apuntar.
+- La migración **`0005`** completa la provincia sólo donde el nombre matchea
+  **exactamente una** localidad del catálogo: 63 de 121. Las 17 ambiguas
+  (`San Pedro` está en ocho provincias) y las 41 que no matchean quedan como
+  están, para que las resuelva una persona con el desplegable puesto. Y sólo
+  escribe donde `provincia IS NULL`: un dato cargado a mano vale más que uno
+  deducido.
+- Consecuencias: el `downgrade` de la `0005` **no deshace nada**, y está escrito
+  por qué — poner en nulo lo que escribió borraría también lo que cargue una
+  persona después, y no hay forma de distinguirlos.

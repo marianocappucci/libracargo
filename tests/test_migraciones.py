@@ -156,3 +156,51 @@ def test_el_schema_migrado_rechaza_el_equipo_duplicado(base_limpia):
             "insert into vehiculos (patente_chasis, activo) values ('ZZ999ZZ', true)"
         ))
     motor.dispose()
+
+
+def test_la_0005_completa_la_provincia_solo_donde_no_hay_duda(base_limpia):
+    """Se corre la migración de verdad, con filas sembradas antes de que corra.
+
+    Se sube hasta la **0004**, se siembran las localidades y recién ahí se sube
+    a la 0005: si se sembraran después, la migración ya habría pasado y el test
+    mediría la nada. El caso de `Chivilcoy` es el importante — tiene una
+    provincia cargada a mano, equivocada a propósito, y **no se toca**: un dato
+    que puso una persona vale más que uno deducido acá.
+    """
+    original = os.environ.get("DATABASE_URL")
+    try:
+        cfg = _alembic(base_limpia)
+        command.upgrade(cfg, "0004")
+
+        eng = create_engine(base_limpia)
+        with eng.begin() as con:
+            for nombre, provincia in [
+                ("Suipacha", None),          # una sola en el catalogo -> se completa
+                ("Capilla del Señor", None),  # idem, y ademas prueba los acentos
+                ("San Pedro", None),         # en ocho provincias -> ambigua, no se toca
+                ("Cnel. Bogado", None),      # abreviatura, no matchea -> no se toca
+                ("Shap", None),              # no es una localidad -> no se toca
+                ("Chivilcoy", "Cordoba"),    # cargada a mano y MAL -> no se toca
+            ]:
+                con.execute(
+                    text("INSERT INTO localidades (nombre, provincia, activa) "
+                         "VALUES (:n, :p, true)"),
+                    {"n": nombre, "p": provincia})
+
+        command.upgrade(cfg, "head")
+
+        with eng.connect() as con:
+            filas = dict(con.execute(
+                text("SELECT nombre, provincia FROM localidades")).fetchall())
+
+        assert filas["Suipacha"] == "Buenos Aires"
+        assert filas["Capilla del Señor"] == "Buenos Aires"
+        # Los cuatro que no se tocan, y cada uno por un motivo distinto.
+        assert filas["San Pedro"] is None, "una localidad ambigua no se resuelve sola"
+        assert filas["Cnel. Bogado"] is None, "una abreviatura no matchea, y esta bien"
+        assert filas["Shap"] is None
+        assert filas["Chivilcoy"] == "Cordoba", "piso un dato cargado a mano"
+        eng.dispose()
+    finally:
+        if original:
+            os.environ["DATABASE_URL"] = original

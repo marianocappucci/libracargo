@@ -4,6 +4,16 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ## [Unreleased]
 
+### Agregado
+
+- **Provincias y localidades se eligen de un catálogo** (24 y 4.027, de
+  LibraCore) en el maestro de localidades y en la dirección de clientes,
+  fleteros y proveedores. El campo sigue aceptando texto para lo que no está en
+  el catálogo, y una localidad vieja que no matchea **abre en modo texto con su
+  valor** en vez de aparecer vacía. Ver ADR-019.
+  - La migración `0005` completa la provincia de **63 de las 121** localidades
+    existentes: sólo donde el nombre no es ambiguo.
+
 ### Corregido
 
 - 🔴 **El alta de una orden ahora asienta la comisión en la cuenta corriente del
