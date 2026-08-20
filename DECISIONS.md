@@ -275,3 +275,33 @@ sin efecto porque el proceso no soltó la conexión, el ZIP de otro producto que
 se restaura encima, el `pg_restore` de otra major que aborta la transacción
 entera. Reimplementarlo era volver a aprenderlos de a uno.
 
+## ADR-017 — La salud se sirve en `/salud` **y** en `/health`
+
+**Fecha**: 2026-08-19 · **Estado**: aceptada
+
+Este producto nombra todo en castellano y su sonda era `/salud`. El provisioning
+de la familia le estampa a cada instancia nueva un healthcheck contra
+`health_path`, cuyo default es `/health` porque es lo que sirven los otros seis.
+
+Se sirven **las dos rutas sobre el mismo handler**.
+
+**Por qué no alcanzaba con dejar `/salud` y parametrizar el provisioning.** Se
+podía: `configure()` acepta `health_path`. Pero el valor efectivo lo fija el
+último `configure()` que corre, y `libracore.admin.services` importa
+`nuevo_cliente` y `panel_admin` en el mismo proceso sobre un `_cfg` **global**.
+Un producto que depende de ese argumento tiene una forma de romperse que los
+otros seis no tienen. Converger a la ruta que ya cumple todo el mundo saca el
+parámetro del medio.
+
+**Por qué no renombrar `/salud` a secas.** Está en el `HEALTHCHECK` del
+Dockerfile, en el README y en los tests. Dos rutas sobre una función no pueden
+divergir; una ruta renombrada y un consumidor sin actualizar, sí.
+
+🔴 **El modo de falla que esto cierra no es un 404.** Con la SPA horneada,
+`app/asgi.py` responde cualquier ruta desconocida con el `index.html`: un
+healthcheck apuntado a una ruta inexistente devuelve **200**, y la instancia se
+reporta sana aunque la base esté caída. Le pasó a [[libradesk]] y no lo encontró
+el diff — lo encontró medir adentro del contenedor. `tests/test_provisioning.py`
+ata las dos puntas: saca las rutas del router y exige que la del provisioning
+esté entre ellas.
+
