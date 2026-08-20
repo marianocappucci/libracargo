@@ -23,9 +23,44 @@ _DIST_DOCKER = Path("/opt/frontend-dist")
 _DIST_LOCAL = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 FRONTEND_DIST = _DIST_DOCKER if _DIST_DOCKER.is_dir() else _DIST_LOCAL
 
+#: 🔴 **`index.html` no se cachea, y esto no es una optimización: es lo que
+#: hace que un deploy se vea.**
+#:
+#: Vite le pone un hash en el nombre a cada bundle, así que el archivo nuevo
+#: nunca pisa al viejo — pero `index.html` **conserva el nombre** y es el único
+#: que dice cuál es el bundle de ahora. Sin `Cache-Control`, el navegador aplica
+#: caché heurística (una fracción de la antigüedad del `Last-Modified`) y puede
+#: servir el `index.html` guardado sin preguntar. El usuario recarga, no ve el
+#: cambio, y del lado del servidor está todo bien: el contenedor tiene el código
+#: nuevo, el bundle nuevo está publicado, y el navegador sigue pidiendo el viejo
+#: — que además existe, porque el nombre lleva hash.
+#:
+#: Paso el 2026-08-19 con la pantalla de Backup: estaba desplegada y no se veía.
+#:
+#: `no-cache` **no** es "no guardes": es "guardá, pero revalidá siempre". Con el
+#: `ETag` que ya manda `FileResponse`, la respuesta normal es un 304 de unos
+#: pocos bytes. El costo es un request por carga; el beneficio es que el deploy
+#: llega.
+SIN_CACHE = "no-cache, must-revalidate"
+
+#: Los assets, al revés: el nombre lleva el hash del contenido, así que **el
+#: mismo nombre nunca cambia de contenido** y se pueden cachear para siempre. Un
+#: `index.html` que revalida siempre es lo que hace seguro esto: cuando el
+#: contenido cambia, el nombre cambia, y el `index.html` fresco pide el nuevo.
+PARA_SIEMPRE = "public, max-age=31536000, immutable"
+
 if FRONTEND_DIST.is_dir():
+    class AssetsInmutables(StaticFiles):
+        """`StaticFiles` con la cabecera de caché larga."""
+
+        def file_response(self, *args, **kwargs):
+            respuesta = super().file_response(*args, **kwargs)
+            respuesta.headers["Cache-Control"] = PARA_SIEMPRE
+            return respuesta
+
     app.mount(
-        "/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="frontend-assets"
+        "/assets", AssetsInmutables(directory=FRONTEND_DIST / "assets"),
+        name="frontend-assets",
     )
 
     @app.get("/{ruta:path}", include_in_schema=False)
@@ -34,5 +69,9 @@ if FRONTEND_DIST.is_dir():
             raise HTTPException(404, "no existe esa ruta")
         archivo = archivo_publico(FRONTEND_DIST, ruta)
         if archivo is not None:
-            return FileResponse(archivo, media_type=TIPOS_PROPIOS.get(archivo.suffix))
-        return FileResponse(FRONTEND_DIST / "index.html")
+            # Los archivos sueltos del dist (favicon, manifest) tampoco llevan
+            # hash en el nombre: mismo criterio que el index.
+            return FileResponse(archivo, media_type=TIPOS_PROPIOS.get(archivo.suffix),
+                                headers={"Cache-Control": SIN_CACHE})
+        return FileResponse(FRONTEND_DIST / "index.html",
+                            headers={"Cache-Control": SIN_CACHE})
