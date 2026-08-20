@@ -86,11 +86,15 @@ def test_el_service_worker_no_cachea():
     # Sin los comentarios: la explicación de por qué no se cachea nombra
     # justamente lo que está prohibido, y buscar sobre el archivo entero deja el
     # guard en rojo por su propia documentación.
-    codigo = " ".join(l for l in sw.splitlines() if not l.lstrip().startswith("//"))
+    codigo = " ".join(
+        linea for linea in sw.splitlines() if not linea.lstrip().startswith("//")
+    )
 
     assert "addEventListener('fetch'" in codigo, "sin manejador de fetch no es instalable"
     for prohibido in ("caches.open", "cache.put", "cache.addAll", "respondWith"):
-        assert prohibido not in codigo, f"el service worker no tiene que cachear: apareció {prohibido}"
+        assert prohibido not in codigo, (
+            f"el service worker no tiene que cachear: apareció {prohibido}"
+        )
 
 
 def test_el_icono_de_ios_no_tiene_transparencia():
