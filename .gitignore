@@ -14,3 +14,29 @@ htmlcov/
 .obsidian/
 *.egg-info/
 .DS_Store
+
+# 🔴 El dump del legado de Suitrans tiene datos reales de clientes. No entra
+# al repo por ningun camino, y menos por un glob que alguien agrego sin mirar.
+dump-suitrans*
+*.sql.gz
+staging/
+informe-perfilado*.md
+
+# El compose de la instancia de CLIENTE vive SOLO en el servidor.
+#
+# 🔴 Antes era este mismo  editado a mano en el checkout de
+# , y eso rompe el deploy en silencio: Already up to date. se niega a pisar un archivo con cambios locales, el script sigue
+# —no corta— y  reconstruye con el codigo VIEJO. El
+# contenedor queda sano sirviendo lo de ayer.
+#
+# Con el compose del cliente en un archivo propio, el archivo versionado queda
+# limpio y el pull siempre entra.
+docker-compose.suitrans.yml
+
+
+# Credenciales de Nginx Proxy Manager, que genera `scripts/npm_setup.py`.
+scripts/.npm_config.json
+
+# Las instancias de cliente que crea `scripts/nuevo_cliente.py`: un directorio
+# por cliente con su compose y su `.env`. Viven en el servidor, no en git.
+/clientes/

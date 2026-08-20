@@ -1,42 +1,98 @@
-# Entorno de desarrollo local.
+# Instancia `dev` de LibraCargo en el VPS, y entorno de desarrollo local.
 #
-# En el VPS cada instancia corre con su propia red y su sidecar PostgreSQL
-# **sin puerto publicado** — eso lo arma `panel_admin.py`, no este archivo.
+# Mismo patrón que los `dev` del resto de la familia: NO es `panel_admin.py`
+# —ese vive en LibraCore y provisiona instancias de CLIENTE bajo
+# `clientes/<slug>/`—. Un compose, dos redes, y Nginx Proxy Manager alcanza al
+# contenedor por su alias en la red compartida.
 
 services:
-  db:
-    # La misma imagen que producción: el collation viene de la imagen y
-    # alpine ordena por bytes.
+  # 🔴 La clave del servicio lleva el nombre del producto y no es `db` ni
+  # `postgres`: Compose convierte la clave en un alias de red, y `stack-net` la
+  # comparte todo el VPS. Dos composes con la misma clave se turnan por
+  # round-robin del DNS interno — ya pasó en esta familia.
+  libracargo-postgres:
+    # La MISMA imagen que el CI y que producción: el collation viene de la
+    # imagen y la alpine ordena por bytes.
     image: postgres:16
+    container_name: libracargo-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: libracargo
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-desarrollo}
       POSTGRES_DB: libracargo
+      POSTGRES_USER: libracargo
+      # Sin default a propósito: `:?` aborta el `up` si falta, en vez de
+      # levantar la base con una clave escrita en git.
+      POSTGRES_PASSWORD: ${LIBRACARGO_POSTGRES_PASSWORD:?hay que definirla en el .env}
       TZ: America/Argentina/Buenos_Aires
     volumes:
-      - datos_db:/var/lib/postgresql/data
+      - libracargo-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U libracargo"]
+      test: ["CMD-SHELL", "pg_isready -U libracargo -d libracargo"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks: [interna]
+      start_period: 10s
+    # Sin `ports:` a propósito: sólo se llega desde la red interna.
+    networks: [datos]
 
-  app:
-    build: .
-    environment:
-      DATABASE_URL: postgresql+psycopg://libracargo:${POSTGRES_PASSWORD:-desarrollo}@db:5432/libracargo
-      ENTORNO: dev
-      TZ: America/Argentina/Buenos_Aires
+  libracargo-dev:
+    build:
+      context: .
+      # Sin `ssh:`: los motores de la familia son repos PÚBLICOS hoy. Cuando
+      # pasen a privados hay que agregar acá un id por paquete —uno solo no
+      # alcanza, GitHub autentica toda la conexión con la primera deploy key
+      # que le ofrecen— y los mounts correspondientes en el Dockerfile.
+    container_name: libracargo-dev
     depends_on:
-      db:
+      libracargo-postgres:
         condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 768m
+    mem_reservation: 256m
+    cpus: 1.0
     ports:
-      - "127.0.0.1:8000:8000"
-    networks: [interna]
+      - "8097:8000"
+    # El bind mount es para el `--reload` del código Python. Taparía el build
+    # del frontend si viviera dentro de /app: por eso el Dockerfile lo hornea
+    # en /opt/frontend-dist, fuera del árbol montado, y `app/asgi.py` mira
+    # primero ahí.
+    volumes:
+      - ./:/app
+      # Los ZIP de backup, en un volumen propio y NO en el árbol montado de
+      # arriba: ese árbol es el checkout de git del servidor, y dejarle
+      # archivos nuevos adentro le complica el `git pull` del próximo deploy.
+      # Va después del bind mount a propósito — el montaje más específico gana.
+      - libracargo-datos:/app/datos
+    command: uvicorn app.asgi:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      # Las tres sin default: la app tiene que fallar al arrancar si falta
+      # alguna, no levantar con un secreto de juguete en un dominio público.
+      - SECRET_KEY=${SECRET_KEY:?hay que definirla en el .env}
+      - LIBRACARGO_ADMIN_USERNAME=${LIBRACARGO_ADMIN_USERNAME:-admin}
+      - LIBRACARGO_ADMIN_PASSWORD=${LIBRACARGO_ADMIN_PASSWORD:?hay que definirla en el .env}
+      - DATABASE_URL=postgresql+psycopg://libracargo:${LIBRACARGO_POSTGRES_PASSWORD:?hay que definirla en el .env}@libracargo-postgres:5432/libracargo
+      - ENTORNO=dev
+      # Como el backoffice (`admin.libracargo.com.ar`) administra los usuarios
+      # de esta instancia. **Con default vacio a proposito**, al reves que las
+      # tres de arriba: `libraauth` trata el token vacio como "no definido" y
+      # `require_admin_o_servicio` se comporta igual que `require_admin`. O sea
+      # que no ponerlo no abre nada; lo que abriria algo seria ponerle un valor
+      # adivinable, y por eso no hay uno de ejemplo.
+      - LIBRA_SERVICE_TOKEN=${LIBRA_SERVICE_TOKEN:-}
+      # Dónde escribe los backups. Sin esto caen en `./datos` relativo al
+      # directorio de trabajo, o sea adentro del bind mount.
+      - DATA_DIR=/app/datos
+      - TZ=America/Argentina/Buenos_Aires
+    networks: [stack-net, datos]
 
 volumes:
-  datos_db:
+  libracargo-postgres-data:
+  libracargo-datos:
 
 networks:
-  interna:
+  datos:
+    name: libracargo-dev-datos
+  # La red compartida del VPS, donde vive Nginx Proxy Manager. Es la que hace
+  # que el proxy host pueda apuntar a `libracargo-dev:8000` por nombre.
+  stack-net:
+    external: true
+    name: stack_stack-net

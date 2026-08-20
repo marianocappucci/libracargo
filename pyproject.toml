@@ -10,6 +10,25 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "alembic>=1.14",
     "pydantic>=2.9",
+    # La subida del logo del membrete: FastAPI necesita esto para UploadFile.
+    "python-multipart>=0.0.9",
+    # El auth de toda la familia. Se declara con `git+https` a proposito: asi
+    # anda en dev local sin identidad SSH propia. El build de la imagen
+    # reescribe la URL a `git+ssh` con la deploy key de solo lectura del motor
+    # (ver Dockerfile), que es lo que va a hacer falta cuando la familia pase a
+    # repos privados.
+    "libraauth @ git+https://github.com/marianocappucci/libraauth.git@v0.26.1",
+    # 🔑 **LibraCore entra ACÁ y no en F7, y sólo por `respaldo`.** El plan lo
+    # tenía para la impresión (`pdf_generator`) y ARCA; el backup se pidió
+    # antes. Se adelanta el paquete, no el alcance: hoy este producto importa
+    # `respaldo` y `config_router.build_backup_router`, nada más.
+    #
+    # Las tres trampas del consumo parcial que documenta [[libradesk]] son
+    # todas de la CAPA DE DATOS —`PRAGMA foreign_keys` no configurable,
+    # `init_core_schema()` que no es componible por tabla, y el DDL que no es
+    # el schema real—. `respaldo` no toca nada de eso: recibe una URL y
+    # corre `pg_dump`. Por eso este adelanto no arrastra ninguna de las tres.
+    "libracore @ git+https://github.com/marianocappucci/libracore.git@v1.39.2",
 ]
 
 # Los motores de la familia entran en F1, desde repos privados por deploy key.
@@ -17,14 +36,23 @@ dependencies = [
 # sin acceso a esos repos.
 [project.optional-dependencies]
 motores = [
-    # "libraauth @ git+https://github.com/marianocappucci/libraauth.git@v0.26.1",
-    # "libracore @ git+https://github.com/marianocappucci/libracore.git@v1.39.2",
+    # LibraCore ya NO está acá: pasó a las dependencias obligatorias cuando
+    # entró el backup (ver el comentario allá arriba). Lo que sigue difiriéndose
+    # es su ALCANCE — `pdf_generator` en F7 y ARCA en F8—, no el paquete.
+]
+# La migracion del legado de Suitrans (F6). Va aparte de dev porque es
+# tooling de una sola vez: la app no lo importa nunca.
+migracion = [
+    # Lee el MariaDB efimero donde se restaura el dump. Puro Python, sin
+    # compilar nada.
+    "pymysql>=1.1",
 ]
 dev = [
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "httpx>=0.27",
     "ruff>=0.8",
+    "pymysql>=1.1",
 ]
 
 [build-system]
@@ -32,7 +60,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["app*"]
+include = ["app*", "migracion*"]
 
 [tool.ruff]
 line-length = 100
@@ -47,7 +75,9 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.flake8-bugbear]
 # `Depends()` en el default es el idioma de FastAPI, no un descuido.
-extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path"]
+extend-immutable-calls = [
+    "fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.File",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
