@@ -6,6 +6,18 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Agregado
 
+- **Backoffice**: `admin.libracargo.com.ar`, la misma instancia de
+  `libra-backoffice` que administra a los otros seis productos. Da de alta
+  clientes, los pausa y reanuda, les hace backup y les administra los usuarios.
+  - El producto sólo aporta el envoltorio de configuración —`scripts/`,
+    `plans.py`— porque la lógica vive en `libracore.provisioning`.
+  - **La sonda de salud también se sirve en `/health`**, además de `/salud`.
+    Es la ruta que el alta le estampa al healthcheck de cada instancia nueva y
+    la que sirven los otros seis. Son dos rutas sobre el mismo handler: no
+    pueden divergir.
+  - El router de usuarios acepta **rol admin o token de servicio**. Sin
+    `LIBRA_SERVICE_TOKEN` en el entorno se comporta igual que antes.
+
 - **Backup y restauración de los datos**, en Configuración → Datos / Backup.
   El cliente se baja un ZIP con la base entera y puede reponerlo. Es el motor
   de la familia (`libracore.respaldo` + `build_backup_router`) y la pantalla
