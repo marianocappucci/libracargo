@@ -15,10 +15,17 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from libraauth.repository import UsernameTaken, UserRepository
 from pydantic import BaseModel, Field
 
-from app.auth import get_current_user, require_admin
+from app.auth import get_current_user, require_admin_o_servicio
 
 router = APIRouter(prefix="/api/usuarios", tags=["usuarios"],
-                   dependencies=[Depends(require_admin)])
+                   # Rol admin **o** token de servicio: el backoffice de la suite
+                   # administra los usuarios de una instancia por acá, y no tiene
+                   # (ni debería tener) una sesión de usuario en cada una.
+                   #
+                   # Sin `LIBRA_SERVICE_TOKEN` en el entorno se comporta
+                   # exactamente igual que `require_admin`, así que ponerlo en una
+                   # instancia que no define la variable no abre nada.
+                   dependencies=[Depends(require_admin_o_servicio)])
 
 Rol = Literal["admin", "staff"]
 
