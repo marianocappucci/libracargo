@@ -32,3 +32,11 @@ informe-perfilado*.md
 # Con el compose del cliente en un archivo propio, el archivo versionado queda
 # limpio y el pull siempre entra.
 docker-compose.suitrans.yml
+
+
+# Credenciales de Nginx Proxy Manager, que genera `scripts/npm_setup.py`.
+scripts/.npm_config.json
+
+# Las instancias de cliente que crea `scripts/nuevo_cliente.py`: un directorio
+# por cliente con su compose y su `.env`. Viven en el servidor, no en git.
+/clientes/

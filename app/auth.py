@@ -21,6 +21,16 @@ from libraauth.session_auth import (
     json_api_require_admin as require_admin,
 )
 from libraauth.session_auth import (
+    # Rol admin **o** token de servicio. Lo usa el router de usuarios, que es
+    # lo único del backoffice de la suite que no puede salir del motor: el
+    # router de usuarios es propio de cada producto.
+    #
+    # Falla cerrado por omisión: **sin `LIBRA_SERVICE_TOKEN` en el entorno se
+    # comporta igual que `require_admin`**, así que dejarlo puesto en una
+    # instancia que no lo define no abre nada.
+    json_api_require_admin_o_servicio as require_admin_o_servicio,
+)
+from libraauth.session_auth import (
     json_api_require_role as require_role,
 )
 from libraauth.session_auth import (
@@ -30,7 +40,7 @@ from libraauth.session_auth import (
 __all__ = [
     "SessionAuth", "UserRepository", "construir_session_auth",
     "get_current_user", "get_session_auth",
-    "require_admin", "require_role", "require_staff",
+    "require_admin", "require_admin_o_servicio", "require_role", "require_staff",
 ]
 
 #: Nombre de la cookie. Propio por producto: dos instancias de productos
