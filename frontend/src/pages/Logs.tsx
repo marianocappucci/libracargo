@@ -145,22 +145,39 @@ export default function Logs() {
         </p>
       )}
 
+      {/* 🔑 **Los `size` no son decorativos: son lo que saca el scroll horizontal.**
+          `DataTable` mira si ALGUNA columna declara `size`; si ninguna lo hace,
+          deja el layout automático del navegador y la tabla mide lo que mida su
+          contenido — y como `TableCell` trae `whitespace-nowrap` (el default de
+          shadcn), "Qué cambió" no corta línea nunca y estira la tabla hasta
+          pasarse del contenedor. Con `size` pasa a `table-fixed` con `width:
+          100%`: la tabla se ajusta al ancho disponible.
+
+          Los cuatro primeros están fijos al ancho de su contenido y `cambio` es
+          la elástica (`stretch`): se queda con todo el sobrante en vez de
+          empujar. Suman 770 de ancho mínimo, que entra en cualquier pantalla de
+          escritorio con la barra lateral abierta.
+
+          Y `whitespace-normal break-words` sólo en esa columna: el nowrap se
+          deja donde sirve —una fecha o un importe partidos en dos líneas se leen
+          peor— y se saca donde estorba. */}
       <DataTable
         columns={[
-          { id: 'ts', header: 'Cuándo',
+          { id: 'ts', header: 'Cuándo', size: 140,
             accessorFn: (r: Registro) => r.ts.replace('T', ' ').slice(0, 16) },
-          { id: 'usuario', header: 'Usuario',
+          { id: 'usuario', header: 'Usuario', size: 140,
             accessorFn: (r: Registro) => r.usuario_nombre ?? '—' },
-          { id: 'accion', header: 'Acción',
+          { id: 'accion', header: 'Acción', size: 110,
             accessorFn: (r: Registro) => r.accion,
             cell: ({ row }: { row: { original: Registro } }) => (
               <Badge variant={COLOR[row.original.accion] ?? 'outline'}>
                 {row.original.accion}
               </Badge>
             ) },
-          { id: 'entidad', header: 'Qué',
+          { id: 'entidad', header: 'Qué', size: 160,
             accessorFn: (r: Registro) => `${r.entidad} #${r.entidad_id ?? '—'}` },
-          { id: 'cambio', header: 'Qué cambió',
+          { id: 'cambio', header: 'Qué cambió', size: 220,
+            meta: { stretch: true, className: 'whitespace-normal break-words' },
             accessorFn: (r: Registro) => describirCambio(r) || '—' },
         ]}
         data={datos.registros}
