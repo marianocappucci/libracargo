@@ -4,6 +4,17 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ## [Unreleased]
 
+### Corregido
+
+- 🔴 **El alta de una orden ahora asienta la comisión en la cuenta corriente del
+  fletero.** No lo hacía: `comision` se leía sólo para los reportes, y la cuenta
+  de un fletero sólo se movía cuando se le pagaba. Editar la orden corrige el
+  asiento y anularla lo revierte con un contraasiento. Ver ADR-018.
+- 🔴 **Pagarle a un fletero o a un proveedor bajaba mal el saldo**: el asiento de
+  caja elegía la columna mirando sólo el tipo de movimiento, así que un egreso
+  **aumentaba** lo que se le debía. Ahora la columna depende del rol de la cuenta,
+  como en el sistema anterior y como los 22.645 movimientos migrados.
+
 ### Agregado
 
 - **Backoffice**: `admin.libracargo.com.ar`, la misma instancia de

@@ -18,7 +18,9 @@ Fase **F1** — esqueleto. Modelo de datos completo, migración inicial y suite
 contra PostgreSQL real; sin API de negocio ni frontend todavía.
 
 - Entorno dev: `dev.libracargo.com.ar`
-- Demo: `demo.libracargo.com.ar`
+- Demo: `demo.libracargo.com.ar` — **el nombre resuelve pero la instancia no
+  existe** (verificado el 2026-08-20): sin contenedor ni proxy host, contesta
+  el sitio por defecto de NPM.
 - Cliente Suitrans: `suitrans.libracargo.com.ar`
 - Rama de desarrollo: `develop` · Rama de producción: `main`
 

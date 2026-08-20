@@ -104,18 +104,34 @@ def registrar_caja(datos: MovimientoCajaIn, sesion: Session = Depends(obtener_se
         # segundo deja el primero grabado -- el defecto exacto del legado.
         sesion.flush()
         if datos.tercero_id is not None:
-            # Un ingreso baja lo que el tercero debe; un egreso lo sube. Vale
-            # para las tres cuentas, porque el signo lo da el movimiento y no
-            # el rol.
-            es_ingreso = datos.tipo is TipoMovimientoCaja.INGRESO
+            # 🔴 El signo lo dan el movimiento **y el rol**, no el movimiento
+            # solo. Acá decía lo contrario —"un egreso sube lo que el tercero
+            # debe, vale para las tres cuentas"— y para fletero y proveedor
+            # estaba al revés: pagarle a un fletero le AUMENTABA el saldo en
+            # vez de cancelarlo.
+            #
+            # La convención es la del legado, y es la que tienen los 22.645
+            # movimientos migrados: **el cargo va a `debe` y el pago a
+            # `haber`, en las tres cuentas**. Lo que cambia es qué es un cargo:
+            #
+            # | Cuenta | Ingreso | Egreso |
+            # |---|---|---|
+            # | Cliente | cobranza -> `haber` | devolución -> `debe` |
+            # | Fletero / proveedor | devolución -> `debe` | pago -> `haber` |
+            #
+            # Para un cliente el saldo positivo es lo que **debe**; para un
+            # fletero o un proveedor, lo que se le **debe**. Por eso el ingreso
+            # cae de un lado en una cuenta y del otro en la otra.
+            cobranza = datos.rol is RolCuenta.CLIENTE
+            al_haber = (datos.tipo is TipoMovimientoCaja.INGRESO) == cobranza
             sesion.add(MovimientoCuenta(
                 fecha=datos.fecha,
                 tercero_id=datos.tercero_id,
                 rol=datos.rol,
                 concepto=datos.concepto,
                 descripcion=datos.descripcion,
-                debe=0 if es_ingreso else datos.importe,
-                haber=datos.importe if es_ingreso else 0,
+                debe=0 if al_haber else datos.importe,
+                haber=datos.importe if al_haber else 0,
                 movimiento_caja_id=movimiento.id,
             ))
         auditoria.registrar(sesion, actual, "movimiento_caja", movimiento.id,

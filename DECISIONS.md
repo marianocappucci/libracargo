@@ -305,3 +305,48 @@ el diff — lo encontró medir adentro del contenedor. `tests/test_provisioning.
 ata las dos puntas: saca las rutas del router y exige que la del provisioning
 esté entre ellas.
 
+
+## ADR-018 — La orden asienta en la cuenta del fletero, y el signo lo da el rol
+
+- Estado: aceptada
+- Fecha: 2026-08-20
+- Contexto: el chequeo de paridad contra el sistema legado encontró que
+  **LibraCargo nunca escribía en la cuenta corriente del fletero**. En el legado,
+  `altaordencarga.php` inserta en `fleteroctacte` con la **comisión** — por eso es
+  la tabla más movida del sistema, 12.995 filas contra 6.267 de la de clientes.
+  Acá `comision` se leía sólo para los reportes. Medido sobre la instancia del
+  cliente: de los **8.674** movimientos que apuntan a una orden, **cero** son
+  posteriores a la migración. El defecto no se veía porque la instancia todavía
+  no tiene órdenes nuevas; habría aparecido después del corte, con la cuenta de
+  un fletero mostrando **pagos sin cargos** y el saldo corriendo para un lado.
+- Tirando de ese hilo apareció un segundo defecto, en el mismo lugar: el asiento
+  de caja decidía la columna **sólo por el tipo de movimiento**, con un comentario
+  que lo afirmaba explícitamente ("el signo lo da el movimiento y no el rol"). Con
+  esa regla, **pagarle a un fletero le aumentaba el saldo** en vez de cancelarlo.
+- Decisión:
+  1. El alta de una orden con fletero y comisión crea el asiento en `debe`, **en
+     la misma transacción** que la orden. La edición lo corrige en el lugar —una
+     línea en la cuenta, no dos, igual que el `UPDATE` de `modifica_carga.php`— y
+     la anulación lo **revierte con un contraasiento** que lleva la fecha de la
+     orden, no la de hoy.
+  2. La columna del asiento de caja depende del **par (rol, tipo)**:
+
+     | Cuenta | Ingreso | Egreso |
+     |---|---|---|
+     | Cliente | cobranza → `haber` | devolución → `debe` |
+     | Fletero / proveedor | devolución → `debe` | pago → `haber` |
+
+     Es la convención del legado y la de los 22.645 movimientos migrados: el
+     cargo va a `debe` y el pago a `haber` en las tres cuentas. Lo que cambia es
+     cuál de los dos es un ingreso, porque para un cliente el saldo positivo es
+     lo que **debe** y para un fletero es lo que se le **debe**.
+- Consecuencias: no hace falta migración de datos — el histórico ya trae sus
+  asientos y lo que faltaba era el camino nuevo. **Dos tests existentes cambiaron
+  de número**, y los dos afirmaban la premisa equivocada: uno esperaba `+40` tras
+  pagarle 40 a un fletero, y el ranking de fleteros esperaba que el saldo fuera el
+  pago con el signo cambiado.
+- Lo que **no** se hizo, a propósito: el legado también inserta en
+  `clientectacte` al dar de alta la orden. Acá el cliente debe cuando se le
+  factura, y ese asiento lo hace el comprobante — duplicarlo en el alta contaría
+  el importe dos veces. La diferencia visible para el cliente es que su cuenta
+  corriente lleva **una línea por factura** y no una por orden.

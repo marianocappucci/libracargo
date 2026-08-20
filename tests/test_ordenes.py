@@ -204,3 +204,121 @@ def test_sin_sesion_no_se_ven_las_ordenes(engine, monkeypatch):
         assert anonimo.get("/api/ordenes").status_code == 401
     finally:
         AuthBase.metadata.drop_all(engine)
+
+
+# ---------------------------------------------------------------------------
+# El asiento que la orden deja en la cuenta corriente del fletero
+# ---------------------------------------------------------------------------
+
+def cuenta(cliente, rol, tercero_id):
+    """El resumen de una cuenta, verificando de paso que los dos saldos coinciden."""
+    r = cliente.get(f"/api/cuentas/{rol}/{tercero_id}")
+    assert r.status_code == 200, r.text
+    c = r.json()
+    assert c["coinciden"] is True
+    return Decimal(c["saldo"]), [f["movimiento"] for f in c["movimientos"]]
+
+
+def con_fletero(m, **extra):
+    campos = {"fletero_id": m["fletero"], "comision": "700.00"}
+    campos.update(extra)
+    return orden_minima(m, **campos)
+
+
+def test_el_alta_carga_la_comision_en_la_cuenta_del_fletero(cliente, maestros):
+    """🔴 Esto no existía: `comision` se leía sólo para los reportes.
+
+    En el legado, dar de alta una orden inserta en `fleteroctacte` con la
+    comisión — por eso es la tabla más movida del sistema. Sin este asiento la
+    cuenta de un fletero tendría sólo los pagos, y el saldo correría para un
+    solo lado desde el día del corte.
+    """
+    o = cliente.post("/api/ordenes", json=con_fletero(maestros)).json()
+    saldo, movs = cuenta(cliente, "fletero", maestros["fletero"])
+    assert saldo == Decimal("700.00")
+    assert len(movs) == 1
+    assert Decimal(movs[0]["debe"]) == Decimal("700.00")
+    assert Decimal(movs[0]["haber"]) == Decimal("0.00")
+    assert movs[0]["orden_id"] == o["id"]
+    # El detalle del viaje entero: en el legado esta columna era `varchar(50)` y
+    # MySQL la truncaba en silencio (551 filas cortadas en la base del cliente).
+    assert "Suipacha" in movs[0]["descripcion"]
+    assert "Chivilcoy" in movs[0]["descripcion"]
+
+
+def test_el_alta_no_toca_la_cuenta_del_cliente(cliente, maestros):
+    """Diferencia deliberada con el legado, y por eso está fijada.
+
+    El legado también inserta en `clientectacte` al dar de alta. Acá el cliente
+    debe cuando se le factura, y ese asiento lo hace el comprobante: si el alta
+    también lo hiciera, el importe se contaría dos veces.
+    """
+    cliente.post("/api/ordenes", json=con_fletero(maestros))
+    saldo, movs = cuenta(cliente, "cliente", maestros["cliente"])
+    assert saldo == Decimal("0.00")
+    assert movs == []
+
+
+def test_sin_fletero_no_hay_asiento(cliente, maestros):
+    """Control negativo: sin esto, los tests de arriba pasarían aunque el
+    asiento se creara siempre."""
+    cliente.post("/api/ordenes", json=orden_minima(maestros, comision="700.00"))
+    assert cuenta(cliente, "fletero", maestros["fletero"]) == (Decimal("0.00"), [])
+
+
+def test_sin_comision_no_hay_asiento(cliente, maestros):
+    """Una línea de $0 en una cuenta corriente no significa nada — y el CHECK
+    `ck_cuenta_debe_o_haber` la rechaza."""
+    cliente.post("/api/ordenes", json=orden_minima(maestros, fletero_id=maestros["fletero"]))
+    assert cuenta(cliente, "fletero", maestros["fletero"]) == (Decimal("0.00"), [])
+
+
+def test_editar_la_comision_corrige_el_asiento_sin_duplicarlo(cliente, maestros):
+    """Una línea, no dos. Es lo que hace `modifica_carga.php` con un `UPDATE`,
+    y es lo que el cliente espera ver en la cuenta."""
+    o = cliente.post("/api/ordenes", json=con_fletero(maestros)).json()
+    r = cliente.put(f"/api/ordenes/{o['id']}", json=con_fletero(maestros, comision="900.00"))
+    assert r.status_code == 200, r.text
+    saldo, movs = cuenta(cliente, "fletero", maestros["fletero"])
+    assert saldo == Decimal("900.00")
+    assert len(movs) == 1
+
+
+def test_sacarle_el_fletero_a_la_orden_saca_el_cargo(cliente, maestros):
+    o = cliente.post("/api/ordenes", json=con_fletero(maestros)).json()
+    r = cliente.put(f"/api/ordenes/{o['id']}", json=orden_minima(maestros))
+    assert r.status_code == 200, r.text
+    assert cuenta(cliente, "fletero", maestros["fletero"]) == (Decimal("0.00"), [])
+
+
+def test_anular_no_borra_el_cargo_lo_revierte(cliente, maestros):
+    """Dos líneas y saldo cero, con la fecha de la orden.
+
+    Con la fecha de hoy, la cuenta mostraría entre el cargo y su reversión una
+    deuda que ningún total del período reconoce. Mismo criterio que la
+    anulación de un comprobante.
+    """
+    o = cliente.post("/api/ordenes", json=con_fletero(maestros)).json()
+    assert cliente.delete(f"/api/ordenes/{o['id']}").status_code == 200
+    saldo, movs = cuenta(cliente, "fletero", maestros["fletero"])
+    assert saldo == Decimal("0.00")
+    assert len(movs) == 2
+    assert Decimal(movs[1]["haber"]) == Decimal("700.00")
+    assert movs[1]["fecha"] == o["fecha"]
+
+
+def test_el_pago_al_fletero_cancela_el_cargo_de_la_orden(cliente, maestros):
+    """El circuito entero: la orden carga y el pago descarga.
+
+    🔴 Antes de este arreglo daba **1400**: faltaba el cargo del alta y el pago
+    caía en `debe` en vez de en `haber`, así que pagarle a un fletero le subía
+    el saldo.
+    """
+    cliente.post("/api/ordenes", json=con_fletero(maestros))
+    r = cliente.post("/api/caja", json={
+        "fecha": "2026-08-19", "tipo": "egreso", "concepto": "Pago a fletero",
+        "importe": "700.00", "tercero_id": maestros["fletero"], "rol": "fletero"})
+    assert r.status_code == 201, r.text
+    saldo, movs = cuenta(cliente, "fletero", maestros["fletero"])
+    assert saldo == Decimal("0.00")
+    assert len(movs) == 2
