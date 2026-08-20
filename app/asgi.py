@@ -37,10 +37,14 @@ FRONTEND_DIST = _DIST_DOCKER if _DIST_DOCKER.is_dir() else _DIST_LOCAL
 #:
 #: Paso el 2026-08-19 con la pantalla de Backup: estaba desplegada y no se veía.
 #:
-#: `no-cache` **no** es "no guardes": es "guardá, pero revalidá siempre". Con el
-#: `ETag` que ya manda `FileResponse`, la respuesta normal es un 304 de unos
-#: pocos bytes. El costo es un request por carga; el beneficio es que el deploy
-#: llega.
+#: `no-cache` **no** es "no guardes": es "guardá, pero revalidá siempre".
+#:
+#: El costo es un request por carga, y **es el archivo entero, no un 304**:
+#: `FileResponse` manda el `ETag` pero no atiende peticiones condicionales —eso
+#: lo hace `StaticFiles`, que sirve `/assets` pero no este catch-all—. Medido
+#: contra la instancia desplegada: con `If-None-Match` devuelve 200. Son unos
+#: cientos de bytes por carga, así que no se persigue el 304; lo que sí importa
+#: es que el dato quede escrito bien.
 SIN_CACHE = "no-cache, must-revalidate"
 
 #: Los assets, al revés: el nombre lleva el hash del contenido, así que **el
