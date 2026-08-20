@@ -26,8 +26,11 @@ export const CAMPOS_TERCERO: Campo[] = [
   { nombre: 'es_fletero', etiqueta: 'Es fletero', tipo: 'booleano' },
   { nombre: 'es_proveedor', etiqueta: 'Es proveedor', tipo: 'booleano' },
   { nombre: 'direccion', etiqueta: 'Dirección' },
-  { nombre: 'localidad', etiqueta: 'Localidad' },
-  { nombre: 'provincia', etiqueta: 'Provincia' },
+  // La provincia va ANTES que la localidad, y no es cosmético: el desplegable
+  // de localidades se filtra por ella, así que el orden del formulario es el
+  // orden en que hay que completarlo.
+  { nombre: 'provincia', etiqueta: 'Provincia', tipo: 'provincia' },
+  { nombre: 'localidad', etiqueta: 'Localidad', tipo: 'localidad' },
   { nombre: 'codigo_postal', etiqueta: 'Código postal' },
   { nombre: 'telefono', etiqueta: 'Teléfono' },
   { nombre: 'celular', etiqueta: 'Celular' },
@@ -37,9 +40,15 @@ export const CAMPOS_TERCERO: Campo[] = [
   ACTIVO,
 ]
 
+/** El maestro de orígenes y destinos.
+ *
+ *  🔑 El `nombre` es un campo de localidad —se elige del catálogo— pero **sigue
+ *  siendo texto libre por debajo**, con la salida explícita para escribirlo.
+ *  Es lo que permite cargar un paraje que no está en ningún recurso oficial sin
+ *  romper las 121 filas que ya existen, varias de ellas abreviadas. */
 export const CAMPOS_LOCALIDAD: Campo[] = [
-  { nombre: 'nombre', etiqueta: 'Nombre' },
-  { nombre: 'provincia', etiqueta: 'Provincia' },
+  { nombre: 'provincia', etiqueta: 'Provincia', tipo: 'provincia' },
+  { nombre: 'nombre', etiqueta: 'Nombre', tipo: 'localidad', provinciaEn: 'provincia' },
   ACTIVO,
 ]
 

@@ -13,10 +13,11 @@ from fastapi import Depends, FastAPI
 from libraauth.bootstrap import ensure_default_admin
 from libraauth.models import Base as AuthBase
 from libracore.config_router import build_backup_router
+from libracore.geografia import build_geo_router
 from libracore.respaldo import Instancia
 
 from app import db
-from app.auth import UserRepository, construir_session_auth, require_admin
+from app.auth import UserRepository, construir_session_auth, require_admin, require_staff
 from app.config import Config
 from app.routers import (
     auditoria,
@@ -96,6 +97,12 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     app.include_router(reportes.router)
     app.include_router(auditoria.router)
     app.include_router(configuracion.router)
+
+    # El catálogo de provincias y localidades: 24 y 4.027, de LibraCore. Es de
+    # sólo lectura y no toca la base — el maestro editable de localidades, que
+    # es el que se usa como origen y destino, sigue siendo el de este producto.
+    # El gate lo pone el producto, igual que con el router de backup.
+    app.include_router(build_geo_router(), dependencies=[Depends(require_staff)])
 
     # "Datos / Backup": el motor de la familia, con la dependencia de rol de
     # este producto. El prefijo es `/api/config` —y no `/api/configuracion`,
