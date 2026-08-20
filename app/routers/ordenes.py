@@ -21,6 +21,10 @@ from app.models.operacion import OrdenCarga
 from app.routers.maestros import traducir_integridad
 from app.schemas.ordenes import OrdenIn, OrdenOut, calcular_importes
 from app.servicios import auditoria
+from app.servicios.ordenes import (
+    revertir_comision,
+    sincronizar_comision,
+)
 
 router = APIRouter(prefix="/api/ordenes", tags=["ordenes"],
                    dependencies=[Depends(require_staff)])
@@ -115,7 +119,12 @@ def crear(datos: OrdenIn, sesion: Session = Depends(obtener_sesion),
     _aplicar_importes(orden, datos)
     sesion.add(orden)
     try:
+        # `flush` y no `commit`: hace falta el id para el asiento del fletero,
+        # pero la transacción tiene que seguir abierta. En el legado el alta
+        # eran tres `INSERT` sueltos y si el tercero fallaba, la orden ya
+        # estaba grabada sin su contrapartida.
         sesion.flush()
+        sincronizar_comision(sesion, orden)
         auditoria.registrar(sesion, actual, "orden_carga", orden.id,
                             AccionAuditoria.ALTA, despues=orden)
         sesion.commit()
@@ -141,6 +150,10 @@ def editar(id_: int, datos: OrdenIn, sesion: Session = Depends(obtener_sesion),
         setattr(orden, campo, valor)
     _aplicar_importes(orden, datos)
     try:
+        # Cambió la comisión, o el fletero: la cuenta del fletero tiene que
+        # decir lo que la orden dice ahora, o queda diciendo lo de antes sin
+        # que nada lo delate.
+        sincronizar_comision(sesion, orden)
         auditoria.registrar(sesion, actual, "orden_carga", orden.id,
                             AccionAuditoria.MODIFICACION, antes=antes, despues=orden)
         sesion.commit()
@@ -166,6 +179,10 @@ def anular(id_: int, sesion: Session = Depends(obtener_sesion),
             409, "la orden esta facturada: primero hay que anular el comprobante"
         )
     antes = auditoria.instantanea(orden)
+    # El contraasiento se arma ANTES de marcarla anulada: lee el cargo vigente,
+    # y `sincronizar_comision` no vuelve a crearlo porque una orden anulada no
+    # le debe nada a nadie.
+    revertir_comision(sesion, orden)
     orden.estado = EstadoOrden.ANULADA
     auditoria.registrar(sesion, actual, "orden_carga", orden.id,
                         AccionAuditoria.BAJA, antes=antes, despues=orden)

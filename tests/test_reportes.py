@@ -150,9 +150,15 @@ def test_el_ranking_de_fleteros_usa_la_comision(cliente, escenario):
     assert filas[0]["tercero"] == "Transportes Uno"
     assert filas[0]["ordenes"] == 4               # la anulada no cuenta
     assert Decimal(filas[0]["comision"]) == Decimal("1500.00")   # 100+200+400+800
-    # Se le pagaron 300, y en la convencion del modelo un EGRESO va al debe --
-    # la misma para las tres cuentas: el signo lo da el movimiento, no el rol.
-    assert Decimal(filas[0]["saldo"]) == Decimal("300.00")
+    # 1500 de comisiones menos los 300 que se le pagaron. Este numero decia
+    # 300 porque el alta de la orden no cargaba nada en la cuenta del
+    # fletero y el pago caia en el debe: el saldo era el pago, con el signo
+    # cambiado. Ahora el cargo va al debe y el pago al haber, como en el legado.
+    #
+    # 🔑 Y los 999 de la orden ANULADA no estan: se cargaron al darla de alta y
+    # se revirtieron al anularla. Si el contraasiento faltara, este numero
+    # seria 2199.
+    assert Decimal(filas[0]["saldo"]) == Decimal("1200.00")
 
 
 def test_los_saldos_traen_todas_las_cuentas_y_esconden_las_saldadas(cliente, escenario):
@@ -160,7 +166,7 @@ def test_los_saldos_traen_todas_las_cuentas_y_esconden_las_saldadas(cliente, esc
     filas = cliente.get("/api/reportes/saldos").json()
     cuentas = {(f["tercero"], f["rol"]): Decimal(f["saldo"]) for f in filas}
     assert cuentas[("Agro Norte", "cliente")] == Decimal("2130.00")
-    assert cuentas[("Transportes Uno", "fletero")] == Decimal("300.00")
+    assert cuentas[("Transportes Uno", "fletero")] == Decimal("1200.00")
     assert all(Decimal(f["saldo"]) != 0 for f in filas)
     # Filtrado por rol.
     solo_clientes = cliente.get("/api/reportes/saldos?rol=cliente").json()
