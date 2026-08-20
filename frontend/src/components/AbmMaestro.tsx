@@ -25,14 +25,20 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
+import { SelectLocalidad, SelectProvincia } from '@/components/CamposGeo'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
 export type Campo = {
   nombre: string
   etiqueta: string
-  tipo?: 'texto' | 'numero' | 'booleano' | 'opciones'
+  // `provincia` y `localidad` guardan **texto**, no un id: son los mismos
+  // campos de siempre con un desplegable adelante. Ver `CamposGeo`.
+  tipo?: 'texto' | 'numero' | 'booleano' | 'opciones' | 'provincia' | 'localidad'
   opciones?: { valor: string; etiqueta: string }[]
+  /** Sólo para `localidad`: de qué campo del formulario sale la provincia con
+   *  la que se filtra el catálogo. */
+  provinciaEn?: string
 }
 
 type Props<T extends Maestro> = {
@@ -61,12 +67,30 @@ export function mensajeDeError(e: unknown): string {
   return e instanceof Error ? e.message : 'No se pudo completar la operación.'
 }
 
-function CampoForm({ campo, valor, alCambiar }: {
+function CampoForm({ campo, valor, borrador, alCambiar }: {
   campo: Campo
   valor: unknown
+  /** El formulario entero: la localidad necesita leer la provincia elegida. */
+  borrador: Record<string, unknown>
   alCambiar: (v: unknown) => void
 }) {
   const id = `campo-${campo.nombre}`
+  if (campo.tipo === 'provincia') {
+    return (
+      <SelectProvincia id={id} etiqueta={campo.etiqueta}
+                       valor={valor === null || valor === undefined ? '' : String(valor)}
+                       alCambiar={alCambiar} />
+    )
+  }
+  if (campo.tipo === 'localidad') {
+    const provincia = borrador[campo.provinciaEn ?? 'provincia']
+    return (
+      <SelectLocalidad id={id} etiqueta={campo.etiqueta}
+                       valor={valor === null || valor === undefined ? '' : String(valor)}
+                       provincia={provincia ? String(provincia) : ''}
+                       alCambiar={alCambiar} />
+    )
+  }
   if (campo.tipo === 'booleano') {
     return (
       <div className="flex items-center gap-2">
@@ -226,6 +250,7 @@ export function AbmMaestro<T extends Maestro>({
           <div className="grid gap-3">
             {campos.map((c) => (
               <CampoForm key={c.nombre} campo={c} valor={borrador[c.nombre]}
+                         borrador={borrador as Record<string, unknown>}
                          alCambiar={(v) => setBorrador((b) => ({ ...b, [c.nombre]: v }))} />
             ))}
           </div>

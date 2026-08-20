@@ -94,7 +94,41 @@ def test_cada_rol_es_una_cuenta_distinta(cliente, tercero):
     como_cliente = cliente.get(f"/api/cuentas/cliente/{tercero}").json()
     como_fletero = cliente.get(f"/api/cuentas/fletero/{tercero}").json()
     assert Decimal(como_cliente["saldo"]) == Decimal("-100.00")
-    assert Decimal(como_fletero["saldo"]) == Decimal("40.00")
+    # 🔴 Este numero decia `40.00`, y era el mismo error que el codigo: el test
+    # heredo la premisa de que el signo lo da el movimiento y no el rol.
+    # Pagarle 40 a un fletero **baja** lo que se le debe. Con el saldo en +40,
+    # la pantalla habria dicho que se le deben 40 justo despues de pagarle.
+    assert Decimal(como_fletero["saldo"]) == Decimal("-40.00")
+
+
+def test_el_signo_del_asiento_de_caja_depende_del_rol(cliente, tercero):
+    """La tabla de la convencion, fijada en un test.
+
+    Es la del legado y la de los 22.645 movimientos migrados: el cargo va a
+    `debe` y el pago a `haber` en las tres cuentas. Lo que cambia es cual de
+    los dos es un ingreso.
+    """
+    casos = [
+        # rol,        tipo,      debe,      haber
+        ("cliente",   "ingreso", "0.00",   "100.00"),   # cobranza
+        ("cliente",   "egreso",  "100.00", "0.00"),     # devolucion al cliente
+        ("fletero",   "egreso",  "0.00",   "100.00"),   # pago al fletero
+        ("fletero",   "ingreso", "100.00", "0.00"),     # el fletero devuelve
+        ("proveedor", "egreso",  "0.00",   "100.00"),   # pago al proveedor
+        ("proveedor", "ingreso", "100.00", "0.00"),
+    ]
+    for rol, tipo, debe, haber in casos:
+        t = cliente.post("/api/terceros", json={
+            "razon_social": f"Tercero {rol} {tipo}", "es_cliente": True,
+            "es_fletero": True, "es_proveedor": True}).json()["id"]
+        r = cliente.post("/api/caja", json=caja("2026-08-10", tipo, "100.00",
+                                                tercero_id=t, rol=rol))
+        assert r.status_code == 201, r.text
+        movs = cliente.get(f"/api/cuentas/{rol}/{t}").json()["movimientos"]
+        assert len(movs) == 1, (rol, tipo)
+        m = movs[0]["movimiento"]
+        assert (Decimal(m["debe"]), Decimal(m["haber"])) == (Decimal(debe), Decimal(haber)), \
+            f"{tipo} en la cuenta de {rol}"
 
 
 def test_el_corte_por_fecha_mueve_los_dos_saldos_igual(cliente, tercero):
