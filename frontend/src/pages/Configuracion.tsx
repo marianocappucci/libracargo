@@ -9,8 +9,9 @@
  * shadcn no está instalado en este producto, y traerlo para dibujar siete
  * botones sería agregar una dependencia por una lista.
  */
+import { DatosBackupCard } from 'libra-ui/Configuracion'
 import {
-  Building2, MapPin, Package, Settings, Truck, Users, UserSquare,
+  Building2, Database, MapPin, Package, Settings, Truck, Users, UserSquare,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -30,6 +31,11 @@ const PESTANAS = [
   { id: 'tipos-carga', label: 'Tipos de carga', icon: Package, contenido: TiposCarga },
   { id: 'razones-sociales', label: 'Razones sociales', icon: Building2,
     contenido: RazonesSociales },
+  // La pantalla es la compartida de `libra-ui`, la misma que ven los otros
+  // seis productos. Lo único de este producto es el gate de rol, que lo pone
+  // el backend.
+  { id: 'datos', label: 'Datos / Backup', icon: Database,
+    contenido: DatosBackupCard },
 ] as const
 
 export default function Configuracion() {

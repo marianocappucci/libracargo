@@ -7,12 +7,16 @@ el primer import y un test que quiera otra base ya llega tarde.
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+import os
+
+from fastapi import Depends, FastAPI
 from libraauth.bootstrap import ensure_default_admin
 from libraauth.models import Base as AuthBase
+from libracore.config_router import build_backup_router
+from libracore.respaldo import Instancia
 
 from app import db
-from app.auth import UserRepository, construir_session_auth
+from app.auth import UserRepository, construir_session_auth, require_admin
 from app.config import Config
 from app.routers import (
     auditoria,
@@ -31,7 +35,28 @@ from app.routers import auth as auth_router
 from app.routers import usuarios as usuarios_router
 
 
+def _instancia_a_respaldar(config: Config) -> Instancia:
+    """Qué se lleva el backup de esta instancia.
+
+    LibraCargo es el caso **más simple de la familia**: una sola base y ningún
+    archivo en disco. Los otros productos tienen dos bases —`usuarios` vive
+    separada del dominio— y directorios de datos que hay que meter en el mismo
+    ZIP; acá `usuarios` está en la misma base, y el logo del membrete se guarda
+    como `LargeBinary` en la tabla de configuración, no como archivo.
+
+    Ese detalle, que en su momento fue una decisión de la pantalla de
+    configuración, es lo que hace que el backup sea **exactamente un dump**: no
+    hay forma de bajarse una copia a la que le falten los logos, porque los
+    logos están adentro del dump. `directorios=[]` no es un pendiente.
+    """
+    return Instancia(nombre="libracargo", postgres_url=config.database_url)
+
+
 def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> FastAPI:
+    # Se resuelve acá y no adentro de `db.inicializar` porque el router de
+    # backup necesita la MISMA config: la URL para el dump y el directorio de
+    # datos para los ZIP.
+    config = config or Config.desde_entorno()
     db.inicializar(config)
     motor = db.engine()
 
@@ -71,4 +96,24 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     app.include_router(reportes.router)
     app.include_router(auditoria.router)
     app.include_router(configuracion.router)
+
+    # "Datos / Backup": el motor de la familia, con la dependencia de rol de
+    # este producto. El prefijo es `/api/config` —y no `/api/configuracion`,
+    # como el router propio de al lado— porque es el que consume la pantalla
+    # compartida de `libra-ui`. Renombrarlo obligaría a forkear esa pantalla
+    # para cambiarle cuatro strings.
+    #
+    # 🔴 `cerrar_conexiones`/`reabrir_conexiones` no son opcionales: sin ellos
+    # el restore contesta `ok` y no tiene efecto hasta que alguien reinicie el
+    # contenedor, porque el pool sigue con la conexión vieja. La pantalla diría
+    # que salió bien y los datos serían los de antes.
+    app.include_router(
+        build_backup_router(
+            _instancia_a_respaldar(config),
+            os.path.join(config.directorio_de_datos, "backups"),
+            cerrar_conexiones=motor.dispose,
+            reabrir_conexiones=motor.dispose,
+        ),
+        dependencies=[Depends(require_admin)],
+    )
     return app

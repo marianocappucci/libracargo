@@ -18,6 +18,17 @@ dependencies = [
     # (ver Dockerfile), que es lo que va a hacer falta cuando la familia pase a
     # repos privados.
     "libraauth @ git+https://github.com/marianocappucci/libraauth.git@v0.26.1",
+    # 🔑 **LibraCore entra ACÁ y no en F7, y sólo por `respaldo`.** El plan lo
+    # tenía para la impresión (`pdf_generator`) y ARCA; el backup se pidió
+    # antes. Se adelanta el paquete, no el alcance: hoy este producto importa
+    # `respaldo` y `config_router.build_backup_router`, nada más.
+    #
+    # Las tres trampas del consumo parcial que documenta [[libradesk]] son
+    # todas de la CAPA DE DATOS —`PRAGMA foreign_keys` no configurable,
+    # `init_core_schema()` que no es componible por tabla, y el DDL que no es
+    # el schema real—. `respaldo` no toca nada de eso: recibe una URL y
+    # corre `pg_dump`. Por eso este adelanto no arrastra ninguna de las tres.
+    "libracore @ git+https://github.com/marianocappucci/libracore.git@v1.39.2",
 ]
 
 # Los motores de la familia entran en F1, desde repos privados por deploy key.
@@ -25,10 +36,9 @@ dependencies = [
 # sin acceso a esos repos.
 [project.optional-dependencies]
 motores = [
-    # LibraCore entra en F7 (impresion via `pdf_generator`) y F8 (ARCA). Se
-    # consume PARCIAL, como LibraDesk: leer la seccion "consumo parcial" de la
-    # pagina de LibraCore en el wiki antes de descomentarlo.
-    # "libracore @ git+https://github.com/marianocappucci/libracore.git@v1.39.2",
+    # LibraCore ya NO está acá: pasó a las dependencias obligatorias cuando
+    # entró el backup (ver el comentario allá arriba). Lo que sigue difiriéndose
+    # es su ALCANCE — `pdf_generator` en F7 y ARCA en F8—, no el paquete.
 ]
 # La migracion del legado de Suitrans (F6). Va aparte de dev porque es
 # tooling de una sola vez: la app no lo importa nunca.

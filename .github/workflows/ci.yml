@@ -45,6 +45,19 @@ jobs:
         with:
           python-version: '3.12'
 
+      # El backup corre `pg_dump`/`pg_restore` de verdad en la suite, así que
+      # el runner los necesita — y en la MISMA major que el servicio de arriba.
+      # No alcanza con "que estén": `pg_restore` 17 contra un servidor 16 aborta
+      # el restore entero (manda un parámetro que el 16 no conoce, y corre con
+      # `--single-transaction`). El `grep` es lo que convierte eso en un CI rojo
+      # hoy en vez de un botón roto en producción.
+      - name: Cliente de PostgreSQL (mismo major que el servicio)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-16
+          pg_restore --version
+          pg_restore --version | grep -q ' 16\.'
+
       - run: pip install -e '.[dev]'
 
       - name: Lint

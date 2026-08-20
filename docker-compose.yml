@@ -57,6 +57,11 @@ services:
     # primero ahí.
     volumes:
       - ./:/app
+      # Los ZIP de backup, en un volumen propio y NO en el árbol montado de
+      # arriba: ese árbol es el checkout de git del servidor, y dejarle
+      # archivos nuevos adentro le complica el `git pull` del próximo deploy.
+      # Va después del bind mount a propósito — el montaje más específico gana.
+      - libracargo-datos:/app/datos
     command: uvicorn app.asgi:app --host 0.0.0.0 --port 8000 --reload
     environment:
       # Las tres sin default: la app tiene que fallar al arrancar si falta
@@ -66,11 +71,15 @@ services:
       - LIBRACARGO_ADMIN_PASSWORD=${LIBRACARGO_ADMIN_PASSWORD:?hay que definirla en el .env}
       - DATABASE_URL=postgresql+psycopg://libracargo:${LIBRACARGO_POSTGRES_PASSWORD:?hay que definirla en el .env}@libracargo-postgres:5432/libracargo
       - ENTORNO=dev
+      # Dónde escribe los backups. Sin esto caen en `./datos` relativo al
+      # directorio de trabajo, o sea adentro del bind mount.
+      - DATA_DIR=/app/datos
       - TZ=America/Argentina/Buenos_Aires
     networks: [stack-net, datos]
 
 volumes:
   libracargo-postgres-data:
+  libracargo-datos:
 
 networks:
   datos:

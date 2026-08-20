@@ -28,10 +28,43 @@ ENV TZ=America/Argentina/Buenos_Aires \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
+# `postgresql-client` trae `pg_dump` y `pg_restore`, que es lo que corre
+# `libracore.respaldo` para armar y reponer el backup. Sin ellos la pantalla de
+# Backup falla con un mensaje explícito —no en silencio—, pero falla.
+#
+# 🔴 Va en la etapa FINAL y no en la del frontend: un paquete instalado en un
+# stage que se descarta se ve igual de bien leyendo el Dockerfile y no está en
+# la imagen. Le pasó a la familia el 2026-08-10 y lo agarró un `command -v
+# pg_dump` adentro del contenedor, no el diff.
+#
+# 🔴 El cliente va CLAVADO en la versión del servidor (`postgres:16`), no
+# ">= la del servidor". Vale para `pg_dump`, que puede dumpear de un servidor
+# más viejo; `pg_restore` al revés NO: el 17 abre la sesión con
+# `SET transaction_timeout = 0`, un parámetro que el 16 no conoce, y como el
+# restore corre con `--single-transaction` **aborta entero**. Medido en la
+# familia el 2026-08-12: siete instancias tenían el botón de restaurar roto sin
+# que nadie lo supiera, porque nadie lo había apretado.
+#
+# Si algún día sube la imagen del sidecar en `docker-compose.yml`, sube este
+# número en el mismo movimiento. Son un par, no dos decisiones.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends tzdata curl git \
+ && apt-get install -y --no-install-recommends tzdata curl git ca-certificates gnupg \
+ && install -d /usr/share/postgresql-common/pgdg \
+ && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+      -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+ && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo $VERSION_CODENAME)-pgdg main" \
+      > /etc/apt/sources.list.d/pgdg.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends postgresql-client-16 \
  && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
  && rm -rf /var/lib/apt/lists/*
+
+# Que el binario esté, y que sea el 16. Lo segundo importa tanto como lo
+# primero: un `pg_restore` de otra major se instala sin quejarse y falla recién
+# el día que alguien restaura.
+RUN pg_restore --version | grep -q ' 16\.' \
+ || { echo "ERROR: pg_restore no es 16.x -> $(pg_restore --version)"; exit 1; }
 
 WORKDIR /app
 
@@ -47,7 +80,12 @@ COPY migrations ./migrations
 # adentro. `app/asgi.py` mira primero acá.
 COPY --from=frontend-build /frontend/dist /opt/frontend-dist
 
-RUN useradd -m -u 10001 libracargo && chown -R libracargo /app
+# `datos/` es el punto de montaje del volumen donde caen los ZIP de backup.
+# Se crea en la imagen para que nazca con el dueño correcto: Docker le copia
+# el propietario al volumen la primera vez, y si no existiera quedaría de
+# root y el proceso —que corre sin privilegios— no podría escribirlo.
+RUN mkdir -p /app/datos \
+ && useradd -m -u 10001 libracargo && chown -R libracargo /app
 USER libracargo
 
 EXPOSE 8000
