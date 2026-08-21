@@ -37,6 +37,7 @@ class MovimientoCajaOut(BaseModel):
     importe: Decimal
     medio_pago: MedioPago
     recibo: str | None
+    anulado: bool
 
 
 class MovimientoCuentaOut(BaseModel):

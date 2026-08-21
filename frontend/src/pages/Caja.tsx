@@ -1,7 +1,7 @@
 /** Cobros y pagos. Cada movimiento con tercero deja su contrapartida en la
  *  cuenta corriente, y eso lo hace el servidor en la misma transacción. */
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
-import { Plus } from 'lucide-react'
+import { Ban, Pencil, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
@@ -104,11 +104,44 @@ export default function Caja() {
   // tercero que tiene los dos roles.
   const terceros = opciones?.terceros ?? []
   const set = (c: Partial<Borrador>) => setBorrador((b) => ({ ...b, ...c }))
+  const [editando, setEditando] = useState<MovimientoCaja | null>(null)
+
+  /** Abre el diálogo para uno que ya existe, o vacío para uno nuevo.
+   *
+   *  🔑 El `rol` no viene en el movimiento —vive en la contrapartida—, así
+   *  que al editar arranca vacío y hay que volver a elegirlo si hay
+   *  tercero. Es la única parte del formulario que no se puede prellenar. */
+  function abrir(m: MovimientoCaja | null) {
+    setEditando(m)
+    setError(null)
+    setBorrador(m
+      ? {
+        fecha: m.fecha, tipo: m.tipo, concepto: m.concepto,
+        descripcion: m.descripcion ?? '',
+        // Como cadena: es lo que el `<select>` maneja, y el borrador lo
+        // convierte a numero recien al guardar.
+        tercero_id: m.tercero_id == null ? '' : String(m.tercero_id),
+        rol: '', importe: m.importe, medio_pago: m.medio_pago,
+        recibo: m.recibo ?? '',
+      }
+      : VACIO)
+    setAbierto(true)
+  }
+
+  async function anular(m: MovimientoCaja) {
+    setError(null)
+    try {
+      await caja.anular(m.id)
+      recargar()
+    } catch (e) {
+      setError(mensajeDeError(e))
+    }
+  }
 
   async function guardar() {
     setError(null)
     try {
-      await caja.registrar({
+      const cuerpo = {
         ...borrador,
         tercero_id: borrador.tercero_id ? Number(borrador.tercero_id) : null,
         // Sin tercero no hay rol: el backend rechaza el par incompleto, y
@@ -116,8 +149,11 @@ export default function Caja() {
         rol: borrador.tercero_id ? (borrador.rol || null) : null,
         descripcion: borrador.descripcion || null,
         recibo: borrador.recibo || null,
-      })
+      }
+      if (editando) await caja.editar(editando.id, cuerpo)
+      else await caja.registrar(cuerpo)
       setAbierto(false)
+      setEditando(null)
       setBorrador(VACIO)
       recargar()
     } catch (e) {
@@ -152,6 +188,29 @@ export default function Caja() {
     { accessorKey: 'recibo', header: 'Recibo' },
     { id: 'importe', header: sortableHeader('Importe'),
       accessorFn: (m: MovimientoCaja) => formatearImporte(m.importe) },
+    // Los anulados se ven, con su marca: un recibo que falta en la numeración
+    // necesita explicación. Lo que no hacen es sumar en los totales.
+    { id: 'estado', header: 'Estado', size: 100,
+      cell: ({ row }: { row: { original: MovimientoCaja } }) => (
+        row.original.anulado
+          ? <Badge variant="destructive">anulado</Badge>
+          : <Badge variant="outline">vigente</Badge>
+      ) },
+    { id: 'acciones', header: '', size: 90,
+      cell: ({ row }: { row: { original: MovimientoCaja } }) => (
+        <div className="flex gap-1">
+          <Button variant="ghost" size="icon" aria-label="Editar"
+                  disabled={row.original.anulado}
+                  onClick={(e: React.MouseEvent) => { e.stopPropagation(); abrir(row.original) }}>
+            <Pencil className="size-4" />
+          </Button>
+          <Button variant="ghost" size="icon" aria-label="Anular"
+                  disabled={row.original.anulado}
+                  onClick={(e: React.MouseEvent) => { e.stopPropagation(); anular(row.original) }}>
+            <Ban className="size-4" />
+          </Button>
+        </div>
+      ) },
   ]
 
   return (
@@ -173,7 +232,7 @@ export default function Caja() {
                 valor: sumarImportes(f.filter((m) => m.tipo === 'egreso').map((m) => m.importe)) },
             ]}
           />
-          <Button onClick={() => { setBorrador(VACIO); setError(null); setAbierto(true) }}>
+          <Button onClick={() => abrir(null)}>
             <Plus className="size-4" /> Nuevo movimiento
           </Button>
         </div>
@@ -208,7 +267,11 @@ export default function Caja() {
 
       <Dialog open={abierto} onOpenChange={setAbierto}>
         <DialogContent className="max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Nuevo movimiento de caja</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>
+              {editando ? `Editar movimiento ${editando.id}` : 'Nuevo movimiento de caja'}
+            </DialogTitle>
+          </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
             <Texto id="m-fecha" etiqueta="Fecha" tipo="date" valor={borrador.fecha}
                    alCambiar={(v) => set({ fecha: v })} />

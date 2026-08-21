@@ -6,6 +6,15 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Agregado
 
+- **Editar y anular movimientos de caja**, lo último que faltaba del bloque
+  NOVEDAD del sistema viejo. Editar corrige el movimiento **y su contrapartida**
+  en la cuenta corriente, en el lugar; anular **no borra**: el movimiento queda
+  marcado, su asiento se revierte y el número de recibo no deja un hueco sin
+  explicación.
+  - 🔴 **Un movimiento anulado sigue en el listado pero deja de sumar en los
+    totales** — el resumen del período y el reporte de caja lo excluyen. Ver
+    ADR-022.
+
 - **Gastos de proveedor**, el último bloque del sistema viejo que no tenía
   equivalente. Lo que el proveedor entrega y **se le descuenta al fletero**: un
   gasto mueve dos cuentas —proveedor al debe, fletero al haber— en una sola
