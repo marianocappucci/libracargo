@@ -25,6 +25,7 @@ from app.routers import (
     comprobantes,
     configuracion,
     cuentas,
+    gastos,
     maestros,
     ordenes,
     reportes,
@@ -93,6 +94,10 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
         app.include_router(router)
     app.include_router(ordenes.router)
     app.include_router(cuentas.router)
+    # Gastos de proveedor: el bloque que el legado llamaba COMPROBANTES
+    # PROVEEDORES. Deja dos asientos -proveedor al debe, fletero al haber-
+    # en una sola transacción.
+    app.include_router(gastos.router)
     app.include_router(comprobantes.router)
     app.include_router(usuarios_router.router)
     app.include_router(reportes.router)

@@ -1,4 +1,4 @@
-"""Órdenes de carga y comprobantes — el núcleo del negocio."""
+"""Órdenes de carga, comprobantes y gastos de proveedor — el núcleo del negocio."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -166,4 +167,80 @@ class OrdenCarga(Base, Auditable, Anotable):
         Index("ix_ordenes_comprobante", "comprobante_id"),
         Index("ix_ordenes_remito", "remito"),
         Index("ix_ordenes_origen_legado", "origen_legado", unique=True),
+    )
+
+
+class GastoDeProveedor(Base, Auditable):
+    """Un gasto que la agencia le paga a un proveedor y le descuenta a un fletero.
+
+    Es el bloque **COMPROBANTES PROVEEDORES** del sistema viejo, y el nombre que
+    tenía ahí engañaba: no son facturas de compra. Medido sobre los 3.347
+    registros del legado antes de modelar nada:
+
+    | | |
+    |---|---:|
+    | Gastos (debe del proveedor) | **2.799** |
+    | Imputados a un fletero | **2.799 de 2.799** |
+    | Con número de comprobante | **0 de 2.799** |
+    | Tipo usado | **"Remito"** en 2.806 |
+
+    De ahí salen las tres decisiones del modelo:
+
+    1. **El fletero es obligatorio.** No es un campo que a veces se completa: es
+       la razón de ser del documento. Un gasto que no se le descuenta a nadie es
+       un gasto general de la agencia y va por caja, que ya lo soporta.
+    2. **El número de comprobante es opcional.** El campo existe en el legado y
+       **nadie lo usó nunca**; hacerlo obligatorio sería inventar un requisito.
+    3. **No es un documento fiscal**: no lleva tipo A/B/C, ni punto de venta, ni
+       IVA discriminado. Cuando eso haga falta —con ARCA andando y el IVA compras
+       importando— es otro documento, no este con campos agregados.
+
+    ## Los dos asientos
+
+    Un gasto mueve **dos cuentas en la misma transacción**: el proveedor al
+    **debe** —lo que se le debe— y el fletero al **haber** —se le descuenta de
+    lo que la agencia le debe—. En el legado eran dos `INSERT` sueltos, uno en
+    `ctacteprov` y otro en `fleteroctacte`, y si el segundo fallaba el primero
+    ya estaba grabado.
+
+    ## Lo migrado no se convierte en gastos
+
+    Los 2.799 del legado ya están como movimientos de cuenta, con los saldos
+    validados por el gate de F6. Crearles un documento retroactivo duplicaría el
+    importe salvo que además se reescribieran esos movimientos, y eso es tocar
+    historia conciliada para ganar nada. **Esta tabla arranca vacía** y sólo
+    tiene lo que se carga de acá en adelante.
+    """
+
+    __tablename__ = "gastos_de_proveedor"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fecha: Mapped[date] = mapped_column(Date, nullable=False)
+
+    proveedor_id: Mapped[int] = mapped_column(
+        ForeignKey("terceros.id", ondelete="RESTRICT"), nullable=False
+    )
+    #: Obligatorio, ver arriba.
+    fletero_id: Mapped[int] = mapped_column(
+        ForeignKey("terceros.id", ondelete="RESTRICT"), nullable=False
+    )
+
+    #: El número del remito o la factura del proveedor, si lo tiene. `String` y
+    #: no `Integer` como el legado: un remito es `0001-00012345`, no un entero.
+    comprobante: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    #: `Text` y no `varchar(110)`: en el legado esa columna truncaba en silencio.
+    descripcion: Mapped[str] = mapped_column(Text, nullable=False)
+
+    importe: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    anulado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    __table_args__ = (
+        CheckConstraint("importe > 0", name="ck_gastos_importe_positivo"),
+        # Un gasto que el proveedor le cobra a la agencia para descontárselo a
+        # sí mismo no significa nada, y es un error de carga fácil: los dos
+        # desplegables tienen los mismos terceros adentro.
+        CheckConstraint("proveedor_id <> fletero_id", name="ck_gastos_partes_distintas"),
+        Index("ix_gastos_fecha", "fecha"),
+        Index("ix_gastos_proveedor_fecha", "proveedor_id", "fecha"),
+        Index("ix_gastos_fletero_fecha", "fletero_id", "fecha"),
     )

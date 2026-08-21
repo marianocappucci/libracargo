@@ -53,6 +53,9 @@ class MovimientoCuentaOut(BaseModel):
     orden_id: int | None
     comprobante_id: int | None
     movimiento_caja_id: int | None
+    #: El cuarto origen posible de un asiento. Sale en la salida porque es lo
+    #: que hace clickeable la linea en la cuenta corriente.
+    gasto_id: int | None
 
 
 class FilaDeCuenta(BaseModel):

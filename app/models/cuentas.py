@@ -108,6 +108,11 @@ class MovimientoCuenta(Base, Auditable):
     movimiento_caja_id: Mapped[int | None] = mapped_column(
         ForeignKey("movimientos_caja.id", ondelete="RESTRICT"), nullable=True
     )
+    #: El gasto de proveedor que lo genero. Un gasto deja DOS asientos con el
+    #: mismo `gasto_id`: el del proveedor al debe y el del fletero al haber.
+    gasto_id: Mapped[int | None] = mapped_column(
+        ForeignKey("gastos_de_proveedor.id", ondelete="RESTRICT"), nullable=True
+    )
     origen_legado: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     __table_args__ = (
@@ -125,5 +130,6 @@ class MovimientoCuenta(Base, Auditable):
         Index("ix_cuenta_orden", "orden_id"),
         Index("ix_cuenta_comprobante", "comprobante_id"),
         Index("ix_cuenta_caja", "movimiento_caja_id"),
+        Index("ix_cuenta_gasto", "gasto_id"),
         Index("ix_cuenta_origen_legado", "origen_legado", unique=True),
     )

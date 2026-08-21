@@ -6,6 +6,18 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Agregado
 
+- **Gastos de proveedor**, el último bloque del sistema viejo que no tenía
+  equivalente. Lo que el proveedor entrega y **se le descuenta al fletero**: un
+  gasto mueve dos cuentas —proveedor al debe, fletero al haber— en una sola
+  transacción, y la pantalla lo dice antes de guardar.
+  - Se puede editar —corrige los dos asientos, sin duplicarlos— y anular, que
+    **no borra**: deja las dos líneas y agrega sus contrapartidas.
+  - Desde la cuenta corriente, cada línea que salió de un gasto **lleva al
+    gasto**.
+  - No es una factura de compra, y no por simplificar: de los 3.347 registros
+    del legado, **2.799 son gastos, los 2.799 están imputados a un fletero y
+    ninguno tiene número de comprobante**. Ver ADR-021.
+
 - **Configuración de ARCA**, en Configuración → Facturación (ARCA): se cargan el
   certificado y la clave privada de cada razón social, se elige el ambiente
   —homologación por omisión— y se habilita la facturación electrónica.

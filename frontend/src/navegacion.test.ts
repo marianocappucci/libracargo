@@ -11,7 +11,8 @@ function movimiento(extra: Record<string, unknown>) {
     movimiento: {
       id: 1, fecha: '2026-08-20', tercero_id: 1, rol: 'cliente', concepto: 'x',
       descripcion: null, debe: '0.00', haber: '0.00',
-      orden_id: null, comprobante_id: null, movimiento_caja_id: null, ...extra,
+      orden_id: null, comprobante_id: null, movimiento_caja_id: null,
+      gasto_id: null, ...extra,
     },
     saldo: '0.00',
   } as never
@@ -34,6 +35,11 @@ describe('origenDelMovimiento', () => {
     expect(origenDelMovimiento(movimiento({ movimiento_caja_id: 3 }))).toBe('/caja?ver=3')
   })
 
+  it('lleva al gasto cuando el asiento salio de un gasto de proveedor', () => {
+    // Es el cuarto origen posible, y el que trajo el bloque de proveedores.
+    expect(origenDelMovimiento(movimiento({ gasto_id: 4 }))).toBe('/gastos?ver=4')
+  })
+
   it('un asiento sin origen NO es clickeable', () => {
     // Son los 36 asientos sueltos del historico migrado. Devolver una ruta
     // igual mandaria a una pantalla que no explica nada.
@@ -46,6 +52,7 @@ describe('destinoDelLog', () => {
     expect(destinoDelLog('orden_carga', 5)).toBe('/ordenes?ver=5')
     expect(destinoDelLog('comprobante', 5)).toBe('/comprobantes?ver=5')
     expect(destinoDelLog('movimiento_caja', 5)).toBe('/caja?ver=5')
+    expect(destinoDelLog('gasto_de_proveedor', 5)).toBe('/gastos?ver=5')
   })
 
   it('🔑 los maestros se auditan en PLURAL, que es el prefijo del ABM', () => {
