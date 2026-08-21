@@ -13,6 +13,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 
 BASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql+psycopg://postgres@127.0.0.1:5433/libracargo_test"
@@ -239,6 +240,114 @@ def test_la_0008_agrega_anulado_sobre_una_tabla_CON_filas(base_limpia):
         # Lo que ya existía queda VIGENTE: en el sistema viejo anular era borrar,
         # así que nada de lo migrado estaba anulado.
         assert anulados == [False]
+        eng.dispose()
+    finally:
+        if original:
+            os.environ["DATABASE_URL"] = original
+
+
+def test_la_0009_convierte_el_gasto_del_legado_sin_mover_el_saldo(base_limpia):
+    """🔑 Lo que la migración promete es que **no inserta plata**.
+
+    Crea el documento y le apunta los dos asientos que ya estaban, en vez de
+    asentar de nuevo. Se siembra el par que dejaba un gasto viejo —proveedor al
+    debe, fletero al haber, con sus marcas de `origen_legado`— y se mide el
+    saldo de las dos cuentas antes y después.
+
+    El par que se usa es el **primero del archivo de pares real**, así que si
+    ese archivo no viajara en la imagen el test lo diría en vez de pasar en
+    verde sobre cero conversiones.
+    """
+    import json
+    from pathlib import Path
+
+    pares = json.loads(
+        (Path("migrations/datos/pares_gastos_legado.json")).read_text(encoding="utf-8"))["pares"]
+    ctacteprov_id, fleteroctacte_id = next(iter(pares.items()))
+
+    original = os.environ.get("DATABASE_URL")
+    try:
+        cfg = _alembic(base_limpia)
+        command.upgrade(cfg, "0008")
+
+        eng = create_engine(base_limpia)
+        with eng.begin() as con:
+            con.execute(text(
+                "INSERT INTO terceros (id, razon_social, condicion_iva, es_cliente, "
+                "es_fletero, es_proveedor, activo) VALUES "
+                "(1, 'Gomeria', 'consumidor_final', false, false, true, true), "
+                "(2, 'Fletes', 'consumidor_final', false, true, false, true)"))
+            con.execute(text(
+                "INSERT INTO movimientos_cuenta "
+                "(fecha, tercero_id, rol, concepto, descripcion, debe, haber, origen_legado) "
+                "VALUES ('2025-03-04', 1, 'proveedor', 'Remito', '2 cubiertas', "
+                "150000, 0, :a), "
+                "('2025-03-04', 2, 'fletero', 'Remito', '2 cubiertas', 0, 150000, :b)"),
+                {"a": f"ctacteprov:{ctacteprov_id}", "b": f"fleteroctacte:{fleteroctacte_id}"})
+
+        def saldos():
+            with eng.connect() as con:
+                return dict(con.execute(text(
+                    "select tercero_id, coalesce(sum(debe),0) - coalesce(sum(haber),0) "
+                    "from movimientos_cuenta group by tercero_id")).all())
+
+        antes = saldos()
+        command.upgrade(cfg, "head")
+        despues = saldos()
+
+        # Lo que importa: los saldos, idénticos.
+        assert antes == despues, f"la conversion movio saldos: {antes} -> {despues}"
+
+        with eng.connect() as con:
+            gastos = con.execute(text(
+                "select proveedor_id, fletero_id, importe, origen_legado "
+                "from gastos_de_proveedor")).all()
+            enlazados = con.execute(text(
+                "select count(*) from movimientos_cuenta where gasto_id is not null")).scalar_one()
+
+        assert len(gastos) == 1, "tenia que crear exactamente un documento"
+        assert gastos[0][0] == 1 and gastos[0][1] == 2
+        assert gastos[0][3] == f"ctacteprov:{ctacteprov_id}"
+        # Los DOS asientos apuntan al documento: uno solo seria un comprobante
+        # que explica una cuenta y deja la otra huerfana.
+        assert enlazados == 2
+        eng.dispose()
+    finally:
+        if original:
+            os.environ["DATABASE_URL"] = original
+
+
+def test_la_0009_deja_pasar_al_mismo_tercero_en_las_dos_partes_si_es_del_legado(base_limpia):
+    """El `CHECK` se relaja para lo migrado, no para lo nuevo (ADR-015).
+
+    En los datos reales el mismo tercero es proveedor y fletero **43 veces**. La
+    restriccion sigue rigiendo para un alta nueva.
+    """
+    original = os.environ.get("DATABASE_URL")
+    try:
+        cfg = _alembic(base_limpia)
+        command.upgrade(cfg, "head")
+        eng = create_engine(base_limpia)
+        with eng.begin() as con:
+            con.execute(text(
+                "INSERT INTO terceros (id, razon_social, condicion_iva, es_cliente, "
+                "es_fletero, es_proveedor, activo) VALUES "
+                "(1, 'Mixto', 'consumidor_final', false, true, true, true)"))
+            # Del legado: pasa.
+            con.execute(text(
+                "INSERT INTO gastos_de_proveedor (fecha, proveedor_id, fletero_id, "
+                "descripcion, importe, anulado, origen_legado) VALUES "
+                "('2025-01-01', 1, 1, 'del legado', 100, false, 'ctacteprov:99999')"))
+
+        # Nuevo: lo rechaza la base. `IntegrityError` y no `Exception`: con
+        # `Exception` el test pasaria tambien si el INSERT fallara por un typo
+        # en el SQL, o sea por cualquier motivo menos el CHECK.
+        with pytest.raises(IntegrityError):
+            with eng.begin() as con:
+                con.execute(text(
+                    "INSERT INTO gastos_de_proveedor (fecha, proveedor_id, fletero_id, "
+                    "descripcion, importe, anulado) VALUES "
+                    "('2025-01-01', 1, 1, 'nuevo', 100, false)"))
         eng.dispose()
     finally:
         if original:
