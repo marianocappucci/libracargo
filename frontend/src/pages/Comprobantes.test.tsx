@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -50,17 +50,6 @@ function total(extra: Record<string, unknown> = {}) {
     total_comprobantes: '1210.00',
     cantidad_ordenes: 1, neto_ordenes: '1000.00', iva_ordenes: '210.00',
     total_ordenes: '1210.00', coinciden: true, ...extra,
-  }
-}
-
-function orden(id: number, extra: Record<string, unknown> = {}) {
-  return {
-    id, fecha: '2026-08-10', cliente_id: 1, origen_id: 1, destino_id: 2,
-    fletero_id: null, chofer_id: null, vehiculo_id: null, tipo_carga_id: null,
-    razon_social_id: null, remito: null, cantidad: null, unidad: null,
-    tarifa: '1000.00', alicuota_iva: '21.00', iva: '210.00', total: '1210.00',
-    comision: '0.00', estado: 'pendiente', comprobante_id: null,
-    observaciones: null, ...extra,
   }
 }
 
