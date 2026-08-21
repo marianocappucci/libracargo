@@ -44,8 +44,17 @@ export default function CuentaCorriente() {
       .catch((e) => setError(mensajeDeError(e)))
   }, [rol, terceroId, hasta])
 
-  const listaDeTerceros =
-    rol === 'fletero' ? (opciones?.fleteros ?? []) : (opciones?.clientes ?? [])
+  // 🔴 Decía `rol === 'fletero' ? fleteros : clientes`, así que con el rol
+  // "Proveedor" elegido —que el desplegable de arriba ofrece— la lista de abajo
+  // era la de CLIENTES. Los 15 proveedores de la instancia del cliente son
+  // proveedor-puro: ninguno se podía elegir, y sus 3.347 movimientos de cuenta
+  // no había forma de abrirlos. Un `switch` sobre el rol y no un ternario: con
+  // tres valores, el ternario obliga a que uno de ellos sea "el resto".
+  const listaDeTerceros = {
+    cliente: opciones?.clientes ?? [],
+    fletero: opciones?.fleteros ?? [],
+    proveedor: opciones?.proveedores ?? [],
+  }[rol]
 
   const COLUMNAS_IMPRESAS: Columna<FilaDeCuenta>[] = [
     { encabezado: 'Fecha', valor: (f) => f.movimiento.fecha },

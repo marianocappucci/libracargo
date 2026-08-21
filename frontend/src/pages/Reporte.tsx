@@ -221,7 +221,7 @@ export default function Reporte() {
         {tiene('tercero') && (
           <Elegir id="f-tercero" etiqueta="Tercero" vacio="Todos"
                   valor={texto('tercero_id')}
-                  opciones={[...(opciones?.clientes ?? []), ...(opciones?.fleteros ?? [])]}
+                  opciones={opciones?.terceros ?? []}
                   alCambiar={(v) => set({ tercero_id: v })} />
         )}
         {tiene('razon_social') && (

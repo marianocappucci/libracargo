@@ -4,6 +4,23 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ## [Unreleased]
 
+### Corregido
+
+- 🔴 **Los proveedores no aparecían en ningún select del sistema.** La pantalla
+  de cuenta corriente ofrecía el rol "Proveedor" y mostraba la lista de
+  **clientes**; caja no los incluía, así que no se podía registrarles un pago y
+  un movimiento con un proveedor mostraba el **nombre en blanco** en la grilla
+  y en la impresión. Los 15 proveedores de la instancia del cliente son
+  proveedor-puro: ninguno era alcanzable, y sus 3.347 movimientos migrados no
+  tenían forma de abrirse.
+- 🔴 **Los selects mostraban sólo los primeros 200 registros.** El listado de la
+  API pagina de a 200 por omisión y las opciones se pedían sin `limite`: con
+  **276 terceros activos**, 76 no aparecían en ninguna pantalla y nada lo
+  delataba. Ahora se pagina hasta agotar, en vez de subir el tope — cualquier
+  número elegido a mano se vuelve a cruzar, y la próxima vez tampoco avisaría.
+- Un tercero con dos roles aparecía **dos veces** en las listas de caja y en el
+  filtro de terceros de los reportes, que concatenaban clientes y fleteros.
+
 ### Agregado
 
 - **Provincias y localidades se eligen de un catálogo** (24 y 4.027, de

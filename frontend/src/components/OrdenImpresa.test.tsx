@@ -10,6 +10,11 @@ const { OrdenImpresa } = await import('./OrdenImpresa')
 const OPCIONES = {
   clientes: [{ id: 1, etiqueta: 'Agro del Oeste' }],
   fleteros: [{ id: 2, etiqueta: 'Transportes Aguirre' }],
+  proveedores: [{ id: 9, etiqueta: 'Gomería Del Centro' }],
+  // Todos, sin repetir: es la lista que usan caja y el filtro de los reportes.
+  terceros: [{ id: 1, etiqueta: 'Agro del Oeste' },
+             { id: 2, etiqueta: 'Transportes Aguirre' },
+             { id: 9, etiqueta: 'Gomería Del Centro' }],
   localidades: [{ id: 3, etiqueta: 'Suipacha' }, { id: 4, etiqueta: 'Rosario' }],
   choferes: [{ id: 5, etiqueta: 'Ramón Ferreyra' }],
   vehiculos: [{ id: 6, etiqueta: 'AB123CD' }],
