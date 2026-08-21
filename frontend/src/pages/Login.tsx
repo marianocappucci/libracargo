@@ -20,6 +20,20 @@ export const Login = createLogin<Usuario>({
   logo: { src: LOGO, className: 'h-[72px] w-[72px]' },
   wordmarkClassName: `${WORDMARK} text-[22px]`,
   redirectTo: '/',
+  // Botón "Entrar a la demo" — va de la mano con `incluir_demo=True` en
+  // `app/routers/auth.py`.
+  //
+  // 🔴 Declararlo acá NO alcanza para que aparezca, y esa es la mitad que ya
+  // se pagó una vez: `libra-ui` consulta `GET /auth/demo` al montar y sólo
+  // pinta el botón si la instancia contesta —con JSON— que es una demo. En
+  // `suitrans` no aparece nada.
+  //
+  // Al revés importa igual: sin esta línea, `demo.libracargo.com.ar` mostraría
+  // el login normal pidiéndole credenciales a un visitante que no tiene
+  // ninguna, con el endpoint contestando perfecto del otro lado. Es lo que les
+  // pasó a las seis SPA de la familia el 2026-08-06 — el `POST /auth/demo` en
+  // verde, y nadie podía entrar.
+  demoPath: '/auth/demo',
   useAuth,
 })
 
