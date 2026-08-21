@@ -4,24 +4,41 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ## [Unreleased]
 
-### Corregido
-
-- 🔴 **Los proveedores no aparecían en ningún select del sistema.** La pantalla
-  de cuenta corriente ofrecía el rol "Proveedor" y mostraba la lista de
-  **clientes**; caja no los incluía, así que no se podía registrarles un pago y
-  un movimiento con un proveedor mostraba el **nombre en blanco** en la grilla
-  y en la impresión. Los 15 proveedores de la instancia del cliente son
-  proveedor-puro: ninguno era alcanzable, y sus 3.347 movimientos migrados no
-  tenían forma de abrirse.
-- 🔴 **Los selects mostraban sólo los primeros 200 registros.** El listado de la
-  API pagina de a 200 por omisión y las opciones se pedían sin `limite`: con
-  **276 terceros activos**, 76 no aparecían en ninguna pantalla y nada lo
-  delataba. Ahora se pagina hasta agotar, en vez de subir el tope — cualquier
-  número elegido a mano se vuelve a cruzar, y la próxima vez tampoco avisaría.
-- Un tercero con dos roles aparecía **dos veces** en las listas de caja y en el
-  filtro de terceros de los reportes, que concatenaban clientes y fleteros.
-
 ### Agregado
+
+- **Configuración de ARCA**, en Configuración → Facturación (ARCA): se cargan el
+  certificado y la clave privada de cada razón social, se elige el ambiente
+  —homologación por omisión— y se habilita la facturación electrónica.
+  - **Verifica los archivos al subirlos**, que es lo que evita descubrir el
+    problema recién al emitir: rechaza el `.csr` en lugar del `.crt`, la clave
+    con passphrase y el archivo cambiado de campo; avisa **cuándo vence** el
+    certificado; y 🔑 avisa cuando **el certificado y la clave no son pareja**,
+    que son dos archivos válidos que juntos no autentican.
+  - No se puede habilitar sin las dos mitades, y cambiar una **apaga** la
+    habilitación.
+  - **Todavía no emite**: los comprobantes se siguen registrando con el número
+    que se tipea. Ver ADR-020.
+
+- **Todo es clickeable.** Había **nueve tablas y ningún `onRowClick`**: para ver
+  el detalle de una orden había que encontrar el botón de la columna de
+  acciones, y desde un movimiento de cuenta corriente no se llegaba al documento
+  que lo explica de ninguna forma.
+  - **Cuenta corriente**: cada línea lleva a su comprobante, a su orden o al
+    movimiento de caja que la originó. Las del histórico migrado que no tienen
+    origen no son clickeables.
+  - **Tablero**: las órdenes recientes abren su detalle y los saldos abren la
+    cuenta.
+  - **Caja** lleva a la cuenta del tercero; **el log de actividad**, a la
+    entidad que se tocó; **los reportes por tercero**, a su cuenta corriente; y
+    **los maestros**, al formulario de edición.
+  - Enlaces profundos: `/ordenes?ver=123`, `/comprobantes?ver=123`,
+    `/cuentas?rol=fletero&tercero=5`. Se piden **por id** y no se buscan en la
+    grilla, así el enlace funciona aunque los filtros de esa pantalla no
+    incluyan la fila.
+  - Los reportes que son **agregados puros** —caja por medio de pago, rutas más
+    transitadas— no son clickeables a propósito: la fila es una suma, no una
+    cosa.
+
 
 - **Provincias y localidades se eligen de un catálogo** (24 y 4.027, de
   LibraCore) en el maestro de localidades y en la dirección de clientes,
@@ -31,18 +48,6 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
   - La migración `0005` completa la provincia de **63 de las 121** localidades
     existentes: sólo donde el nombre no es ambiguo.
 
-### Corregido
-
-- 🔴 **El alta de una orden ahora asienta la comisión en la cuenta corriente del
-  fletero.** No lo hacía: `comision` se leía sólo para los reportes, y la cuenta
-  de un fletero sólo se movía cuando se le pagaba. Editar la orden corrige el
-  asiento y anularla lo revierte con un contraasiento. Ver ADR-018.
-- 🔴 **Pagarle a un fletero o a un proveedor bajaba mal el saldo**: el asiento de
-  caja elegía la columna mirando sólo el tipo de movimiento, así que un egreso
-  **aumentaba** lo que se le debía. Ahora la columna depende del rol de la cuenta,
-  como en el sistema anterior y como los 22.645 movimientos migrados.
-
-### Agregado
 
 - **Backoffice**: `admin.libracargo.com.ar`, la misma instancia de
   `libra-backoffice` que administra a los otros seis productos. Da de alta
@@ -81,3 +86,30 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 - Dockerfile con huso horario de Argentina, usuario sin privilegios y
   healthcheck; `docker-compose.yml` para desarrollo.
 - CI con tests sobre `postgres:16` y `develop` en el trigger.
+
+### Corregido
+
+- 🔴 **Los proveedores no aparecían en ningún select del sistema.** La pantalla
+  de cuenta corriente ofrecía el rol "Proveedor" y mostraba la lista de
+  **clientes**; caja no los incluía, así que no se podía registrarles un pago y
+  un movimiento con un proveedor mostraba el **nombre en blanco** en la grilla
+  y en la impresión. Los 15 proveedores de la instancia del cliente son
+  proveedor-puro: ninguno era alcanzable, y sus 3.347 movimientos migrados no
+  tenían forma de abrirse.
+- 🔴 **Los selects mostraban sólo los primeros 200 registros.** El listado de la
+  API pagina de a 200 por omisión y las opciones se pedían sin `limite`: con
+  **276 terceros activos**, 76 no aparecían en ninguna pantalla y nada lo
+  delataba. Ahora se pagina hasta agotar, en vez de subir el tope — cualquier
+  número elegido a mano se vuelve a cruzar, y la próxima vez tampoco avisaría.
+- Un tercero con dos roles aparecía **dos veces** en las listas de caja y en el
+  filtro de terceros de los reportes, que concatenaban clientes y fleteros.
+
+
+- 🔴 **El alta de una orden ahora asienta la comisión en la cuenta corriente del
+  fletero.** No lo hacía: `comision` se leía sólo para los reportes, y la cuenta
+  de un fletero sólo se movía cuando se le pagaba. Editar la orden corrige el
+  asiento y anularla lo revierte con un contraasiento. Ver ADR-018.
+- 🔴 **Pagarle a un fletero o a un proveedor bajaba mal el saldo**: el asiento de
+  caja elegía la columna mirando sólo el tipo de movimiento, así que un egreso
+  **aumentaba** lo que se le debía. Ahora la columna depende del rol de la cuenta,
+  como en el sistema anterior y como los 22.645 movimientos migrados.

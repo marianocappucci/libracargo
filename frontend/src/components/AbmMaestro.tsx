@@ -235,9 +235,14 @@ export function AbmMaestro<T extends Maestro>({
         </p>
       )}
 
+      {/* Click en la fila abre el formulario de edicion, que es lo unico que
+          se puede hacer con la fila de un maestro. El lapiz de la columna de
+          acciones queda: es el que se descubre mirando, y no todo el mundo
+          prueba clickear una fila. */}
       <DataTable
         columns={columnasCompletas}
         data={filas}
+        onRowClick={abrir}
         emptyMessage={cargando ? 'Cargando…' : 'Todavía no hay nada cargado.'}
         search={{ campos: buscarEn, placeholder: `Buscar en ${titulo.toLowerCase()}…` }}
       />

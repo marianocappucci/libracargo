@@ -12,6 +12,7 @@
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
 import { FileText, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import type { Comprobante, ComprobanteConOrdenes, TotalDeRazonSocial } from '@/api/comprobantes'
 import { NOMBRE_DE_TIPO, comprobantes, numeroDe, sumarImportes } from '@/api/comprobantes'
@@ -136,6 +137,7 @@ export default function Comprobantes() {
   const [pendientes, setPendientes] = useState<Orden[]>([])
   const [elegidas, setElegidas] = useState<number[]>([])
   const [detalle, setDetalle] = useState<ComprobanteConOrdenes | null>(null)
+  const [params, setParams] = useSearchParams()
   const [confirmando, setConfirmando] = useState(false)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -143,6 +145,18 @@ export default function Comprobantes() {
   useEffect(() => {
     cargarOpciones().then(setOpciones).catch((e) => setError(mensajeDeError(e)))
   }, [])
+
+  // `/comprobantes?ver=123` abre ese comprobante. Es a donde lleva un asiento
+  // de cuenta corriente que salio de una factura.
+  const idAVer = params.get('ver')
+  useEffect(() => {
+    if (!idAVer) return
+    let vigente = true
+    comprobantes.ver(Number(idAVer))
+      .then((c) => { if (vigente) setDetalle(c) })
+      .catch((e) => { if (vigente) setError(mensajeDeError(e)) })
+    return () => { vigente = false }
+  }, [idAVer])
 
   const recargar = useCallback(() => {
     setCargando(true)
@@ -311,6 +325,7 @@ export default function Comprobantes() {
       <DataTable
         columns={columnas}
         data={filas}
+        onRowClick={(c) => ver(c.id)}
         emptyMessage={cargando ? 'Cargando…' : 'No hay comprobantes en ese rango.'}
       />
 
@@ -394,7 +409,16 @@ export default function Comprobantes() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={detalle != null} onOpenChange={(v) => { if (!v) setDetalle(null) }}>
+      <Dialog open={detalle != null}
+              onOpenChange={(v) => {
+                if (v) return
+                setDetalle(null)
+                if (params.has('ver')) {
+                  const otros = new URLSearchParams(params)
+                  otros.delete('ver')
+                  setParams(otros, { replace: true })
+                }
+              }}>
         <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
