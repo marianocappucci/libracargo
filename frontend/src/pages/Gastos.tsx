@@ -151,11 +151,14 @@ export default function Gastos() {
 
   const columnas = [
     { id: 'fecha', header: sortableHeader('Fecha'), accessorFn: (g: Gasto) => g.fecha, size: 110 },
-    { id: 'proveedor', header: 'Proveedor',
+    { id: 'proveedor', header: 'Proveedor', size: 175,
       accessorFn: (g: Gasto) => nombre(opciones?.proveedores, g.proveedor_id) },
-    { id: 'fletero', header: 'Se le descuenta a',
+    { id: 'fletero', header: 'Se le descuenta a', size: 175,
       accessorFn: (g: Gasto) => nombre(opciones?.fleteros, g.fletero_id) },
-    { id: 'descripcion', header: 'Detalle', meta: { stretch: true },
+    // La elastica, y la unica de texto libre. `whitespace-normal break-words`
+    // porque el default de `TableCell` es `nowrap` y un detalle largo empujaria.
+    { id: 'descripcion', header: 'Detalle', size: 190,
+      meta: { stretch: true, className: 'whitespace-normal break-words' },
       accessorFn: (g: Gasto) => g.descripcion },
     { id: 'importe', header: 'Importe', size: 130,
       accessorFn: (g: Gasto) => formatearImporte(g.importe) },
