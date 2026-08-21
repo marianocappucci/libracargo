@@ -21,12 +21,12 @@ from app.models.maestros import (
     TipoCarga,
     Vehiculo,
 )
-from app.models.operacion import Comprobante, OrdenCarga
+from app.models.operacion import Comprobante, GastoDeProveedor, OrdenCarga
 
 __all__ = [
     "AccionAuditoria", "AmbienteArca", "Base", "Chofer", "Comprobante",
     "ConfiguracionArca", "CondicionIVA",
-    "EstadoOrden", "Localidad", "MedioPago", "MovimientoCaja",
+    "EstadoOrden", "GastoDeProveedor", "Localidad", "MedioPago", "MovimientoCaja",
     "MovimientoCuenta", "OrdenCarga", "RazonSocial", "ConfiguracionEmpresa",
     "RegistroAuditoria",
     "RolCuenta", "Tercero", "TipoCarga", "TipoComprobante",

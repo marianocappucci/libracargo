@@ -103,8 +103,9 @@ def test_upgrade_downgrade_upgrade(base_limpia):
             # 13 del dominio + alembic_version. Sube cuando entra una tabla nueva,
         # y ese es el punto: el numero se toca a mano al agregarla, asi una
         # tabla que aparece sin querer --por un modelo importado de mas-- se ve.
-        # Subio a 14 con la 0006, que agrega `configuracion_arca`.
-        assert tablas == 14
+        # Subio a 14 con la 0006 (`configuracion_arca`) y a 15 con la 0007
+        # (`gastos_de_proveedor`).
+        assert tablas == 15
         eng.dispose()
     finally:
         if original:

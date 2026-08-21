@@ -16,6 +16,7 @@ export type MovimientoCuenta = {
   orden_id: number | null
   comprobante_id: number | null
   movimiento_caja_id: number | null
+  gasto_id: number | null
 }
 
 export type FilaDeCuenta = { movimiento: MovimientoCuenta; saldo: string }
