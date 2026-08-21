@@ -10,8 +10,10 @@ from __future__ import annotations
 import os
 
 from fastapi import Depends, FastAPI
-from libraauth.bootstrap import ensure_default_admin
+from libraauth.bootstrap import ensure_default_admin, ensure_demo_user
+from libraauth.demo_codigos import DemoCodigoRepository
 from libraauth.models import Base as AuthBase
+from libraauth.session_auth import build_demo_codigos_router, demo_username
 from libracore.config_router import build_backup_router
 from libracore.geografia import build_geo_router
 from libracore.respaldo import Instancia
@@ -76,6 +78,17 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
         # contraseña y la imprime, y no son intercambiables.
         ensure_default_admin(usuarios, env_prefix="LIBRACARGO")
 
+    # El visitante de la demo pública, **sólo si esta instancia es una demo**:
+    # se guía por `DEMO_MODE` + `DEMO_USERNAME`, las mismas dos variables que
+    # registran `POST /auth/demo`. En `suitrans` y en cualquier instancia de
+    # cliente devuelve None y no toca la base.
+    #
+    # 🔴 Sin esta llamada la ruta existe y no tiene a quién loguear: contesta
+    # `503 demo user not provisioned`. Cablear `incluir_demo=True` en el router
+    # no alcanza — la ruta y la siembra las conecta el producto, cada una por
+    # su lado, y ninguna de las dos delata que falta la otra.
+    ensure_demo_user(usuarios)
+
     app = FastAPI(
         title="LibraCargo",
         description="Gestión de agencia de cargas — familia Libra",
@@ -87,7 +100,30 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     app.state.session_auth = construir_session_auth(usuarios)
 
     app.include_router(salud.router)
-    app.include_router(auth_router.router)
+    # `construir_router()` y no un `router` de módulo: lee `DEMO_MODE` al
+    # construirse, y a nivel de módulo quedaría congelado en el primer import.
+    # Ver el docstring de `app/routers/auth.py`.
+    app.include_router(auth_router.construir_router())
+
+    # Los códigos de acceso de la demo pública. Se emiten desde el backoffice
+    # (`admin.libracargo.com.ar`) y los consume `POST /auth/demo`.
+    #
+    # 🔴 `POST /auth/demo` **falla cerrado** si esta línea no corrió: contesta
+    # `503 demo access codes not configured` en vez de dejar entrar sin código.
+    # Es incómodo a propósito — la alternativa convertiría un olvido de
+    # cableado en una demo abierta a internet, que es exactamente lo que el
+    # código de acceso existe para cerrar. Si un día la demo devuelve ese 503,
+    # lo que falta es esto.
+    #
+    # El factory es el mismo `db.fabrica_de_sesiones()` del `UserRepository`
+    # porque en LibraCargo `usuarios` vive en la MISMA base que el dominio. En
+    # Gestiolibra/MedLibra/VentaLibra no es así y ahí va el factory del engine
+    # de auth; copiar de allá sin mirar crearía la tabla en el lugar
+    # equivocado y ningún código sería válido.
+    if demo_username():
+        app.state.demo_codigos = DemoCodigoRepository(db.fabrica_de_sesiones())
+        app.include_router(build_demo_codigos_router())
+
     for router in maestros.TODOS:
         app.include_router(router)
     app.include_router(ordenes.router)
