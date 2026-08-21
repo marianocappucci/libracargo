@@ -94,7 +94,12 @@ export default function Caja() {
 
   useEffect(recargar, [recargar])
 
-  const terceros = [...(opciones?.clientes ?? []), ...(opciones?.fleteros ?? [])]
+  // Todos los terceros, no clientes + fleteros: sin los proveedores no se podía
+  // registrar un pago a proveedor, y un movimiento cuyo tercero fuera uno
+  // mostraba el **nombre en blanco** en la grilla y en la impresión, porque la
+  // búsqueda por id no lo encontraba. Además, concatenar dos listas repetía al
+  // tercero que tiene los dos roles.
+  const terceros = opciones?.terceros ?? []
   const set = (c: Partial<Borrador>) => setBorrador((b) => ({ ...b, ...c }))
 
   async function guardar() {
