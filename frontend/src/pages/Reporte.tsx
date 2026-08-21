@@ -7,7 +7,7 @@
 import { DataTable } from 'libra-ui/data-table'
 import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import type { Parametro, Reporte as EntradaDeCatalogo, ValoresDeFiltro } from '@/api/reportes'
 import { reportes } from '@/api/reportes'
@@ -16,6 +16,7 @@ import { cargarOpciones } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { Elegir as ElegirCompartido } from '@/components/Elegir'
 import { formatearImporte } from '@/components/esquema-orden'
+import { destinoDeFilaDeReporte } from '@/navegacion'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir } from '@/components/impresion'
 import { Input } from '@/components/ui/input'
@@ -117,6 +118,7 @@ function Campo({ id, etiqueta, children }: {
 const Elegir = ElegirCompartido
 
 export default function Reporte() {
+  const navegar = useNavigate()
   const { slug = '' } = useParams()
   const [entrada, setEntrada] = useState<EntradaDeCatalogo | null>(null)
   const [opciones, setOpciones] = useState<Opciones | null>(null)
@@ -308,6 +310,10 @@ export default function Reporte() {
               c.moneda ? formatearImporte(c.valor(f)) : (c.valor(f) ?? ''),
           }))}
           data={filas}
+          onRowClick={(f: Fila) => {
+            const destino = destinoDeFilaDeReporte(slug, f)
+            if (destino) navegar(destino)
+          }}
           emptyMessage={cargando ? 'Calculando…' : 'No hay datos con esos filtros.'}
         />
       )}

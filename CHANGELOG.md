@@ -4,6 +4,28 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ## [Unreleased]
 
+### Agregado
+
+- **Todo es clickeable.** Había **nueve tablas y ningún `onRowClick`**: para ver
+  el detalle de una orden había que encontrar el botón de la columna de
+  acciones, y desde un movimiento de cuenta corriente no se llegaba al documento
+  que lo explica de ninguna forma.
+  - **Cuenta corriente**: cada línea lleva a su comprobante, a su orden o al
+    movimiento de caja que la originó. Las del histórico migrado que no tienen
+    origen no son clickeables.
+  - **Tablero**: las órdenes recientes abren su detalle y los saldos abren la
+    cuenta.
+  - **Caja** lleva a la cuenta del tercero; **el log de actividad**, a la
+    entidad que se tocó; **los reportes por tercero**, a su cuenta corriente; y
+    **los maestros**, al formulario de edición.
+  - Enlaces profundos: `/ordenes?ver=123`, `/comprobantes?ver=123`,
+    `/cuentas?rol=fletero&tercero=5`. Se piden **por id** y no se buscan en la
+    grilla, así el enlace funciona aunque los filtros de esa pantalla no
+    incluyan la fila.
+  - Los reportes que son **agregados puros** —caja por medio de pago, rutas más
+    transitadas— no son clickeables a propósito: la fila es una suma, no una
+    cosa.
+
 ### Corregido
 
 - 🔴 **Los proveedores no aparecían en ningún select del sistema.** La pantalla

@@ -13,7 +13,7 @@ import {
   AlertTriangle, ArrowRight, BookOpen, ClipboardList, Receipt, Wallet,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import type { FilaDeSaldo, Resumen } from '@/api/reportes'
 import { reportes } from '@/api/reportes'
@@ -21,6 +21,7 @@ import type { Orden } from '@/api/ordenes'
 import { ordenes as apiOrdenes, cargarOpciones } from '@/api/ordenes'
 import type { Opciones } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import { irA } from '@/navegacion'
 import { hoyEnArgentina, formatearImporte } from '@/components/esquema-orden'
 import { sumarImportes } from '@/api/comprobantes'
 
@@ -49,6 +50,7 @@ function Tarjeta({ titulo, valor, detalle, a, icono: Icono }: {
 }
 
 export default function Inicio() {
+  const navegar = useNavigate()
   const [mes, setMes] = useState<Resumen | null>(null)
   const [historico, setHistorico] = useState<Resumen | null>(null)
   const [saldos, setSaldos] = useState<FilaDeSaldo[]>([])
@@ -145,6 +147,7 @@ export default function Inicio() {
               accessorFn: (o: Orden) => formatearImporte(o.total) },
           ]}
           data={ultimas}
+          onRowClick={(o: Orden) => navegar(irA.orden(o.id))}
           emptyMessage="Todavía no hay órdenes cargadas."
         />
       </section>
@@ -167,6 +170,7 @@ export default function Inicio() {
               accessorFn: (s: FilaDeSaldo) => formatearImporte(s.saldo) },
           ]}
           data={saldos.slice(0, 8)}
+          onRowClick={(s: FilaDeSaldo) => navegar(irA.cuenta(s.rol, s.tercero_id))}
           emptyMessage="Ninguna cuenta tiene saldo."
         />
       </section>

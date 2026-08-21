@@ -7,6 +7,7 @@
  */
 import { DataTable } from 'libra-ui/data-table'
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import type { FiltrosDeLog, Registro } from '@/api/auditoria'
 import { auditoria, describirCambio } from '@/api/auditoria'
@@ -14,6 +15,7 @@ import { mensajeDeError } from '@/components/AbmMaestro'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { Badge } from '@/components/ui/badge'
+import { destinoDelLog } from '@/navegacion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -36,6 +38,7 @@ function Campo({ id, etiqueta, children }: {
 }
 
 export default function Logs() {
+  const navegar = useNavigate()
   const [filtros, setFiltros] = useState<FiltrosDeLog>({})
   const [pagina, setPagina] = useState(0)
   const [datos, setDatos] = useState<{ total: number; registros: Registro[] }>(
@@ -181,6 +184,10 @@ export default function Logs() {
             accessorFn: (r: Registro) => describirCambio(r) || '—' },
         ]}
         data={datos.registros}
+        onRowClick={(r) => {
+          const destino = destinoDelLog(r.entidad, r.entidad_id)
+          if (destino) navegar(destino)
+        }}
         emptyMessage={cargando ? 'Cargando…' : 'No hay actividad con esos filtros.'}
       />
 

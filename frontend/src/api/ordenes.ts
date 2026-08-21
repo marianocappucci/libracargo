@@ -72,6 +72,9 @@ export const ordenes = {
     const qs = consulta(filtros)
     return api.get<Orden[]>(`/api/ordenes${qs ? `?${qs}` : ''}`)
   },
+  // Por id y no buscando en la grilla: el enlace profundo tiene que abrir
+  // la orden aunque los filtros puestos no la incluyan.
+  traer: (id: number) => api.get<Orden>(`/api/ordenes/${id}`),
   crear: (datos: unknown) => api.post<Orden>('/api/ordenes', datos),
   editar: (id: number, datos: unknown) => api.put<Orden>(`/api/ordenes/${id}`, datos),
   anular: (id: number) => api.del<Orden>(`/api/ordenes/${id}`),
