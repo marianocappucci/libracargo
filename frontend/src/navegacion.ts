@@ -26,6 +26,7 @@ export const irA = {
    *  se puede saber desde caja, donde el movimiento guarda el tercero y no la
    *  cuenta a la que fue la contrapartida. */
   cuentaDe: (terceroId: number) => `/cuentas?tercero=${terceroId}`,
+  gasto: (id: number) => `/gastos?ver=${id}`,
 }
 
 /** El origen de un asiento de cuenta corriente, o `null` si no tiene.
@@ -40,6 +41,7 @@ export function origenDelMovimiento(fila: FilaDeCuenta): string | null {
   if (m.comprobante_id) return irA.comprobante(m.comprobante_id)
   if (m.orden_id) return irA.orden(m.orden_id)
   if (m.movimiento_caja_id) return irA.caja(m.movimiento_caja_id)
+  if (m.gasto_id) return irA.gasto(m.gasto_id)
   return null
 }
 
@@ -63,6 +65,7 @@ export function destinoDelLog(entidad: string, entidadId: number | null): string
     if (entidad === 'orden_carga') return irA.orden(entidadId)
     if (entidad === 'comprobante') return irA.comprobante(entidadId)
     if (entidad === 'movimiento_caja') return irA.caja(entidadId)
+    if (entidad === 'gasto_de_proveedor') return irA.gasto(entidadId)
   }
   if (entidad === 'configuracion') return '/configuracion'
   // Los maestros no tienen enlace profundo a una fila: la pantalla es un ABM

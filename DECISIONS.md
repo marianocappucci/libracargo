@@ -437,3 +437,45 @@ esté entre ellas.
   ya existe en LibraCore (`arca_wsaa` + `arca_wsfe`); lo que **no** se puede
   reusar es `arca_facturacion`, que está atado al esquema de `facturas` y
   `arca_config` de LibraCore y este producto tiene el suyo.
+
+
+## ADR-021 — El bloque de proveedores es un gasto imputado a un fletero, no una factura de compra
+
+- Estado: aceptada
+- Fecha: 2026-08-21
+- Contexto: era el hueco más grande del chequeo de paridad — el bloque
+  **COMPROBANTES PROVEEDORES** del legado, sin equivalente. El nombre engañaba, y
+  antes de modelar nada se perfilaron los **3.347 registros** de `ctacteprov`:
+
+  | | |
+  |---|---:|
+  | Gastos (importe en el debe) | **2.799** |
+  | Pagos (importe en el haber) | 539 — ya cubiertos por caja |
+  | Gastos **imputados a un fletero** | **2.799 de 2.799** |
+  | Gastos **con número de comprobante** | **0 de 2.799** |
+  | Tipo usado | **"Remito"** en 2.806, no "Factura" |
+
+- Decisión: se modela **el gasto**, que es lo que hacen: lo que el proveedor
+  entrega y **se le descuenta al fletero**. Un gasto deja **dos asientos en una
+  transacción** — proveedor al `debe`, fletero al `haber` —, que en el legado
+  eran dos `INSERT` sueltos en dos tablas.
+  1. **El fletero es obligatorio**, no un campo que a veces se completa: los
+     2.799 lo tienen. Un gasto que no se le descuenta a nadie es un gasto general
+     de la agencia y va por caja, que ya lo soporta.
+  2. **El número de comprobante es opcional.** El campo existe en el legado y
+     **nadie lo usó nunca**; hacerlo obligatorio sería inventar un requisito que
+     el negocio no tiene.
+  3. **No es un documento fiscal**: sin tipo A/B/C, sin punto de venta y sin IVA
+     discriminado. Cuando eso haga falta —con ARCA emitiendo y el IVA compras
+     importando— será otro documento, no este con campos agregados.
+- Consecuencias: editar corrige **los dos asientos en el lugar** —una línea por
+  cuenta, como el `UPDATE` de `modifica_ctacteprov.php`— y anular **no borra**:
+  deja las dos líneas y agrega sus dos contrapartidas, con la fecha del gasto.
+- **El histórico no se convierte.** Los 2.799 del legado ya están como
+  movimientos de cuenta con los saldos validados por el gate de F6. Crearles un
+  documento retroactivo duplicaría el importe salvo que además se reescribieran
+  esos movimientos, y eso es tocar historia conciliada para no ganar nada. La
+  tabla arranca vacía.
+- Alternativa descartada: **la factura de compra completa**. Habría que decidir
+  qué hacer con 2.799 registros que no tienen ni número, ni tipo, ni IVA — y
+  construir campos que hoy nadie llena.
