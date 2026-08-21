@@ -79,23 +79,57 @@ export const ordenes = {
 
 export type Opcion = { id: number; etiqueta: string }
 
+/** Trae **todas** las filas de un maestro, paginando.
+ *
+ *  🔴 El listado de la API tiene tope: 200 por omisión y 1.000 como máximo. Un
+ *  solo pedido devolvía las primeras 200 y nadie se enteraba — sobre la
+ *  instancia del cliente, con **276 terceros activos**, eso dejaba 76 afuera de
+ *  todos los selects del sistema. Un select al que le falta un cliente no falla:
+ *  simplemente no lo encontrás, y parece que el cliente no existe.
+ *
+ *  Se pagina y no se sube el número: cualquier tope elegido a mano se vuelve a
+ *  cruzar, y la próxima vez tampoco va a avisar.
+ */
+async function traerTodo(recurso: string): Promise<Record<string, unknown>[]> {
+  const PAGINA = 1000  // el máximo que acepta la API
+  const filas: Record<string, unknown>[] = []
+  for (let desplazamiento = 0; ; desplazamiento += PAGINA) {
+    const pagina = await api.get<Record<string, unknown>[]>(
+      `/api/${recurso}?activo=true&limite=${PAGINA}&desplazamiento=${desplazamiento}`,
+    )
+    filas.push(...pagina)
+    // Una página corta es la última. Si vino completa puede haber más, aunque
+    // el total sea múltiplo exacto: ahí la vuelta de más devuelve vacío.
+    if (pagina.length < PAGINA) return filas
+  }
+}
+
 /** Las listas para los selects del formulario y de los filtros.
  *  Se piden **sólo los activos**: un maestro dado de baja no tiene que poder
  *  elegirse en una orden nueva, aunque siga existiendo en las viejas. */
 export async function cargarOpciones() {
   const [terceros, localidades, choferes, vehiculos, tipos, razones] = await Promise.all([
-    api.get<Record<string, unknown>[]>('/api/terceros?activo=true'),
-    api.get<Record<string, unknown>[]>('/api/localidades?activo=true'),
-    api.get<Record<string, unknown>[]>('/api/choferes?activo=true'),
-    api.get<Record<string, unknown>[]>('/api/vehiculos?activo=true'),
-    api.get<Record<string, unknown>[]>('/api/tipos-carga?activo=true'),
-    api.get<Record<string, unknown>[]>('/api/razones-sociales?activo=true'),
+    traerTodo('terceros'),
+    traerTodo('localidades'),
+    traerTodo('choferes'),
+    traerTodo('vehiculos'),
+    traerTodo('tipos-carga'),
+    traerTodo('razones-sociales'),
   ])
   const mapear = (filas: Record<string, unknown>[], campo: string): Opcion[] =>
     filas.map((f) => ({ id: f.id as number, etiqueta: String(f[campo] ?? '') }))
   return {
     clientes: mapear(terceros.filter((t) => t.es_cliente), 'razon_social'),
     fleteros: mapear(terceros.filter((t) => t.es_fletero), 'razon_social'),
+    // 🔴 Faltaba, y con ella la cuenta corriente de proveedores era
+    // inalcanzable: la pantalla ofrecía el rol "Proveedor" y mostraba la lista
+    // de CLIENTES. Los 15 proveedores de la instancia del cliente son
+    // proveedor-puro, así que ninguno se podía elegir.
+    proveedores: mapear(terceros.filter((t) => t.es_proveedor), 'razon_social'),
+    // Todos, sin repetir. Un tercero con dos roles aparecía dos veces en los
+    // lugares que concatenaban las listas —caja y el filtro de los reportes—,
+    // y elegir cualquiera de las dos filas hacía lo mismo.
+    terceros: mapear(terceros, 'razon_social'),
     localidades: mapear(localidades, 'nombre'),
     choferes: mapear(choferes, 'nombre'),
     vehiculos: mapear(vehiculos, 'patente_chasis'),
