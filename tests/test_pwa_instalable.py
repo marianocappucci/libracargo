@@ -49,7 +49,7 @@ def test_los_iconos_del_manifest_existen_y_miden_lo_que_dicen():
     medidas = {"192x192", "512x512"}
 
     for icono in datos["icons"]:
-        archivo = PUBLICO / icono["src"].lstrip("/")
+        archivo = PUBLICO / icono["src"].split("?")[0].lstrip("/")
         assert archivo.is_file(), f"{icono['src']} está en el manifest y no en el disco"
         ancho, alto = _medidas_png(archivo)
         assert f"{ancho}x{alto}" == icono["sizes"], f"{icono['src']} mide {ancho}x{alto}"
@@ -124,7 +124,7 @@ def test_el_index_apunta_al_icono_opaco():
     html = INDEX.read_text(encoding="utf-8")
 
     assert 'rel="apple-touch-icon"' in html
-    assert 'href="/icons/icon-apple-180.png"' in html, (
+    assert 'href="/icons/icon-apple-180.png?v=' in html, (
         "el apple-touch-icon sigue apuntando a un icono con transparencia"
     )
 
