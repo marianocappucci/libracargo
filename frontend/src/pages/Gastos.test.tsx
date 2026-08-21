@@ -44,7 +44,7 @@ function responder(gastos: unknown[]) {
   })
 }
 
-describe('Gastos de proveedor', () => {
+describe('Comprobantes de proveedores', () => {
   beforeEach(() => { get.mockReset(); post.mockReset() })
 
   it('muestra a quien se le descuenta, y no solo el proveedor', async () => {
@@ -66,7 +66,7 @@ describe('Gastos de proveedor', () => {
     // decia. Es la clase de efecto que se descubre al mirar un saldo raro.
     responder([])
     render(<MemoryRouter><Gastos /></MemoryRouter>)
-    fireEvent.click(await screen.findByText('Nuevo gasto'))
+    fireEvent.click(await screen.findByText('Nuevo comprobante'))
     // Se busca el PARRAFO y no el `<strong>`: `findByText(/suma/)` matchea el
     // nodo mas chico que contiene el texto, que es la palabra suelta.
     const aviso = await screen.findByText(/Al guardar, este gasto/)
@@ -77,7 +77,7 @@ describe('Gastos de proveedor', () => {
   it('no deja guardar sin proveedor, fletero, detalle e importe', async () => {
     responder([])
     render(<MemoryRouter><Gastos /></MemoryRouter>)
-    fireEvent.click(await screen.findByText('Nuevo gasto'))
+    fireEvent.click(await screen.findByText('Nuevo comprobante'))
     const guardar = await screen.findByText('Guardar')
     expect((guardar as HTMLButtonElement).disabled).toBe(true)
   })

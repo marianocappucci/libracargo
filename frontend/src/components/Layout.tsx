@@ -64,7 +64,10 @@ export const Layout = createLayout<Usuario>({
         { to: '/cuentas', label: 'Cuenta corriente', icon: BookOpen },
         { to: '/caja', label: 'Caja', icon: Wallet },
         { to: '/comprobantes', label: 'Comprobantes', icon: Receipt },
-        { to: '/gastos', label: 'Gastos de proveedor', icon: ReceiptText },
+        // La etiqueta es la palabra del cliente. El modelo es un gasto
+        // -ver ADR-021-, pero en el menu del sistema viejo esto se
+        // llamaba asi y es como lo pide.
+        { to: '/gastos', label: 'Comprobantes de proveedores', icon: ReceiptText },
         { to: '/reportes', label: 'Reportes', icon: BarChart3 },
       ],
     },
