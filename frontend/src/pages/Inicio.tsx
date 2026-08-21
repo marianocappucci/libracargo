@@ -8,6 +8,7 @@
  * Todo sale de los reportes que ya existen: el tablero no calcula nada por su
  * cuenta, así que no puede decir un número distinto del de su reporte.
  */
+import { EstadoDeOrden } from '@/components/EstadoDeOrden'
 import { DataTable } from 'libra-ui/data-table'
 import {
   AlertTriangle, ArrowRight, BookOpen, ClipboardList, Receipt, Wallet,
@@ -142,7 +143,11 @@ export default function Inicio() {
             { id: 'ruta', header: 'Ruta',
               accessorFn: (o: Orden) =>
                 `${nombre(opciones?.localidades, o.origen_id)} → ${nombre(opciones?.localidades, o.destino_id)}` },
-            { id: 'estado', header: 'Estado', accessorFn: (o: Orden) => o.estado },
+            { id: 'estado', header: 'Estado',
+              accessorFn: (o: Orden) => o.estado,
+              cell: ({ row }: { row: { original: Orden } }) => (
+                <EstadoDeOrden estado={row.original.estado} />
+              ) },
             { id: 'total', header: 'Total',
               accessorFn: (o: Orden) => formatearImporte(o.total) },
           ]}
