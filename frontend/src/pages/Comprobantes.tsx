@@ -12,16 +12,17 @@
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
 import { FileText, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 
 import type { Comprobante, ComprobanteConOrdenes, TotalDeRazonSocial } from '@/api/comprobantes'
 import { NOMBRE_DE_TIPO, comprobantes, numeroDe, sumarImportes } from '@/api/comprobantes'
-import type { Opcion, Opciones } from '@/api/ordenes'
-import { cargarOpciones } from '@/api/ordenes'
+import type { Opcion, Opciones, Orden } from '@/api/ordenes'
+import { cargarOpciones, ordenes as apiOrdenes } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import { Elegir } from '@/components/Elegir'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir, traerTodo } from '@/components/impresion'
-import { formatearImporte } from '@/components/esquema-orden'
+import { hoyEnArgentina, formatearImporte } from '@/components/esquema-orden'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -29,7 +30,22 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { irA } from '@/navegacion'
+
+type Borrador = {
+  fecha: string
+  cliente_id: string
+  razon_social_id: string
+  tipo: string
+  punto_venta: string
+  numero: string
+}
+
+// La fecha por defecto sale de la de Argentina y no de `toISOString`: un
+// comprobante cargado de noche nacía con la fecha de mañana.
+const VACIO: Borrador = {
+  fecha: hoyEnArgentina(), cliente_id: '', razon_social_id: '',
+  tipo: 'factura_a', punto_venta: '1', numero: '',
+}
 
 function Campo({ id, etiqueta, valor, alCambiar, tipo = 'text' }: {
   id: string; etiqueta: string; valor: string
@@ -116,6 +132,10 @@ export default function Comprobantes() {
   const [desde, setDesde] = useState('')
   const [hasta, setHasta] = useState('')
   const [razonFiltro, setRazonFiltro] = useState('')
+  const [abierto, setAbierto] = useState(false)
+  const [borrador, setBorrador] = useState<Borrador>(VACIO)
+  const [pendientes, setPendientes] = useState<Orden[]>([])
+  const [elegidas, setElegidas] = useState<number[]>([])
   const [detalle, setDetalle] = useState<ComprobanteConOrdenes | null>(null)
   const [params, setParams] = useSearchParams()
   const [confirmando, setConfirmando] = useState(false)
@@ -150,6 +170,51 @@ export default function Comprobantes() {
   }, [desde, hasta, razonFiltro])
 
   useEffect(recargar, [recargar])
+
+  // Las pendientes del cliente elegido. Sin cliente no se piden: un comprobante
+  // es de un solo cliente, y una lista de todos invitaria a mezclarlos.
+  useEffect(() => {
+    if (!borrador.cliente_id) { setPendientes([]); return }
+    apiOrdenes
+      .listar({ cliente_id: Number(borrador.cliente_id), facturada: false, estado: 'pendiente' })
+      .then(setPendientes)
+      .catch((e) => setError(mensajeDeError(e)))
+  }, [borrador.cliente_id])
+
+  const razon = borrador.razon_social_id ? Number(borrador.razon_social_id) : null
+  // Una orden que ya tiene OTRA razón social no entra en este comprobante: el
+  // backend la rechaza, y ofrecerla en la lista invita a mandarla. Las que no
+  // tienen ninguna heredan la del comprobante.
+  const visibles = pendientes.filter(
+    (o) => razon != null && (o.razon_social_id == null || o.razon_social_id === razon),
+  )
+  // Se factura lo elegido **y visible**: si cambia la razón social, lo que dejó
+  // de poder facturarse deja de contar, en la vista previa y en el envío.
+  const aFacturar = visibles.filter((o) => elegidas.includes(o.id))
+  const totalPrevio = sumarImportes(aFacturar.map((o) => o.total))
+
+  const set = (c: Partial<Borrador>) => setBorrador((b) => ({ ...b, ...c }))
+
+  async function facturar() {
+    setError(null)
+    try {
+      await comprobantes.facturar({
+        fecha: borrador.fecha,
+        cliente_id: Number(borrador.cliente_id),
+        razon_social_id: Number(borrador.razon_social_id),
+        tipo: borrador.tipo,
+        punto_venta: Number(borrador.punto_venta),
+        numero: Number(borrador.numero),
+        orden_ids: aFacturar.map((o) => o.id),
+      })
+      setAbierto(false)
+      setBorrador(VACIO)
+      setElegidas([])
+      recargar()
+    } catch (e) {
+      setError(mensajeDeError(e))
+    }
+  }
 
   async function ver(id: number) {
     setError(null)
@@ -232,10 +297,8 @@ export default function Comprobantes() {
               { etiqueta: 'Total', valor: sumarImportes(f.map((c) => c.total)) },
             ]}
           />
-          <Button asChild>
-            <Link to={irA.facturarPendientes()}>
-              <Plus className="size-4" /> Facturar pendientes
-            </Link>
+          <Button onClick={() => { setBorrador(VACIO); setElegidas([]); setError(null); setAbierto(true) }}>
+            <Plus className="size-4" /> Facturar pendientes
           </Button>
         </div>
       </div>
@@ -265,6 +328,86 @@ export default function Comprobantes() {
         onRowClick={(c) => ver(c.id)}
         emptyMessage={cargando ? 'Cargando…' : 'No hay comprobantes en ese rango.'}
       />
+
+      <Dialog open={abierto} onOpenChange={setAbierto}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Facturar pendientes</DialogTitle></DialogHeader>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Campo id="n-fecha" etiqueta="Fecha" tipo="date" valor={borrador.fecha}
+                   alCambiar={(v) => set({ fecha: v })} />
+            <Elegir id="n-cliente" etiqueta="Cliente" vacio="Elegir…"
+                    valor={borrador.cliente_id} opciones={opciones?.clientes ?? []}
+                    alCambiar={(v) => { set({ cliente_id: v }); setElegidas([]) }} />
+            <Eleccion id="n-razon" etiqueta="Razón social" valor={borrador.razon_social_id}
+                      alCambiar={(v) => set({ razon_social_id: v })}>
+              <option value="">Elegir…</option>
+              {(opciones?.razones ?? []).map((r) => (
+                <option key={r.id} value={r.id}>{r.etiqueta}</option>
+              ))}
+            </Eleccion>
+            <Eleccion id="n-tipo" etiqueta="Tipo" valor={borrador.tipo}
+                      alCambiar={(v) => set({ tipo: v })}>
+              <option value="factura_a">Factura A</option>
+              <option value="factura_b">Factura B</option>
+              <option value="factura_c">Factura C</option>
+            </Eleccion>
+            <Campo id="n-pv" etiqueta="Punto de venta" valor={borrador.punto_venta}
+                   alCambiar={(v) => set({ punto_venta: v })} />
+            <Campo id="n-numero" etiqueta="Número" valor={borrador.numero}
+                   alCambiar={(v) => set({ numero: v })} />
+          </div>
+
+          <div className="mt-4">
+            <h3 className="mb-2 text-sm font-semibold">Órdenes pendientes</h3>
+            {!borrador.cliente_id || !borrador.razon_social_id ? (
+              <p className="text-muted-foreground text-sm">
+                Elegí el cliente y la razón social para ver qué se puede facturar.
+              </p>
+            ) : visibles.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                Este cliente no tiene órdenes pendientes para esa razón social.
+              </p>
+            ) : (
+              <ul className="divide-y rounded border">
+                {visibles.map((o) => (
+                  <li key={o.id} className="flex items-center gap-3 p-2 text-sm">
+                    <input type="checkbox" id={`o-${o.id}`}
+                           checked={elegidas.includes(o.id)}
+                           onChange={(e) => setElegidas((previas) => (
+                             e.target.checked
+                               ? [...previas, o.id]
+                               : previas.filter((i) => i !== o.id)
+                           ))} />
+                    <label htmlFor={`o-${o.id}`} className="flex-1">
+                      #{o.id} · {o.fecha} · remito {o.remito || 's/n'}
+                    </label>
+                    <span className="tabular-nums">{o.total}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="mt-3 flex items-center justify-between rounded border p-3">
+            <span className="text-sm">
+              {aFacturar.length} orden/es elegida/s
+            </span>
+            {/* Vista previa: el importe que queda guardado lo calcula el
+                servidor sobre las mismas ordenes. La suma de aca va en
+                centavos enteros, no en punto flotante. */}
+            <span className="text-lg font-semibold">
+              Total: {formatearImporte(totalPrevio)}
+            </span>
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAbierto(false)}>Cancelar</Button>
+            <Button onClick={facturar} disabled={aFacturar.length === 0 || !borrador.numero}>
+              Facturar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={detalle != null}
               onOpenChange={(v) => {

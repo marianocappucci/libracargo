@@ -34,4 +34,16 @@ from libraauth.session_auth import build_json_api_auth_router
 
 
 def construir_router() -> APIRouter:
-    return build_json_api_auth_router(incluir_verify=True, incluir_demo=True)
+    return build_json_api_auth_router(
+        incluir_verify=True,
+        # `POST /auth/forgot-password` y `POST /auth/reset-password`. Necesita
+        # que `main.py` haya puesto `app.state.password_reset`.
+        #
+        # 🔑 **Sin SMTP configurado la app levanta igual**: el que avisa es el
+        # endpoint, con un 503, recién cuando alguien pide un reset. Este
+        # producto y LibraClub eran los dos de los ocho que no lo tenían; los
+        # otros seis corren así desde julio, cuatro de ellos con esta misma
+        # versión de libraauth.
+        incluir_password_reset=True,
+        incluir_demo=True,
+    )

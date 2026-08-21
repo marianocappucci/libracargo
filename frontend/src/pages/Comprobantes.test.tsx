@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -53,6 +53,31 @@ function total(extra: Record<string, unknown> = {}) {
   }
 }
 
+function orden(id: number, extra: Record<string, unknown> = {}) {
+  return {
+    id, fecha: '2026-08-10', cliente_id: 1, origen_id: 1, destino_id: 2,
+    fletero_id: null, chofer_id: null, vehiculo_id: null, tipo_carga_id: null,
+    razon_social_id: null, remito: null, cantidad: null, unidad: null,
+    tarifa: '1000.00', alicuota_iva: '21.00', iva: '210.00', total: '1210.00',
+    comision: '0.00', estado: 'pendiente', comprobante_id: null,
+    observaciones: null, ...extra,
+  }
+}
+
+async function abrirFacturar(cliente = '1', razon = '5') {
+  fireEvent.click(screen.getByText('Facturar pendientes'))
+  const selectCliente = await screen.findByLabelText('Cliente')
+  await waitFor(() => expect(selectCliente.querySelectorAll('option').length).toBe(2))
+  // Dentro de act: elegir el cliente dispara el pedido de las pendientes, y
+  // ese estado llega despues del evento. Sin esto React avisa que la
+  // actualizacion quedo afuera, y lo que se assertee puede ser el estado previo.
+  await act(async () => {
+    fireEvent.change(selectCliente, { target: { value: cliente } })
+    fireEvent.change(screen.getByLabelText('Razón social', { selector: '#n-razon' }),
+                     { target: { value: razon } })
+  })
+}
+
 describe('Comprobantes', () => {
   beforeEach(() => { get.mockReset(); post.mockReset() })
 
@@ -79,13 +104,67 @@ describe('Comprobantes', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  // Los tests de facturar viven en `FacturarPendientes.test.tsx`: el flujo
-  // dejo de ser un modal de esta pantalla y paso a ser una pantalla propia.
-  it('el boton de facturar lleva a la pantalla, no abre un modal', async () => {
-    responder({})
+  it('no ofrece las ordenes que ya tienen otra razón social', async () => {
+    // El backend las rechaza con un 422 --pisarles la razon social moveria
+    // plata de una a la otra--, asi que ofrecerlas seria invitar al error.
+    responder({ ordenes: [orden(1), orden(2, { razon_social_id: 6 }), orden(3, { razon_social_id: 5 })] })
     render(<MemoryRouter><Comprobantes /></MemoryRouter>)
-    const boton = await screen.findByText('Facturar pendientes')
-    expect(boton.closest('a')).toHaveAttribute('href', '/comprobantes/facturar')
-    expect(screen.queryByRole('dialog')).toBeNull()
+    await abrirFacturar()
+
+    await waitFor(() => expect(screen.getByLabelText(/#1 /)).toBeInTheDocument())
+    expect(screen.getByLabelText(/#3 /)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/#2 /)).toBeNull()
+  })
+
+  it('la vista previa suma lo elegido, y sin nada elegido no deja facturar', async () => {
+    responder({ ordenes: [orden(1, { total: '0.10' }), orden(2, { total: '0.20' })] })
+    render(<MemoryRouter><Comprobantes /></MemoryRouter>)
+    await abrirFacturar()
+
+    await waitFor(() => expect(screen.getByLabelText(/#1 /)).toBeInTheDocument())
+    expect(screen.getByText('Total: $ 0,00')).toBeInTheDocument()
+    expect(screen.getByText('Facturar')).toBeDisabled()
+
+    fireEvent.click(screen.getByLabelText(/#1 /))
+    fireEvent.click(screen.getByLabelText(/#2 /))
+    // 0.10 + 0.20 en punto flotante da 0.30000000000000004: la suma va en
+    // centavos enteros justamente por esto.
+    expect(screen.getByText('Total: $ 0,30')).toBeInTheDocument()
+  })
+
+  it('cambiar la razón social saca de la cuenta lo que ya no se puede facturar', async () => {
+    // Sin esto, una orden elegida antes del cambio seguiria sumando en la vista
+    // previa y viajaria en el pedido, para que el backend la rechace.
+    responder({ ordenes: [orden(1), orden(2, { razon_social_id: 6, total: '500.00' })] })
+    render(<MemoryRouter><Comprobantes /></MemoryRouter>)
+    await abrirFacturar('1', '6')
+
+    await waitFor(() => expect(screen.getByLabelText(/#2 /)).toBeInTheDocument())
+    fireEvent.click(screen.getByLabelText(/#2 /))
+    expect(screen.getByText('Total: $ 500,00')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Razón social', { selector: '#n-razon' }),
+                     { target: { value: '5' } })
+    expect(screen.getByText('Total: $ 0,00')).toBeInTheDocument()
+    expect(screen.getByText('Facturar')).toBeDisabled()
+  })
+
+  it('factura las ordenes elegidas con el numero tipeado', async () => {
+    responder({ ordenes: [orden(1)] })
+    post.mockResolvedValue({ id: 9 })
+    render(<MemoryRouter><Comprobantes /></MemoryRouter>)
+    await abrirFacturar()
+
+    await waitFor(() => expect(screen.getByLabelText(/#1 /)).toBeInTheDocument())
+    fireEvent.click(screen.getByLabelText(/#1 /))
+    fireEvent.change(screen.getByLabelText('Número'), { target: { value: '123' } })
+    fireEvent.click(screen.getByText('Facturar'))
+
+    await waitFor(() => expect(post).toHaveBeenCalled())
+    expect(post.mock.calls[0][0]).toBe('/api/comprobantes')
+    expect(post.mock.calls[0][1]).toMatchObject({
+      cliente_id: 1, razon_social_id: 5, tipo: 'factura_a',
+      punto_venta: 1, numero: 123, orden_ids: [1],
+    })
   })
 })
