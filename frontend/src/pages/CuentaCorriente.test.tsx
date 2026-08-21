@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const get = vi.fn()
@@ -25,6 +25,14 @@ const TERCEROS = [
   { id: 3, razon_social: 'Gomeria Del Centro', es_cliente: false, es_fletero: false,
     es_proveedor: true },
 ]
+
+/** Escribe la ruta actual en el DOM, para poder asertar sobre la navegacion
+ *  sin mockear `useNavigate` -- lo que probaria que se llamo a una funcion, no
+ *  que se llego a algun lado. */
+function Donde() {
+  const { pathname, search } = useLocation()
+  return <span data-testid="donde">{pathname + search}</span>
+}
 
 function responder(cuenta: unknown) {
   get.mockImplementation((ruta?: string) => {
@@ -117,5 +125,41 @@ describe('CuentaCorriente', () => {
     expect(await nombresPara('cliente')).toContain('Agro Norte')
     expect(await nombresPara('fletero')).toContain('Fletes SRL')
     expect(await nombresPara('proveedor')).toContain('Gomeria Del Centro')
+  })
+
+  it('🔴 clickear una fila lleva al documento que la explica', async () => {
+    // Es el pedido textual: "que me mande a la orden de carga o a la factura".
+    // Antes de esto la pantalla tenia cero forma de llegar: el asiento mostraba
+    // el importe y el concepto, y el documento quedaba a mano de nadie.
+    responder({
+      tercero_id: 1, rol: 'cliente', saldo: '100.00', saldo_recorriendo: '100.00',
+      coinciden: true,
+      movimientos: [{
+        movimiento: {
+          id: 1, fecha: '2026-08-20', tercero_id: 1, rol: 'cliente',
+          concepto: 'Factura A 0001-00000009', descripcion: null,
+          debe: '100.00', haber: '0.00',
+          orden_id: 7, comprobante_id: 9, movimiento_caja_id: null,
+        },
+        saldo: '100.00',
+      }],
+    })
+
+    render(
+      <MemoryRouter>
+        <Donde />
+        <CuentaCorriente />
+      </MemoryRouter>,
+    )
+    await elegirTercero()
+    await waitFor(() => expect(screen.getByText('Factura A 0001-00000009')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByText('Factura A 0001-00000009'))
+
+    // Al comprobante y NO a la orden: el asiento apunta a los dos y gana el
+    // documento que explica el importe de la linea.
+    await waitFor(() => {
+      expect(screen.getByTestId('donde').textContent).toBe('/comprobantes?ver=9')
+    })
   })
 })

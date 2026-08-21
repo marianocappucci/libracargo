@@ -3,12 +3,14 @@
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
 import { Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import type { MovimientoCaja, Rol } from '@/api/cuentas'
 import { caja } from '@/api/cuentas'
 import type { Opciones } from '@/api/ordenes'
 import { cargarOpciones } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import { irA } from '@/navegacion'
 import { Elegir } from '@/components/Elegir'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir, traerTodo } from '@/components/impresion'
@@ -70,6 +72,7 @@ function Opcion({ id, etiqueta, valor, alCambiar, deshabilitado, children }: {
 }
 
 export default function Caja() {
+  const navegar = useNavigate()
   const [filas, setFilas] = useState<MovimientoCaja[]>([])
   const [opciones, setOpciones] = useState<Opciones | null>(null)
   const [desde, setDesde] = useState('')
@@ -192,9 +195,14 @@ export default function Caja() {
         </p>
       )}
 
+      {/* Un movimiento de caja lleva a la cuenta del tercero que movio. Sin
+          rol: el movimiento guarda el tercero y la contrapartida sabe la
+          cuenta, asi que la pantalla de destino elige el primer rol que ese
+          tercero tenga. Un gasto general -- sin tercero -- no es clickeable. */}
       <DataTable
         columns={columnas}
         data={filas}
+        onRowClick={(m) => { if (m.tercero_id) navegar(irA.cuentaDe(m.tercero_id)) }}
         emptyMessage={cargando ? 'Cargando…' : 'No hay movimientos en ese rango.'}
       />
 

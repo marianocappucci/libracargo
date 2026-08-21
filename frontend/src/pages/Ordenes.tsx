@@ -6,6 +6,7 @@ import { Ban, Eye, Pencil, Plus, Printer } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { UseFormReturn } from 'react-hook-form'
 import { useForm } from 'react-hook-form'
+import { useSearchParams } from 'react-router-dom'
 
 import type { Filtros, Opciones, Orden } from '@/api/ordenes'
 import { cargarOpciones, ordenes as api } from '@/api/ordenes'
@@ -93,6 +94,7 @@ export default function Ordenes() {
   const [opciones, setOpciones] = useState<Opciones | null>(null)
   const [filtros, setFiltros] = useState<Filtros>({})
   const [detalle, setDetalle] = useState<Orden | null>(null)
+  const [params, setParams] = useSearchParams()
   // La orden que se esta por imprimir. Se monta la hoja, se espera un
   // cuadro para que este en el DOM, y recien ahi se abre el dialogo del
   // navegador: `print()` fotografia lo que hay.
@@ -111,6 +113,20 @@ export default function Ordenes() {
   useEffect(() => {
     cargarOpciones().then(setOpciones).catch((e) => setError(mensajeDeError(e)))
   }, [])
+
+  // El enlace profundo: `/ordenes?ver=123` abre el detalle de esa orden.
+  // Se pide POR ID y no se busca en la grilla, porque la orden a la que apunta
+  // el enlace puede no estar entre las que los filtros de esta pantalla
+  // trajeron -- y ahi el click desde la cuenta corriente no haria nada.
+  const idAVer = params.get('ver')
+  useEffect(() => {
+    if (!idAVer) return
+    let vigente = true
+    api.traer(Number(idAVer))
+      .then((o) => { if (vigente) setDetalle(o) })
+      .catch((e) => { if (vigente) setError(mensajeDeError(e)) })
+    return () => { vigente = false }
+  }, [idAVer])
 
   const recargar = useCallback(() => {
     setCargando(true)
@@ -253,6 +269,7 @@ export default function Ordenes() {
       <DataTable
         columns={columnas}
         data={filas}
+        onRowClick={setDetalle}
         emptyMessage={cargando ? 'Cargando…' : 'Ninguna orden coincide con los filtros.'}
       />
 
@@ -305,7 +322,19 @@ export default function Ordenes() {
       {/* El detalle: click en "ver" y toda la orden en una ficha. Hasta ahora
           la unica forma de ver los campos que no entran en la grilla era abrir
           el formulario de edicion, que es otra cosa: ahi se toca. */}
-      <Dialog open={detalle != null} onOpenChange={(v) => { if (!v) setDetalle(null) }}>
+      {/* Al cerrar se saca el `?ver=` de la URL: si quedara, el efecto de
+          arriba lo volveria a abrir en la siguiente vuelta de render, y el
+          dialogo no se podria cerrar. `replace` para no llenar el historial. */}
+      <Dialog open={detalle != null}
+              onOpenChange={(v) => {
+                if (v) return
+                setDetalle(null)
+                if (params.has('ver')) {
+                  const otros = new URLSearchParams(params)
+                  otros.delete('ver')
+                  setParams(otros, { replace: true })
+                }
+              }}>
         <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>

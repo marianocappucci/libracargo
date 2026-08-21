@@ -5,6 +5,7 @@
  */
 import { DataTable } from 'libra-ui/data-table'
 import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import type { Opciones } from '@/api/ordenes'
 import { cargarOpciones } from '@/api/ordenes'
@@ -17,6 +18,7 @@ import type { Columna } from '@/components/impresion'
 import { BotonImprimir } from '@/components/impresion'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { origenDelMovimiento } from '@/navegacion'
 
 const ROLES: { valor: Rol; etiqueta: string }[] = [
   { valor: 'cliente', etiqueta: 'Cliente' },
@@ -26,7 +28,15 @@ const ROLES: { valor: Rol; etiqueta: string }[] = [
 
 export default function CuentaCorriente() {
   const [opciones, setOpciones] = useState<Opciones | null>(null)
-  const [rol, setRol] = useState<Rol>('cliente')
+  const navegar = useNavigate()
+  const [params] = useSearchParams()
+  // La cuenta se puede abrir por URL: `/cuentas?rol=fletero&tercero=5`. Es a
+  // donde llevan el tablero y los reportes de saldos. El `rol` puede venir
+  // vacio -- desde caja, donde el movimiento guarda el tercero y no la cuenta --
+  // y entonces se elige el primer rol que ese tercero tenga.
+  const rolDeLaUrl = params.get('rol') as Rol | null
+  const terceroDeLaUrl = params.get('tercero')
+  const [rol, setRol] = useState<Rol>(rolDeLaUrl ?? 'cliente')
   const [terceroId, setTerceroId] = useState<number | undefined>()
   const [hasta, setHasta] = useState('')
   const [datos, setDatos] = useState<ResumenDeCuenta | null>(null)
@@ -35,6 +45,31 @@ export default function CuentaCorriente() {
   useEffect(() => {
     cargarOpciones().then(setOpciones).catch((e) => setError(mensajeDeError(e)))
   }, [])
+
+  // Aplica lo que vino por URL. Espera a `opciones` porque sin las listas no se
+  // puede saber qué roles tiene ese tercero — y desde caja el rol no viene.
+  //
+  // 🔑 Depende de los parámetros y no del estado de los selects: una vez
+  // aplicado, cambiar la cuenta a mano no vuelve a dispararlo. Si dependiera de
+  // `rol`, elegir otro rol lo devolvería al de la URL y el select quedaría
+  // trabado.
+  useEffect(() => {
+    if (!terceroDeLaUrl || !opciones) return
+    const id = Number(terceroDeLaUrl)
+    if (!Number.isFinite(id)) return
+    if (rolDeLaUrl) {
+      setRol(rolDeLaUrl)
+    } else {
+      const tiene = (lista: { id: number }[]) => lista.some((t) => t.id === id)
+      const primero: Rol | undefined =
+        tiene(opciones.clientes) ? 'cliente'
+        : tiene(opciones.fleteros) ? 'fletero'
+        : tiene(opciones.proveedores) ? 'proveedor'
+        : undefined
+      if (primero) setRol(primero)
+    }
+    setTerceroId(id)
+  }, [terceroDeLaUrl, rolDeLaUrl, opciones])
 
   useEffect(() => {
     if (!terceroId) { setDatos(null); return }
@@ -152,9 +187,19 @@ export default function CuentaCorriente() {
         </div>
       )}
 
+      {/* Es la pantalla donde mas se pedia poder clickear: cada linea sale de
+          una orden, de un comprobante o de un movimiento de caja, y hasta ahora
+          no habia forma de llegar al documento que la explica. Las lineas sin
+          origen -- los asientos sueltos del historico migrado -- no son
+          clickeables, y `origenDelMovimiento` devolviendo null es lo que se lo
+          dice a la tabla. */}
       <DataTable
         columns={columnas}
         data={datos?.movimientos ?? []}
+        onRowClick={(fila) => {
+          const destino = origenDelMovimiento(fila)
+          if (destino) navegar(destino)
+        }}
         emptyMessage={terceroId ? 'Esta cuenta no tiene movimientos.'
                                 : 'Elegí una cuenta y un tercero.'}
       />
