@@ -233,13 +233,23 @@ class GastoDeProveedor(Base, Auditable):
 
     importe: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     anulado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: Los 2.799 del legado, convertidos a documentos por la migración `0009`.
+    #: No se re-asentaron: el documento apunta a los dos movimientos que ya
+    #: estaban, así que los saldos no se movieron.
+    origen_legado: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     __table_args__ = (
         CheckConstraint("importe > 0", name="ck_gastos_importe_positivo"),
         # Un gasto que el proveedor le cobra a la agencia para descontárselo a
         # sí mismo no significa nada, y es un error de carga fácil: los dos
         # desplegables tienen los mismos terceros adentro.
-        CheckConstraint("proveedor_id <> fletero_id", name="ck_gastos_partes_distintas"),
+        #
+        # ⚠️ Pero en los datos reales pasa **43 veces**, así que la regla se
+        # condiciona a `origen_legado IS NULL`: rige para toda alta nueva y no
+        # para el histórico. Mismo criterio que ADR-015.
+        CheckConstraint("proveedor_id <> fletero_id OR origen_legado IS NOT NULL",
+                        name="ck_gastos_partes_distintas"),
+        Index("ix_gastos_origen_legado", "origen_legado", unique=True),
         Index("ix_gastos_fecha", "fecha"),
         Index("ix_gastos_proveedor_fecha", "proveedor_id", "fecha"),
         Index("ix_gastos_fletero_fecha", "fletero_id", "fecha"),
