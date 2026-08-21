@@ -18,6 +18,10 @@ export const Login = createLogin<Usuario>({
   // porque es el fallback del motor: si el asset no resuelve, la pantalla
   // muestra la inicial en vez de un hueco.
   logo: { src: LOGO, className: 'h-[72px] w-[72px]' },
+  // El enlace de recuperación. Sin esta línea el kit no lo pinta: la pantalla
+  // queda idéntica y no falla nada, que es por lo que faltó hasta el
+  // 2026-08-21 sin que ningún test lo dijera.
+  forgotPasswordPath: '/forgot-password',
   wordmarkClassName: `${WORDMARK} text-[22px]`,
   redirectTo: '/',
   // Botón "Entrar a la demo" — va de la mano con `incluir_demo=True` en

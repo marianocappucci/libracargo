@@ -13,7 +13,13 @@ from fastapi import Depends, FastAPI
 from libraauth.bootstrap import ensure_default_admin, ensure_demo_user
 from libraauth.demo_codigos import DemoCodigoRepository
 from libraauth.models import Base as AuthBase
-from libraauth.session_auth import build_demo_codigos_router, demo_username
+from libraauth.password_reset import PasswordResetService
+from libraauth.session_auth import (
+    build_demo_codigos_router,
+    build_smtp_settings_router,
+    demo_username,
+)
+from libraauth.smtp_settings import SmtpSettingsRepository, resolver_smtp_config
 from libracore.config_router import build_backup_router
 from libracore.geografia import build_geo_router
 from libracore.respaldo import Instancia
@@ -125,6 +131,25 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     if demo_username():
         app.state.demo_codigos = DemoCodigoRepository(db.fabrica_de_sesiones())
         app.include_router(build_demo_codigos_router())
+
+    # Recuperación de contraseña. Mismo `db.fabrica_de_sesiones()` que el
+    # `UserRepository` por el mismo motivo que la demo: en LibraCargo `usuarios`
+    # vive en la MISMA base que el dominio, y la tabla de tokens tiene FK a
+    # `usuarios`. Con el factory del engine de auth de otro producto, la tabla
+    # se crearía en el lugar equivocado.
+    app.state.smtp_settings = SmtpSettingsRepository(db.fabrica_de_sesiones())
+    app.include_router(build_smtp_settings_router())
+    app.state.password_reset = PasswordResetService(
+        db.fabrica_de_sesiones(),
+        product_name="LibraCargo",
+        reset_url_base=os.environ.get(
+            "LIBRACARGO_RESET_URL_BASE", "https://dev.libracargo.com.ar/reset-password"
+        ),
+        # CALLABLE, no un valor: se resuelve en cada envío. Con un valor fijo,
+        # guardar el SMTP por pantalla no tendría efecto hasta recrear el
+        # contenedor.
+        smtp_config=lambda: resolver_smtp_config(db.fabrica_de_sesiones()),
+    )
 
     for router in maestros.TODOS:
         app.include_router(router)

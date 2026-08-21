@@ -6,11 +6,11 @@ import { useAuth } from '@/context/AuthContext'
 import Inicio from '@/pages/Inicio'
 import Caja from '@/pages/Caja'
 import Comprobantes from '@/pages/Comprobantes'
-import FacturarPendientes from '@/pages/FacturarPendientes'
 import Gastos from '@/pages/Gastos'
 import Configuracion from '@/pages/Configuracion'
 import CuentaCorriente from '@/pages/CuentaCorriente'
 import Login from '@/pages/Login'
+import { ForgotPassword, ResetPassword } from '@/pages/PasswordReset'
 import Logs from '@/pages/Logs'
 import Ordenes from '@/pages/Ordenes'
 import Reporte from '@/pages/Reporte'
@@ -33,6 +33,12 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      {/* Públicas, al lado del login y NO adentro de `Privado`: quien las usa
+          es exactamente quien no puede entrar. Puestas del lado privado, el
+          enlace del correo redirigiría a `/login` y pediría la contraseña que
+          la persona justamente no tiene. */}
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route
         path="/*"
         element={
@@ -44,7 +50,6 @@ export default function App() {
                 <Route path="/cuentas" element={<CuentaCorriente />} />
                 <Route path="/caja" element={<Caja />} />
                 <Route path="/comprobantes" element={<Comprobantes />} />
-                <Route path="/comprobantes/facturar" element={<FacturarPendientes />} />
                 <Route path="/gastos" element={<Gastos />} />
                 <Route path="/reportes" element={<ReportesIndice />} />
                 <Route path="/reportes/:slug" element={<Reporte />} />
