@@ -11,11 +11,13 @@
  */
 import { DatosBackupCard } from 'libra-ui/Configuracion'
 import {
-  Building2, Database, MapPin, Package, Settings, Truck, Users, UserSquare,
+  Building2, Database, MapPin, Package, Settings, ShieldCheck, Truck, Users,
+  UserSquare,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
+import { FacturacionArca } from '@/pages/Arca'
 import { DatosDeLaEmpresa } from '@/pages/DatosDeLaEmpresa'
 import {
   Choferes, Localidades, RazonesSociales, Terceros, TiposCarga, Vehiculos,
@@ -31,6 +33,11 @@ const PESTANAS = [
   { id: 'tipos-carga', label: 'Tipos de carga', icon: Package, contenido: TiposCarga },
   { id: 'razones-sociales', label: 'Razones sociales', icon: Building2,
     contenido: RazonesSociales },
+  // Va después de razones sociales y no antes: el certificado de ARCA es de
+  // un CUIT, y el CUIT lo pone la razón social. Configurar ARCA sin razones
+  // sociales cargadas no tiene por dónde empezar.
+  { id: 'arca', label: 'Facturación (ARCA)', icon: ShieldCheck,
+    contenido: FacturacionArca },
   // La pantalla es la compartida de `libra-ui`, la misma que ven los otros
   // seis productos. Lo único de este producto es el gate de rol, que lo pone
   // el backend.

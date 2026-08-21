@@ -20,6 +20,7 @@ from app import db
 from app.auth import UserRepository, construir_session_auth, require_admin, require_staff
 from app.config import Config
 from app.routers import (
+    arca,
     auditoria,
     comprobantes,
     configuracion,
@@ -97,6 +98,9 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     app.include_router(reportes.router)
     app.include_router(auditoria.router)
     app.include_router(configuracion.router)
+    # Configuración de ARCA: sube el certificado y la clave, y verifica que
+    # sean pareja. **No emite**: emitir es la fase siguiente.
+    app.include_router(arca.router)
 
     # El catálogo de provincias y localidades: 24 y 4.027, de LibraCore. Es de
     # sólo lectura y no toca la base — el maestro editable de localidades, que

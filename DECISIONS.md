@@ -392,3 +392,48 @@ esté entre ellas.
 - Consecuencias: el `downgrade` de la `0005` **no deshace nada**, y está escrito
   por qué — poner en nulo lo que escribió borraría también lo que cargue una
   persona después, y no hay forma de distinguirlos.
+
+
+## ADR-020 — La configuración de ARCA cuelga de la razón social, y verifica los archivos al subirlos
+
+- Estado: aceptada
+- Fecha: 2026-08-20
+- Contexto: el humano pidió *"agregar la configuración de ARCA y facturación
+  electrónica"*, y al plantear el alcance eligió **sólo la pantalla de
+  configuración por ahora** — emitir queda para cuando haya certificados. (De
+  paso descartó MercadoPago: se había confundido de producto.)
+- Decisión 1 — **una configuración por razón social**, no por instancia. El
+  certificado de ARCA es **de un CUIT**, y el CUIT acá lo tiene la razón social:
+  `razones_sociales` ya guarda `cuit` y `punto_venta`. Una configuración por
+  instancia obligaría a elegir cuál de las razones sociales factura, que es
+  exactamente lo que el legado resolvía con un entero hardcodeado en el HTML.
+- Decisión 2 — **el certificado y la clave se guardan en la base**, como el logo
+  del membrete y por el mismo motivo: el backup de esta instancia es
+  **exactamente un dump** (`directorios=[]`), así que lo que está en la base
+  entra en el ZIP y lo que está en disco no. Con las credenciales afuera,
+  restaurar un backup dejaría una instancia que no puede facturar **y no lo
+  dice**.
+  > ⚠️ La contracara, que hay que saber: el ZIP de backup que el cliente puede
+  > descargar **lleva adentro la clave privada**. Es su propia clave y su propio
+  > backup —que ya trae todos sus datos—, pero conviene que no viaje por mail.
+- Decisión 3 — **los archivos se validan al subirlos, no al emitir.** Es lo que
+  esta pantalla aporta de verdad, porque los tres errores de armado no se ven
+  mirando el nombre del archivo:
+  1. subir el `.csr` —el pedido— en vez del `.crt` que ARCA devolvió;
+  2. subir el certificado en el campo de la clave, o al revés;
+  3. 🔑 subir un certificado y una clave que **no son pareja**, porque se generó
+     una clave nueva y se subió el certificado viejo. Los dos archivos son
+     válidos, se ven perfectos en pantalla, y ARCA rechaza la autenticación con
+     un error genérico. Se compara la clave pública del certificado contra la de
+     la clave privada.
+  Y se muestra **cuándo vence**: duran dos años, y el día que vencen la
+  facturación deja de andar sin que nadie haya tocado nada.
+- Consecuencias: `habilitado` no se puede poner sin las dos mitades —hay un
+  `CHECK` en la base, no sólo una validación— y **cambiar una mitad apaga la
+  bandera**, porque puede haber roto la pareja. El ambiente por omisión es
+  **homologación**: pasar a producción tiene que ser un acto deliberado.
+- Lo que **no** hace: emitir. El comprobante se sigue registrando con el número
+  que tipea una persona. Cuando se implemente la emisión, la capa de protocolo
+  ya existe en LibraCore (`arca_wsaa` + `arca_wsfe`); lo que **no** se puede
+  reusar es `arca_facturacion`, que está atado al esquema de `facturas` y
+  `arca_config` de LibraCore y este producto tiene el suyo.

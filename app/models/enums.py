@@ -60,6 +60,18 @@ class MedioPago(enum.Enum):
     OTRO = "otro"
 
 
+class AmbienteArca(enum.Enum):
+    """Los dos ambientes de ARCA.
+
+    Homologacion no emite comprobantes fiscales: es donde se prueba el armado
+    sin consecuencias. El default de una instancia nueva es este, para que
+    habilitar produccion sea siempre un acto deliberado.
+    """
+
+    HOMOLOGACION = "homologacion"
+    PRODUCCION = "produccion"
+
+
 class AccionAuditoria(enum.Enum):
     ALTA = "alta"
     MODIFICACION = "modificacion"
