@@ -140,3 +140,33 @@ def test_los_iconos_transparentes_SI_tienen_alfa():
     for nombre in ("icon-192.png", "icon-512.png"):
         crudo = (PUBLICO / "icons" / nombre).read_bytes()
         assert crudo[25] == 6, f"{nombre} tendría que tener canal alfa (IHDR {crudo[25]})"
+
+
+# ── Lo que enciende todo, y que este archivo no cubría ─────────────────────
+
+
+def test_el_frontend_REGISTRA_el_service_worker():
+    """🔴 El defecto que tuvo este producto, con todos los tests de arriba en verde.
+
+    LibraCargo tenía el `manifest.webmanifest`, el `sw.js`, los cuatro iconos y
+    el `index.html` enganchado — y **nunca registraba el service worker**. Sin
+    `navigator.serviceWorker.register()` el navegador no ofrece instalar la
+    aplicación, y desde afuera se ve exactamente igual que si la PWA estuviera
+    puesta: no hay 404, no hay error de consola, no hay nada que mirar.
+
+    Este archivo lo dejaba pasar porque probaba **lo que se sirve** —los tipos
+    de contenido, los tamaños de los iconos, que el `sw.js` no cachee— y nunca
+    lo que lo enciende. Verificado el 2026-08-21 en los ocho productos de la
+    familia: siete registraban acá, éste no.
+    """
+    main = (RAIZ / "frontend" / "src" / "main.tsx").read_text(encoding="utf-8")
+
+    assert "serviceWorker" in main, "el frontend no registra el service worker"
+    assert "navigator.serviceWorker.register('/sw.js')" in main, (
+        "se registra algo, pero no el `/sw.js` que sirve este proceso"
+    )
+    # El registro va detrás del guard de soporte: en un contexto sin https
+    # `navigator.serviceWorker` no existe y el acceso directo tira.
+    assert "'serviceWorker' in navigator" in main, (
+        "falta el guard: en http sin soporte esto rompe el arranque de la app"
+    )
