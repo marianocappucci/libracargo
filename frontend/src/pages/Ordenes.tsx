@@ -19,7 +19,7 @@ import { sumarImportes } from '@/api/comprobantes'
 import type { DatosOrden, EntradaOrden } from '@/components/esquema-orden'
 import { ORDEN_VACIA, esquemaOrden, formatearImporte } from '@/components/esquema-orden'
 import { FiltrosOrdenes } from '@/components/FiltrosOrdenes'
-import { Badge } from '@/components/ui/badge'
+import { EstadoDeOrden } from '@/components/EstadoDeOrden'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -207,9 +207,7 @@ export default function Ordenes() {
     { id: 'estado', header: sortableHeader('Estado'),
       accessorFn: (o: Orden) => o.estado,
       cell: ({ row }: { row: { original: Orden } }) => (
-        <Badge variant={row.original.estado === 'anulada' ? 'destructive' : 'secondary'}>
-          {row.original.estado}
-        </Badge>
+        <EstadoDeOrden estado={row.original.estado} />
       ) },
     { id: 'acciones', header: '',
       cell: ({ row }: { row: { original: Orden } }) => (
