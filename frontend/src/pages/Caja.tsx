@@ -172,31 +172,45 @@ export default function Caja() {
     { encabezado: 'Importe', valor: (m) => m.importe, numerica: true, moneda: true },
   ]
 
+  // 🔴 **Los anchos son obligatorios acá, no cosmética.** El `DataTable` pasa a
+  // `table-fixed` en cuanto **alguna** columna declara `size`, y entonces le
+  // pone a la tabla un `minWidth` igual a la suma de los anchos. Las columnas
+  // que no declaran ninguno caen al default de TanStack —150 px— así que con
+  // siete sin declarar la tabla pedía **1.240 px** de mínimo y el contenedor
+  // scrolleaba.
+  //
+  // Es la misma causa que tuvo el log de actividad, y se arregla igual: ancho
+  // en todas, y `stretch` en la de texto libre, que se queda con el sobrante en
+  // vez de empujar. El primitivo no se toca — sacarle el `nowrap` a `TableCell`
+  // afectaría a todas las tablas del producto, y en las demás partir una fecha
+  // o un importe en dos líneas se lee peor.
   const columnas = [
-    { accessorKey: 'fecha', header: sortableHeader('Fecha') },
-    { id: 'tipo', header: 'Tipo', accessorFn: (m: MovimientoCaja) => m.tipo,
+    { accessorKey: 'fecha', header: sortableHeader('Fecha'), size: 100 },
+    { id: 'tipo', header: 'Tipo', size: 95, accessorFn: (m: MovimientoCaja) => m.tipo,
       cell: ({ row }: { row: { original: MovimientoCaja } }) => (
         <Badge variant={row.original.tipo === 'ingreso' ? 'secondary' : 'destructive'}>
           {row.original.tipo}
         </Badge>
       ) },
-    { accessorKey: 'concepto', header: sortableHeader('Concepto') },
-    { id: 'tercero', header: 'Tercero',
+    // La elástica: es la única de texto libre, y la que puede venir larga.
+    { accessorKey: 'concepto', header: sortableHeader('Concepto'), size: 190,
+      meta: { stretch: true, className: 'whitespace-normal break-words' } },
+    { id: 'tercero', header: 'Tercero', size: 175,
       accessorFn: (m: MovimientoCaja) =>
         terceros.find((t) => t.id === m.tercero_id)?.etiqueta ?? '' },
-    { accessorKey: 'medio_pago', header: 'Medio' },
-    { accessorKey: 'recibo', header: 'Recibo' },
-    { id: 'importe', header: sortableHeader('Importe'),
+    { accessorKey: 'medio_pago', header: 'Medio', size: 105 },
+    { accessorKey: 'recibo', header: 'Recibo', size: 105 },
+    { id: 'importe', header: sortableHeader('Importe'), size: 120,
       accessorFn: (m: MovimientoCaja) => formatearImporte(m.importe) },
     // Los anulados se ven, con su marca: un recibo que falta en la numeración
     // necesita explicación. Lo que no hacen es sumar en los totales.
-    { id: 'estado', header: 'Estado', size: 100,
+    { id: 'estado', header: 'Estado', size: 90,
       cell: ({ row }: { row: { original: MovimientoCaja } }) => (
         row.original.anulado
           ? <Badge variant="destructive">anulado</Badge>
           : <Badge variant="outline">vigente</Badge>
       ) },
-    { id: 'acciones', header: '', size: 90,
+    { id: 'acciones', header: '', size: 80,
       cell: ({ row }: { row: { original: MovimientoCaja } }) => (
         <div className="flex gap-1">
           <Button variant="ghost" size="icon" aria-label="Editar"
