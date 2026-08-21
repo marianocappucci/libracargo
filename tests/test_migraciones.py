@@ -100,10 +100,11 @@ def test_upgrade_downgrade_upgrade(base_limpia):
                 "SELECT count(*) FROM information_schema.tables "
                 "WHERE table_schema = 'public'"
             )).scalar_one()
-            # 12 del dominio + alembic_version. Sube cuando entra una tabla nueva,
+            # 13 del dominio + alembic_version. Sube cuando entra una tabla nueva,
         # y ese es el punto: el numero se toca a mano al agregarla, asi una
         # tabla que aparece sin querer --por un modelo importado de mas-- se ve.
-        assert tablas == 13
+        # Subio a 14 con la 0006, que agrega `configuracion_arca`.
+        assert tablas == 14
         eng.dispose()
     finally:
         if original:
