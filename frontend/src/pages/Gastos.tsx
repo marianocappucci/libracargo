@@ -1,4 +1,11 @@
-/** Gastos de proveedor: lo que el proveedor entrega y se le descuenta al fletero.
+/** Comprobantes de proveedores: lo que el proveedor entrega y se le descuenta
+ *  al fletero.
+ *
+ *  🔑 **La etiqueta y el modelo no dicen lo mismo, a propósito.** Adentro
+ *  esto es un `GastoDeProveedor` —no es una factura de compra, y el ADR-021
+ *  explica por qué con los números del legado—, pero en pantalla se llama
+ *  como lo llaman el cliente y el sistema viejo. El modelo no tiene por qué
+ *  imponerle su vocabulario a quien lo usa.
  *
  *  🔑 **Un gasto mueve dos cuentas**, y la pantalla lo dice antes de guardar: el
  *  proveedor al debe —lo que se le debe— y el fletero al haber —se le descuenta
@@ -182,7 +189,7 @@ export default function Gastos() {
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-semibold">Gastos de proveedor</h1>
+          <h1 className="text-2xl font-semibold">Comprobantes de proveedores</h1>
           <p className="text-muted-foreground text-sm">
             Lo que el proveedor entrega y se le descuenta al fletero.
           </p>
@@ -191,11 +198,11 @@ export default function Gastos() {
           {/* No se imprime la pantalla: se pide de nuevo, con los mismos
               filtros y paginando. La grilla muestra una pagina y quien manda a
               imprimir espera el listado entero. */}
-          <BotonImprimir titulo="Gastos de proveedor" columnas={COLUMNAS_IMPRESAS}
+          <BotonImprimir titulo="Comprobantes de proveedores" columnas={COLUMNAS_IMPRESAS}
                          traer={() => traerTodo(async (desplazamiento, limite) =>
                            api.listar({ ...filtros, desplazamiento, limite }))} />
           <Button onClick={() => abrir(null)}>
-            <Plus className="size-4" /> Nuevo gasto
+            <Plus className="size-4" /> Nuevo comprobante
           </Button>
         </div>
       </div>
@@ -237,7 +244,9 @@ export default function Gastos() {
       <Dialog open={abierto} onOpenChange={(v) => { if (!v) cerrar() }}>
         <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editando ? `Editar gasto ${editando.id}` : 'Nuevo gasto'}</DialogTitle>
+            <DialogTitle>
+              {editando ? `Editar comprobante ${editando.id}` : 'Nuevo comprobante'}
+            </DialogTitle>
           </DialogHeader>
 
           <div className="grid gap-3">
