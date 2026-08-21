@@ -27,6 +27,9 @@ export const irA = {
    *  cuenta a la que fue la contrapartida. */
   cuentaDe: (terceroId: number) => `/cuentas?tercero=${terceroId}`,
   gasto: (id: number) => `/gastos?ver=${id}`,
+  /** La pantalla de facturar, con el cliente ya elegido si se sabe cual. */
+  facturarPendientes: (clienteId?: number) =>
+    clienteId ? `/comprobantes/facturar?cliente=${clienteId}` : '/comprobantes/facturar',
 }
 
 /** El origen de un asiento de cuenta corriente, o `null` si no tiene.
