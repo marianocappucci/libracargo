@@ -80,8 +80,14 @@ def resumen(sesion: Session, desde: date | None, hasta: date | None,
     # La caja se acota por tercero, no por "cliente" o "fletero": un movimiento
     # de caja apunta a un tercero y el rol lo dice la contrapartida.
     tercero = cliente_id if cliente_id is not None else fletero_id
-    caja_base = _iguales(_entre(select(MovimientoCaja), MovimientoCaja.fecha, desde, hasta),
-                         [(MovimientoCaja.tercero_id, tercero)])
+    # 🔴 Sin el filtro de anulados, un cobro que se dio de baja sigue contando
+    # en los ingresos del periodo y en el conteo de movimientos. El listado si
+    # los muestra —con su marca—, porque un recibo que falta necesita
+    # explicacion; los TOTALES no.
+    caja_base = _iguales(
+        _entre(select(MovimientoCaja), MovimientoCaja.fecha, desde, hasta)
+        .where(MovimientoCaja.anulado.is_(False)),
+        [(MovimientoCaja.tercero_id, tercero)])
     ingresos = caja_base.where(MovimientoCaja.tipo == TipoMovimientoCaja.INGRESO)
     egresos = caja_base.where(MovimientoCaja.tipo == TipoMovimientoCaja.EGRESO)
 
@@ -206,9 +212,13 @@ def caja(sesion: Session, desde: date | None, hasta: date | None,
          tipo: TipoMovimientoCaja | None = None) -> list[dict]:
     """La caja del período, abierta por tipo y medio de pago."""
     filas = sesion.execute(_iguales(_entre(
+        # 🔴 Mismo criterio que el resumen: los anulados NO suman. El `where` va
+        # adentro del `select` y no despues, porque `_entre` y `_iguales`
+        # devuelven la consulta ya armada.
         select(MovimientoCaja.tipo, MovimientoCaja.medio_pago,
                func.count(MovimientoCaja.id),
-               func.coalesce(func.sum(MovimientoCaja.importe), 0)),
+               func.coalesce(func.sum(MovimientoCaja.importe), 0))
+        .where(MovimientoCaja.anulado.is_(False)),
         MovimientoCaja.fecha, desde, hasta),
         [(MovimientoCaja.tercero_id, tercero_id), (MovimientoCaja.medio_pago, medio_pago),
          (MovimientoCaja.tipo, tipo)])

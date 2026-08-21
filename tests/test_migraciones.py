@@ -206,3 +206,40 @@ def test_la_0005_completa_la_provincia_solo_donde_no_hay_duda(base_limpia):
     finally:
         if original:
             os.environ["DATABASE_URL"] = original
+
+
+def test_la_0008_agrega_anulado_sobre_una_tabla_CON_filas(base_limpia):
+    """🔴 Es el defecto que sólo aparece en producción.
+
+    Alembic autogenera `sa.Column("anulado", sa.Boolean(), nullable=False)` **sin
+    default**, y eso falla en una tabla que ya tiene filas: PostgreSQL no sabe
+    qué poner en las que están. La instancia del cliente tiene **8.387**
+    movimientos de caja migrados.
+
+    Una base vacía —la de los tests de siempre— pasa sin ruido, así que el
+    defecto viaja hasta el deploy y ahí no hay dónde esconderlo. Por eso este
+    test siembra **antes** de correr la migración.
+    """
+    original = os.environ.get("DATABASE_URL")
+    try:
+        cfg = _alembic(base_limpia)
+        command.upgrade(cfg, "0007")
+
+        eng = create_engine(base_limpia)
+        with eng.begin() as con:
+            con.execute(text(
+                "INSERT INTO movimientos_caja (fecha, tipo, concepto, importe, medio_pago) "
+                "VALUES ('2026-08-21', 'ingreso', 'Cobro viejo', 1000, 'efectivo')"))
+
+        command.upgrade(cfg, "head")
+
+        with eng.connect() as con:
+            anulados = con.execute(
+                text("SELECT anulado FROM movimientos_caja")).scalars().all()
+        # Lo que ya existía queda VIGENTE: en el sistema viejo anular era borrar,
+        # así que nada de lo migrado estaba anulado.
+        assert anulados == [False]
+        eng.dispose()
+    finally:
+        if original:
+            os.environ["DATABASE_URL"] = original
