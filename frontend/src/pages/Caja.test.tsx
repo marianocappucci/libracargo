@@ -68,4 +68,28 @@ describe('Caja', () => {
     expect(await screen.findByText(/Editar movimiento 5/)).toBeInTheDocument()
     expect((screen.getByLabelText('Importe') as HTMLInputElement).value).toBe('100000.00')
   })
+
+  it('🔴 la tabla no pide mas ancho del que entra en un portatil', async () => {
+    // El scroll horizontal que reporto el humano. La causa no es CSS suelto:
+    // el `DataTable` pasa a `table-fixed` en cuanto ALGUNA columna declara
+    // `size`, y le pone a la tabla un `minWidth` **inline** igual a la suma de
+    // los anchos. Las que no declaran ninguno caen al default de TanStack (150),
+    // asi que con siete sin declarar el minimo era 1.240 px.
+    //
+    // Se mide el estilo inline y no el layout: jsdom no calcula anchos, pero el
+    // `minWidth` que causa el desborde SI esta en el DOM, y es exactamente la
+    // magnitud que hay que controlar.
+    responder([MOVIMIENTO])
+    render(<MemoryRouter><Caja /></MemoryRouter>)
+    await screen.findByText('vigente')
+
+    const tabla = document.querySelector('table')!
+    expect(tabla.className).toContain('table-fixed')
+    const minimo = Number.parseInt(tabla.style.minWidth, 10)
+    expect(minimo).toBe(1060)
+    // 1280 es el ancho de un portatil comun, y la pantalla ademas tiene la
+    // barra lateral. Si alguien agrega una columna sin `size`, esto se va a
+    // 1.210 y el test lo dice antes de que lo diga el usuario.
+    expect(minimo).toBeLessThan(1100)
+  })
 })
