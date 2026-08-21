@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     Enum,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -52,6 +54,16 @@ class MovimientoCaja(Base, Auditable):
         default=MedioPago.EFECTIVO,
     )
     recibo: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    #: Anular no borra: el movimiento queda, deja de contar en los totales
+    #: y su asiento se revierte con una contrapartida. En el legado,
+    #: `elimina_novedad.php` hacia tres DELETE sueltos y el cobro
+    #: desaparecia sin dejar rastro.
+    anulado: Mapped[bool] = mapped_column(
+        # `server_default` ademas del `default` de Python: el ETL de migracion
+        # escribe por `COPY` sin nombrar esta columna, y ahi el default de la
+        # aplicacion no corre. Tiene que decir lo mismo que la migracion 0008.
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     origen_legado: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     __table_args__ = (

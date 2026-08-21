@@ -43,6 +43,7 @@ export type MovimientoCaja = {
   importe: string
   medio_pago: 'efectivo' | 'transferencia' | 'cheque' | 'otro'
   recibo: string | null
+  anulado: boolean
 }
 
 export const cuentas = {
@@ -64,4 +65,6 @@ export const caja = {
     return api.get<MovimientoCaja[]>(`/api/caja${qs ? `?${qs}` : ''}`)
   },
   registrar: (datos: unknown) => api.post<MovimientoCaja>('/api/caja', datos),
+  editar: (id: number, datos: unknown) => api.put<MovimientoCaja>(`/api/caja/${id}`, datos),
+  anular: (id: number) => api.del<MovimientoCaja>(`/api/caja/${id}`),
 }

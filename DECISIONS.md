@@ -479,3 +479,40 @@ esté entre ellas.
 - Alternativa descartada: **la factura de compra completa**. Habría que decidir
   qué hacer con 2.799 registros que no tienen ni número, ni tipo, ni IVA — y
   construir campos que hoy nadie llena.
+
+
+## ADR-022 — Un movimiento de caja se anula, no se borra, y el anulado no suma
+
+- Estado: aceptada
+- Fecha: 2026-08-21
+- Contexto: era el último hueco técnico del chequeo de paridad. El bloque
+  NOVEDAD del legado tiene **Modificar** y **Eliminar**, y acá sólo había
+  `POST /api/caja`: un cobro mal cargado no tenía forma de corregirse.
+- Qué hace el legado: `modifica_novedad.php` actualiza la novedad **y su fila de
+  cuenta corriente** en el lugar; `elimina_novedad.php` hace **tres `DELETE`
+  sueltos** —cliente, fletero, proveedor— y después borra la novedad.
+- Decisión:
+  1. **Editar corrige el movimiento y su contrapartida**, en el lugar y en una
+     transacción. Una línea por cuenta, como el `UPDATE` del legado. Cambiar el
+     tercero o el rol **mueve** el asiento; sacarle el tercero lo borra;
+     agregarle uno lo crea.
+  2. **Anular no borra.** El movimiento queda con `anulado`, su asiento se
+     revierte con una contrapartida y los dos siguen a la vista. Borrar hacía
+     que un cobro desapareciera sin rastro y que el **número de recibo quedara
+     con un hueco que nadie podía explicar**.
+  3. 🔴 **El anulado sigue en el listado pero NO suma en los totales.** Son dos
+     cosas distintas y las dos hacen falta: el listado lo muestra porque el
+     hueco en la numeración necesita explicación; el resumen y el reporte de
+     caja lo excluyen porque si no, un cobro dado de baja sigue contando en los
+     ingresos del período y el número se ve perfectamente plausible.
+- Consecuencias: los **dos** agregados de caja llevan el filtro
+  (`servicios/reportes.py`), y hay un test que anula un cobro y verifica que el
+  total baje **y** que el listado lo siga trayendo. La regla del signo del
+  asiento —que depende del par (rol, tipo)— salió del alta a
+  `servicios/caja.py`, porque la edición y la anulación no tenían de dónde
+  sacarla sin repetirla.
+- La migración `0008` agrega la columna **con `server_default`**, y el modelo lo
+  declara igual. Sin el default, agregar una columna `NOT NULL` falla en una
+  tabla con filas —la instancia del cliente tiene **8.387**— y el `COPY` del ETL
+  de migración, que no nombra la columna, inserta `NULL`. Ninguna de las dos
+  cosas se ve en una base vacía.

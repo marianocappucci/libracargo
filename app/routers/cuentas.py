@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_staff
 from app.db import obtener_sesion
-from app.models.cuentas import MovimientoCaja, MovimientoCuenta
+from app.models.cuentas import MovimientoCaja
 from app.models.enums import AccionAuditoria, RolCuenta, TipoMovimientoCaja
 from app.routers.maestros import traducir_integridad
 from app.schemas.cuentas import (
@@ -25,6 +25,7 @@ from app.schemas.cuentas import (
     ResumenDeCuenta,
 )
 from app.servicios import auditoria
+from app.servicios.caja import revertir, sincronizar_contrapartida
 from app.servicios.cuentas import movimientos_con_saldo, saldo, saldo_recorriendo
 
 router = APIRouter(prefix="/api", tags=["cuentas"], dependencies=[Depends(require_staff)])
@@ -77,21 +78,31 @@ def listar_caja(
     return list(sesion.scalars(consulta))
 
 
-@router.post("/caja", response_model=MovimientoCajaOut, status_code=201)
-def registrar_caja(datos: MovimientoCajaIn, sesion: Session = Depends(obtener_sesion),
-                   actual: dict = Depends(get_current_user)):
-    """Registra el movimiento y su contrapartida, o no registra ninguno.
+def _validar_par(datos: MovimientoCajaIn) -> None:
+    """Tercero y rol van juntos, o no va ninguno.
 
-    La contrapartida sólo existe si hay tercero: un gasto general de la agencia
-    no mueve la cuenta de nadie. Pero si hay tercero **tiene que haber rol**,
-    porque un mismo tercero puede ser cliente y fletero a la vez y si no no se
-    sabe cuál de sus cuentas se está moviendo.
+    Un gasto general de la agencia no mueve la cuenta de nadie. Pero si hay
+    tercero **tiene que haber rol**, porque un mismo tercero puede ser cliente y
+    fletero a la vez y si no, no se sabe cuál de sus cuentas se está moviendo.
     """
     if datos.tercero_id is not None and datos.rol is None:
         raise HTTPException(422, "falta el rol: no se sabe a que cuenta del tercero va")
     if datos.tercero_id is None and datos.rol is not None:
         raise HTTPException(422, "hay rol pero no hay tercero")
 
+
+def _traer_caja(sesion: Session, id_: int) -> MovimientoCaja:
+    movimiento = sesion.get(MovimientoCaja, id_)
+    if movimiento is None:
+        raise HTTPException(404, f"no existe el movimiento de caja {id_}")
+    return movimiento
+
+
+@router.post("/caja", response_model=MovimientoCajaOut, status_code=201)
+def registrar_caja(datos: MovimientoCajaIn, sesion: Session = Depends(obtener_sesion),
+                   actual: dict = Depends(get_current_user)):
+    """Registra el movimiento y su contrapartida, o no registra ninguno."""
+    _validar_par(datos)
     movimiento = MovimientoCaja(
         fecha=datos.fecha, tipo=datos.tipo, concepto=datos.concepto,
         descripcion=datos.descripcion, tercero_id=datos.tercero_id,
@@ -99,46 +110,72 @@ def registrar_caja(datos: MovimientoCajaIn, sesion: Session = Depends(obtener_se
     )
     sesion.add(movimiento)
     try:
-        # `flush` y no `commit`: necesito el id para la contrapartida, pero la
+        # `flush` y no `commit`: hace falta el id para la contrapartida, pero la
         # transaccion tiene que seguir abierta. Con dos commits, un fallo en el
         # segundo deja el primero grabado -- el defecto exacto del legado.
         sesion.flush()
-        if datos.tercero_id is not None:
-            # 🔴 El signo lo dan el movimiento **y el rol**, no el movimiento
-            # solo. Acá decía lo contrario —"un egreso sube lo que el tercero
-            # debe, vale para las tres cuentas"— y para fletero y proveedor
-            # estaba al revés: pagarle a un fletero le AUMENTABA el saldo en
-            # vez de cancelarlo.
-            #
-            # La convención es la del legado, y es la que tienen los 22.645
-            # movimientos migrados: **el cargo va a `debe` y el pago a
-            # `haber`, en las tres cuentas**. Lo que cambia es qué es un cargo:
-            #
-            # | Cuenta | Ingreso | Egreso |
-            # |---|---|---|
-            # | Cliente | cobranza -> `haber` | devolución -> `debe` |
-            # | Fletero / proveedor | devolución -> `debe` | pago -> `haber` |
-            #
-            # Para un cliente el saldo positivo es lo que **debe**; para un
-            # fletero o un proveedor, lo que se le **debe**. Por eso el ingreso
-            # cae de un lado en una cuenta y del otro en la otra.
-            cobranza = datos.rol is RolCuenta.CLIENTE
-            al_haber = (datos.tipo is TipoMovimientoCaja.INGRESO) == cobranza
-            sesion.add(MovimientoCuenta(
-                fecha=datos.fecha,
-                tercero_id=datos.tercero_id,
-                rol=datos.rol,
-                concepto=datos.concepto,
-                descripcion=datos.descripcion,
-                debe=0 if al_haber else datos.importe,
-                haber=datos.importe if al_haber else 0,
-                movimiento_caja_id=movimiento.id,
-            ))
+        sincronizar_contrapartida(sesion, movimiento, datos.rol)
         auditoria.registrar(sesion, actual, "movimiento_caja", movimiento.id,
                             AccionAuditoria.ALTA, despues=movimiento)
         sesion.commit()
     except IntegrityError as err:
         sesion.rollback()
         raise traducir_integridad(err) from None
+    sesion.refresh(movimiento)
+    return movimiento
+
+
+@router.put("/caja/{id_}", response_model=MovimientoCajaOut)
+def editar_caja(id_: int, datos: MovimientoCajaIn,
+                sesion: Session = Depends(obtener_sesion),
+                actual: dict = Depends(get_current_user)):
+    """Corrige el movimiento **y su contrapartida**, en el lugar.
+
+    Una línea por cuenta y no dos, que es lo que hace el `UPDATE` de
+    `modifica_novedad.php` y lo que el cliente espera ver. Cambiar el tercero, el
+    rol o el importe mueve el asiento con el movimiento; sacarle el tercero lo
+    borra.
+    """
+    _validar_par(datos)
+    movimiento = _traer_caja(sesion, id_)
+    if movimiento.anulado:
+        raise HTTPException(409, "el movimiento está anulado: no se puede modificar")
+    antes = auditoria.instantanea(movimiento)
+    for campo in ("fecha", "tipo", "concepto", "descripcion", "tercero_id",
+                  "importe", "medio_pago", "recibo"):
+        setattr(movimiento, campo, getattr(datos, campo))
+    try:
+        sincronizar_contrapartida(sesion, movimiento, datos.rol)
+        auditoria.registrar(sesion, actual, "movimiento_caja", movimiento.id,
+                            AccionAuditoria.MODIFICACION, antes=antes, despues=movimiento)
+        sesion.commit()
+    except IntegrityError as err:
+        sesion.rollback()
+        raise traducir_integridad(err) from None
+    sesion.refresh(movimiento)
+    return movimiento
+
+
+@router.delete("/caja/{id_}", response_model=MovimientoCajaOut)
+def anular_caja(id_: int, sesion: Session = Depends(obtener_sesion),
+                actual: dict = Depends(get_current_user)):
+    """Anular, no borrar.
+
+    🔴 `elimina_novedad.php` hacía tres `DELETE` sueltos —la cuenta del cliente,
+    la del fletero, la del proveedor— y después borraba la novedad. Un cobro
+    anulado desaparecía sin dejar rastro y el número de recibo quedaba con un
+    hueco que nadie podía explicar. Acá el movimiento queda, deja de contar en
+    los totales y su asiento se revierte con una contrapartida.
+    """
+    movimiento = _traer_caja(sesion, id_)
+    if movimiento.anulado:
+        raise HTTPException(409, "el movimiento ya está anulado")
+    antes = auditoria.instantanea(movimiento)
+    # Antes de marcarlo: `revertir` lee la contrapartida vigente.
+    revertir(sesion, movimiento)
+    movimiento.anulado = True
+    auditoria.registrar(sesion, actual, "movimiento_caja", movimiento.id,
+                        AccionAuditoria.BAJA, antes=antes, despues=movimiento)
+    sesion.commit()
     sesion.refresh(movimiento)
     return movimiento
