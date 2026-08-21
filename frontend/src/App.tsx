@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext'
 import Inicio from '@/pages/Inicio'
 import Caja from '@/pages/Caja'
 import Comprobantes from '@/pages/Comprobantes'
+import FacturarPendientes from '@/pages/FacturarPendientes'
 import Gastos from '@/pages/Gastos'
 import Configuracion from '@/pages/Configuracion'
 import CuentaCorriente from '@/pages/CuentaCorriente'
@@ -50,6 +51,7 @@ export default function App() {
                 <Route path="/cuentas" element={<CuentaCorriente />} />
                 <Route path="/caja" element={<Caja />} />
                 <Route path="/comprobantes" element={<Comprobantes />} />
+                <Route path="/comprobantes/facturar" element={<FacturarPendientes />} />
                 <Route path="/gastos" element={<Gastos />} />
                 <Route path="/reportes" element={<ReportesIndice />} />
                 <Route path="/reportes/:slug" element={<Reporte />} />
