@@ -1,3 +1,4 @@
+import { BookOpen } from 'lucide-react'
 /** La cuenta corriente de un tercero, con saldo corrido.
  *
  * El tercero y el rol se eligen arriba: la cuenta es el **par**, porque un
@@ -19,6 +20,7 @@ import { BotonImprimir } from '@/components/impresion'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { origenDelMovimiento } from '@/navegacion'
+import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 const ROLES: { valor: Rol; etiqueta: string }[] = [
   { valor: 'cliente', etiqueta: 'Cliente' },
@@ -118,7 +120,7 @@ export default function CuentaCorriente() {
   return (
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Cuenta corriente</h1>
+        <TituloPantalla icono={BookOpen}>Cuenta corriente</TituloPantalla>
         {datos && (
           <BotonImprimir
             titulo="Cuenta corriente"

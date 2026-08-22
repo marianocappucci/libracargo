@@ -2,7 +2,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
 import { SelectBuscable } from 'libra-ui/SelectBuscable'
-import { Ban, Eye, Pencil, Plus, Printer } from 'lucide-react'
+import { Ban, ClipboardList, Eye, Pencil, Plus, Printer } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { UseFormReturn } from 'react-hook-form'
 import { useForm } from 'react-hook-form'
@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 type Form = UseFormReturn<EntradaOrden, unknown, DatosOrden>
 
@@ -235,7 +236,7 @@ export default function Ordenes() {
   return (
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Órdenes de carga</h1>
+        <TituloPantalla icono={ClipboardList}>Órdenes de carga</TituloPantalla>
         <div className="flex gap-2">
           {/* La hoja NO imprime lo que hay en pantalla: vuelve a pedir el
               listado con los mismos filtros. La grilla muestra una pagina y

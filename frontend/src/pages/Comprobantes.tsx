@@ -10,7 +10,7 @@
  * confiable que uno sano — que es justo cuando no hay que usarlo.
  */
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
-import { FileText, Plus } from 'lucide-react'
+import { FileText, Plus, Receipt } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
@@ -22,7 +22,7 @@ import { mensajeDeError } from '@/components/AbmMaestro'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { formatearImporte } from '@/components/esquema-orden'
-import { Badge } from '@/components/ui/badge'
+import { BadgeEstado } from 'libra-ui/badge-estado'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -30,6 +30,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { irA } from '@/navegacion'
+import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 function Campo({ id, etiqueta, valor, alCambiar, tipo = 'text' }: {
   id: string; etiqueta: string; valor: string
@@ -201,9 +202,9 @@ export default function Comprobantes() {
     { id: 'estado', header: 'Estado',
       accessorFn: (c: Comprobante) => (c.anulado ? 'anulado' : 'vigente'),
       cell: ({ row }: { row: { original: Comprobante } }) => (
-        <Badge variant={row.original.anulado ? 'destructive' : 'secondary'}>
+        <BadgeEstado tono={row.original.anulado ? 'negativo' : 'ok'}>
           {row.original.anulado ? 'anulado' : 'vigente'}
-        </Badge>
+        </BadgeEstado>
       ) },
     { id: 'acciones', header: '',
       cell: ({ row }: { row: { original: Comprobante } }) => (
@@ -216,7 +217,7 @@ export default function Comprobantes() {
   return (
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Comprobantes</h1>
+        <TituloPantalla icono={Receipt}>Comprobantes</TituloPantalla>
         <div className="flex gap-2">
           <BotonImprimir
             titulo="Comprobantes"

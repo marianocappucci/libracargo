@@ -1,7 +1,7 @@
 /** Cobros y pagos. Cada movimiento con tercero deja su contrapartida en la
  *  cuenta corriente, y eso lo hace el servidor en la misma transacción. */
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
-import { Ban, Pencil, Plus } from 'lucide-react'
+import { Ban, Pencil, Plus, Wallet } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
@@ -16,13 +16,14 @@ import type { Columna } from '@/components/impresion'
 import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { sumarImportes } from '@/api/comprobantes'
 import { hoyEnArgentina, formatearImporte } from '@/components/esquema-orden'
-import { Badge } from '@/components/ui/badge'
+import { BadgeEstado } from 'libra-ui/badge-estado'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 type Borrador = {
   fecha: string
@@ -188,9 +189,9 @@ export default function Caja() {
     { accessorKey: 'fecha', header: sortableHeader('Fecha'), size: 100 },
     { id: 'tipo', header: 'Tipo', size: 95, accessorFn: (m: MovimientoCaja) => m.tipo,
       cell: ({ row }: { row: { original: MovimientoCaja } }) => (
-        <Badge variant={row.original.tipo === 'ingreso' ? 'secondary' : 'destructive'}>
+        <BadgeEstado tono={row.original.tipo === 'ingreso' ? 'ok' : 'negativo'}>
           {row.original.tipo}
-        </Badge>
+        </BadgeEstado>
       ) },
     // La elástica: es la única de texto libre, y la que puede venir larga.
     { accessorKey: 'concepto', header: sortableHeader('Concepto'), size: 190,
@@ -207,8 +208,8 @@ export default function Caja() {
     { id: 'estado', header: 'Estado', size: 90,
       cell: ({ row }: { row: { original: MovimientoCaja } }) => (
         row.original.anulado
-          ? <Badge variant="destructive">anulado</Badge>
-          : <Badge variant="outline">vigente</Badge>
+          ? <BadgeEstado tono="negativo">anulado</BadgeEstado>
+          : <BadgeEstado tono="ok">vigente</BadgeEstado>
       ) },
     { id: 'acciones', header: '', size: 80,
       cell: ({ row }: { row: { original: MovimientoCaja } }) => (
@@ -230,7 +231,7 @@ export default function Caja() {
   return (
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Caja</h1>
+        <TituloPantalla icono={Wallet}>Caja</TituloPantalla>
         <div className="flex gap-2">
           <BotonImprimir
             titulo="Movimientos de caja"

@@ -13,7 +13,7 @@
  *  y nada en pantalla explicaba que el alta tocaba dos cuentas.
  */
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
-import { Ban, Pencil, Plus } from 'lucide-react'
+import { Ban, Pencil, Plus, ReceiptText } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
@@ -27,13 +27,14 @@ import { formatearImporte } from '@/components/esquema-orden'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { irA } from '@/navegacion'
-import { Badge } from '@/components/ui/badge'
+import { BadgeEstado } from 'libra-ui/badge-estado'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 const VACIO = {
   fecha: new Date().toISOString().slice(0, 10),
@@ -164,9 +165,9 @@ export default function Gastos() {
       accessorFn: (g: Gasto) => formatearImporte(g.importe) },
     { id: 'estado', header: 'Estado', size: 100,
       cell: ({ row }: { row: { original: Gasto } }) => (
-        <Badge variant={row.original.anulado ? 'destructive' : 'secondary'}>
+        <BadgeEstado tono={row.original.anulado ? 'negativo' : 'ok'}>
           {row.original.anulado ? 'anulado' : 'vigente'}
-        </Badge>
+        </BadgeEstado>
       ) },
     { id: 'acciones', header: '', size: 90,
       cell: ({ row }: { row: { original: Gasto } }) => (
@@ -192,7 +193,7 @@ export default function Gastos() {
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-semibold">Comprobantes de proveedores</h1>
+          <TituloPantalla icono={ReceiptText}>Comprobantes de proveedores</TituloPantalla>
           <p className="text-muted-foreground text-sm">
             Lo que el proveedor entrega y se le descuenta al fletero.
           </p>

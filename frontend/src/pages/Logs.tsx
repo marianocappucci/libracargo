@@ -1,3 +1,4 @@
+import { ScrollText } from 'lucide-react'
 /** El log: quién hizo qué, y qué cambió.
  *
  * Sobre la instancia de Suitrans esta pantalla arranca con **15.884 registros
@@ -19,6 +20,7 @@ import { destinoDelLog } from '@/navegacion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 const POR_PAGINA = 50
 
@@ -88,7 +90,7 @@ export default function Logs() {
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Log de actividad</h1>
+          <TituloPantalla icono={ScrollText}>Log de actividad</TituloPantalla>
           <p className="text-muted-foreground text-sm">
             Quién hizo qué, y qué cambió. Los registros migrados del sistema viejo
             traen quién y cuándo, pero no el detalle: ese sistema no lo guardaba.

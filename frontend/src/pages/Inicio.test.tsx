@@ -69,13 +69,19 @@ describe('el dashboard', () => {
   })
 
   it('una orden anulada se distingue de una viva', async () => {
-    // `rounded-full` está en las clases base de TODAS las variantes, así que no
-    // sirve para distinguirlas: lo que separa a la anulada es `bg-destructive`.
+    // Se afirma el TONO y no el nombre de la clase de color. La pastilla pasó
+    // a `BadgeEstado` de libra-ui, que marca `data-tono` en el DOM justamente
+    // para poder auditar esto sin acoplarse a la clase que emite Tailwind:
+    // esta línea decía `bg-destructive` y se rompió al cambiar el criterio
+    // visual, sin que la orden anulada dejara ni un momento de distinguirse.
     responder([orden(1, 'anulada'), orden(2, 'pendiente')])
     render(<MemoryRouter><Inicio /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByText('anulada')).toBeInTheDocument())
-    expect(screen.getByText('anulada').className).toContain('bg-destructive')
-    expect(screen.getByText('pendiente').className).not.toContain('bg-destructive')
+    expect(screen.getByText('anulada')).toHaveAttribute('data-tono', 'negativo')
+    expect(screen.getByText('pendiente')).not.toHaveAttribute('data-tono', 'negativo')
+    // El control de que el `not` de arriba mide algo: la pastilla viva existe
+    // y trae tono, o sea que no pasa por ausencia del atributo.
+    expect(screen.getByText('pendiente')).toHaveAttribute('data-tono')
   })
 })
