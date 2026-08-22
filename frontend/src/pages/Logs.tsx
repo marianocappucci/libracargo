@@ -26,19 +26,20 @@
  * accesos que poner en la segunda. Una pestaña sola no es una pestaña.
  *
  * Y por eso ya no usa `DataTable`: la fila desplegable necesita emitir dos
- * `<tr>` por registro, que es justo lo que esa tabla no hace. La impresión
- * sigue por `BotonImprimir`, que arma su propia hoja a partir de `columnas` y
- * nunca dependió de la tabla de pantalla.
+ * `<tr>` por registro, que es justo lo que esa tabla no hace.
+ *
+ * 🔑 **Acá no se imprime.** El log en papel es un reporte (`listado-logs`), que
+ * exige un rango. Este botón salía con la pantalla recién abierta y mandaba los
+ * 15.884 registros migrados de una — y encima traía sólo los primeros 500, sin
+ * decirlo. Ver ADR-023.
  */
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronLeft, ChevronRight, Inbox, ScrollText } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import type { FiltrosDeLog, Registro } from '@/api/auditoria'
-import { auditoria, describirCambio } from '@/api/auditoria'
+import { auditoria } from '@/api/auditoria'
 import { mensajeDeError } from '@/components/AbmMaestro'
-import type { Columna } from '@/components/impresion'
-import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { destinoDelLog } from '@/navegacion'
@@ -86,9 +87,10 @@ function valor(v: unknown): string {
  *
  *  Se arma sobre la UNIÓN de las dos partes y no sobre `datos_despues`: en una
  *  baja hay campos que existen antes y no después, y mirar un solo lado los
- *  perdería. Es el mismo criterio que `describirCambio()`, que sigue existiendo
- *  para la hoja impresa — ahí no hay dónde desplegar y el renglón de una línea
- *  es lo correcto. */
+ *  perdería. Es el mismo criterio que `describirCambio()` de `@/api/auditoria`,
+ *  que sigue existiendo para la hoja impresa — que ahora la arma el reporte
+ *  `listado-logs`, donde no hay dónde desplegar y el renglón de una línea es lo
+ *  correcto. */
 function Cambios({ registro }: { registro: Registro }) {
   const antes = registro.datos_antes ?? {}
   const despues = registro.datos_despues ?? {}
@@ -175,15 +177,6 @@ export default function Logs() {
     setFiltros({})
   }
 
-  const columnas: Columna<Registro>[] = [
-    { encabezado: 'Cuándo', valor: (r) => r.ts.replace('T', ' ').slice(0, 16) },
-    { encabezado: 'Usuario', valor: (r) => r.usuario_nombre ?? '' },
-    { encabezado: 'Acción', valor: (r) => r.accion },
-    { encabezado: 'Entidad', valor: (r) => r.entidad },
-    { encabezado: 'Id', valor: (r) => r.entidad_id, numerica: true },
-    { encabezado: 'Qué cambió', valor: (r) => describirCambio(r) },
-  ]
-
   // Un grupo por día, en el orden en que vienen las filas. El backend las manda
   // por `ts` descendente, así que basta con cortar cuando cambia la fecha:
   // agrupar con un `Map` reordenaría los días si alguna vez dejaran de venir
@@ -206,23 +199,11 @@ export default function Logs() {
 
   return (
     <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <TituloPantalla icono={ScrollText}>Log de actividad</TituloPantalla>
-          <p className="text-muted-foreground text-sm">
-            Quién hizo qué, y qué cambió. Los registros migrados del sistema viejo
-            traen quién y cuándo, pero no el detalle: ese sistema no lo guardaba.
-          </p>
-        </div>
-        <BotonImprimir
-          titulo="Log de actividad"
-          filtros={Object.entries(filtros).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`)
-            .join(' · ') || 'sin filtros'}
-          columnas={columnas}
-          traer={() => traerTodo((desplazamiento, limite) =>
-            auditoria.listar({ ...filtros, desplazamiento, limite: Math.min(limite, 500) })
-              .then((p) => p.registros))}
-        />
+      {/* El titulo, y nada mas. El boton de imprimir se fue a reportes
+          (`listado-logs`): desde aca imprimia los 15.884 registros de una,
+          porque nada obligaba a poner fechas. */}
+      <div className="mb-4">
+        <TituloPantalla icono={ScrollText}>Log de actividad</TituloPantalla>
       </div>
 
       <Card className="no-imprimir mb-4">

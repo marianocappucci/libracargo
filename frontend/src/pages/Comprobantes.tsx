@@ -15,12 +15,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import type { Comprobante, ComprobanteConOrdenes, TotalDeRazonSocial } from '@/api/comprobantes'
-import { NOMBRE_DE_TIPO, comprobantes, numeroDe, sumarImportes } from '@/api/comprobantes'
+import { NOMBRE_DE_TIPO, comprobantes, numeroDe } from '@/api/comprobantes'
 import type { Opcion, Opciones } from '@/api/ordenes'
 import { cargarOpciones } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
-import type { Columna } from '@/components/impresion'
-import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { formatearImporte } from '@/components/esquema-orden'
 import { BadgeEstado } from 'libra-ui/badge-estado'
 import { Button } from '@/components/ui/button'
@@ -174,17 +172,6 @@ export default function Comprobantes() {
     }
   }
 
-  const COLUMNAS_IMPRESAS: Columna<Comprobante>[] = [
-    { encabezado: 'Fecha', valor: (c) => c.fecha },
-    { encabezado: 'Comprobante', valor: (c) => `${NOMBRE_DE_TIPO[c.tipo]} ${numeroDe(c)}` },
-    { encabezado: 'Cliente',
-      valor: (c) => nombre(opciones?.clientes ?? [], c.cliente_id) },
-    { encabezado: 'Estado', valor: (c) => (c.anulado ? 'anulado' : 'vigente') },
-    { encabezado: 'Neto', valor: (c) => c.neto, numerica: true, moneda: true },
-    { encabezado: 'IVA', valor: (c) => c.iva, numerica: true, moneda: true },
-    { encabezado: 'Total', valor: (c) => c.total, numerica: true, moneda: true },
-  ]
-
   const columnas = [
     { accessorKey: 'fecha', header: sortableHeader('Fecha') },
     { id: 'comprobante', header: 'Comprobante',
@@ -218,27 +205,14 @@ export default function Comprobantes() {
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
         <TituloPantalla icono={Receipt}>Comprobantes</TituloPantalla>
-        <div className="flex gap-2">
-          <BotonImprimir
-            titulo="Comprobantes"
-            filtros={[desde && `desde ${desde}`, hasta && `hasta ${hasta}`,
-                      razonFiltro && 'una razón social'].filter(Boolean).join(' · ')
-                     || 'sin filtros'}
-            columnas={COLUMNAS_IMPRESAS}
-            traer={() => traerTodo(async (desplazamiento, limite) =>
-              comprobantes.listar({ desde, hasta, razon_social_id: razonFiltro,
-                                    desplazamiento, limite }))}
-            totales={(f) => [
-              { etiqueta: 'Comprobantes', valor: String(f.length) },
-              { etiqueta: 'Total', valor: sumarImportes(f.map((c) => c.total)) },
-            ]}
-          />
-          <Button asChild>
-            <Link to={irA.facturarPendientes()}>
-              <Plus className="size-4" /> Facturar pendientes
-            </Link>
-          </Button>
-        </div>
+        {/* El listado se imprime desde reportes (`listado-comprobantes`), que
+            exige rango. Aca el boton salia sin fechas y mandaba al papel todos
+            los comprobantes que hubiera. */}
+        <Button asChild>
+          <Link to={irA.facturarPendientes()}>
+            <Plus className="size-4" /> Facturar pendientes
+          </Link>
+        </Button>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">

@@ -516,3 +516,51 @@ esté entre ellas.
   tabla con filas —la instancia del cliente tiene **8.387**— y el `COPY` del ETL
   de migración, que no nombra la columna, inserta `NULL`. Ninguna de las dos
   cosas se ve en una base vacía.
+
+## ADR-023 — Los listados se imprimen desde Reportes, y ahí el rango es obligatorio
+
+- Estado: aceptada
+- Fecha: 2026-08-22
+- Contexto: cinco pantallas —órdenes, comprobantes, comprobantes de proveedores,
+  caja y el log— tenían su propio botón **Imprimir** arriba a la derecha. El
+  botón hacía lo correcto —volvía a pedir el listado paginando, en vez de
+  fotografiar la página que se veía— pero **nada obligaba a filtrar antes**: se
+  apretaba con la pantalla recién abierta y salían las 4.337 órdenes en unas
+  noventa hojas. Sobre la instancia de Suitrans el log arranca con **15.884
+  registros migrados**, así que ahí el papel era peor todavía.
+- Decisión:
+  1. **Los listados salen del catálogo de reportes**, con `detalle: true`. Son
+     cinco entradas nuevas (`listado-ordenes`, `listado-comprobantes`,
+     `listado-gastos`, `listado-caja`, `listado-logs`) que aparecen en su propia
+     sección del índice, separadas de los ocho agregados de siempre.
+  2. 🔴 **Sin `desde` y `hasta` no hay listado.** El endpoint contesta **422** y
+     la pantalla ni siquiera lo pide: muestra por qué falta y **no dibuja el
+     botón de imprimir**. Las dos mitades hacen falta — la del backend porque la
+     regla es del reporte y no del dibujo, la del frontend porque un 422 en la
+     cara no explica que falta elegir fechas.
+  3. **Los endpoints no repiten la consulta**: cada uno delega en el mismo
+     `listar` que sirve la pantalla. Un filtro nuevo o un orden distinto en el
+     listado aparece en el papel sin tocar nada — que es justo lo que no pasaba
+     cuando cada pantalla armaba su propia impresión.
+  4. **El log cambia de lugar, no de permiso.** `listado-logs` lleva
+     `require_admin` **además** del `require_staff` del router, y el catálogo lo
+     esconde para quien no es admin: un ítem que se ve y contesta 403 es un menú
+     roto.
+- Qué NO se movió: la impresión de **una** orden —el ícono de la fila y el botón
+  del detalle— y la de **una** cuenta corriente. Las dos ya están acotadas a un
+  registro o a un tercero: son una hoja, no un listado.
+- Consecuencias:
+  - `traerTodo` recibe el tamaño de tanda del endpoint que va a pedir. 🔴 No es
+    cosmético: corta cuando una tanda viene más corta que lo pedido, así que
+    pedirle 500 a un endpoint de tope 500 comparando contra 1.000 hacía que la
+    **primera** tanda pareciera la última — y la hoja salía con 500 filas y
+    `truncado: false`, o sea diciendo que había traído todo. Es lo que hacía el
+    log.
+  - `GET /api/caja` gana `desplazamiento` y `medio_pago`. Le faltaba la
+    paginación —era el único listado sin ella— y la hoja de caja la suplía con
+    un `desplazamiento > 0 ? [] : …` que pedía **una** tanda y perdía en
+    silencio lo que no entrara.
+  - La grilla del reporte dibuja las primeras 200 filas y **lo dice**: abajo de
+    la tabla aclara cuántas hay y cuántas se están viendo. Un corte callado se
+    lee como el listado completo, y ahí la pantalla y el papel dicen cosas
+    distintas.

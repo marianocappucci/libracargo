@@ -36,15 +36,25 @@ export type Columna<T> = {
 
 export type Total = { etiqueta: string; valor: string }
 
-/** Pide de a `POR_PEDIDO` hasta que no venga más, o hasta el tope. */
+/** Pide de a `porPedido` hasta que no venga más, o hasta el tope.
+ *
+ * 🔴 **`porPedido` tiene que ser el tope REAL del endpoint.** El corte es
+ * `tanda.length < porPedido`: si se piden 500 a un endpoint que acepta 500 pero
+ * acá se compara contra 1.000, la primera tanda ya parece incompleta y la vuelta
+ * termina — con `truncado: false`, o sea diciendo que trajo todo. Es lo que
+ * hacía el log: pedía `Math.min(limite, 500)` con `POR_PEDIDO` en 1.000, y sobre
+ * los 15.884 registros de Suitrans imprimía 500 sin una sola marca de que
+ * faltaba el resto.
+ */
 export async function traerTodo<T>(
   pagina: (desplazamiento: number, limite: number) => Promise<T[]>,
+  porPedido: number = POR_PEDIDO,
 ): Promise<{ filas: T[]; truncado: boolean }> {
   const filas: T[] = []
-  for (let desplazamiento = 0; desplazamiento < TOPE; desplazamiento += POR_PEDIDO) {
-    const tanda = await pagina(desplazamiento, POR_PEDIDO)
+  for (let desplazamiento = 0; desplazamiento < TOPE; desplazamiento += porPedido) {
+    const tanda = await pagina(desplazamiento, porPedido)
     filas.push(...tanda)
-    if (tanda.length < POR_PEDIDO) return { filas, truncado: false }
+    if (tanda.length < porPedido) return { filas, truncado: false }
   }
   return { filas, truncado: true }
 }
