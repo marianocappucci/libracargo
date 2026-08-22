@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 
 from fastapi import Depends, FastAPI
+from libraauth.auth_events import AuthEventRepository
 from libraauth.bootstrap import ensure_default_admin, ensure_demo_user
 from libraauth.demo_codigos import DemoCodigoRepository
 from libraauth.models import Base as AuthBase
@@ -20,6 +21,7 @@ from libraauth.session_auth import (
     demo_username,
 )
 from libraauth.smtp_settings import SmtpSettingsRepository, resolver_smtp_config
+from libraauth.terminos import TerminosRepository, build_terminos_router
 from libracore.config_router import build_backup_router
 from libracore.geografia import build_geo_router
 from libracore.respaldo import Instancia
@@ -107,6 +109,23 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     app.state.users = usuarios
     app.state.session_auth = construir_session_auth(usuarios)
 
+    # 🔴 **Sin esta línea se apagan DOS cosas, y ninguna avisa.** El registro de
+    # accesos —quién entró, quién salió, quién lo intentó sin lograrlo— y el
+    # **rate limiting del login**: `contar_fallidos_seguro` devuelve 0 cuando no
+    # hay repositorio, y 0 significa "nadie agotó intentos", así que el bloqueo
+    # por fuerza bruta nunca dispara. Es opt-in por ausencia, a propósito, para
+    # que actualizar el motor no obligue a nadie a crear una tabla — pero este
+    # producto nunca lo cableó.
+    #
+    # Se midió el 2026-08-22: `auth_log` existía y tenía **cero filas en las
+    # tres instancias**, incluida la de Suitrans en producción. O sea que no
+    # había ningún registro de quién entraba, y el login no tenía freno.
+    #
+    # Mismo `db.fabrica_de_sesiones()` que el resto: en LibraCargo `usuarios`
+    # vive en la MISMA base que el dominio. En Gestiolibra/MedLibra/VentaLibra
+    # no es así — ver la nota de `demo_codigos` unas líneas más abajo.
+    app.state.auth_events = AuthEventRepository(db.fabrica_de_sesiones())
+
     app.include_router(salud.router)
     # `construir_router()` y no un `router` de módulo: lee `DEMO_MODE` al
     # construirse, y a nivel de módulo quedaría congelado en el primer import.
@@ -138,7 +157,17 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     # `usuarios`. Con el factory del engine de auth de otro producto, la tabla
     # se crearía en el lugar equivocado.
     app.state.smtp_settings = SmtpSettingsRepository(db.fabrica_de_sesiones())
+    # Terminos y Condiciones del Servicio: la prueba de la aceptacion y lo que
+    # enciende el gate. MISMA fabrica de sesiones que el SMTP y los usuarios --
+    # la tabla tiene FK a `usuarios`, que no siempre vive en la base del dominio.
+    #
+    # 🔴 Sin esta linea el gate NO corta y la instancia no falla: se queda sin
+    # gate, en silencio. Por eso cada producto tiene un test que lo prueba.
+    app.state.terminos = TerminosRepository(db.fabrica_de_sesiones())
     app.include_router(build_smtp_settings_router())
+    # `GET /terminos`, `POST /terminos/aceptar`, `GET /terminos/historial`.
+    # NO se gatea desde afuera: es el unico camino para salir del gate.
+    app.include_router(build_terminos_router())
     app.state.password_reset = PasswordResetService(
         db.fabrica_de_sesiones(),
         product_name="LibraCargo",

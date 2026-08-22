@@ -42,11 +42,27 @@ function consulta(filtros: FiltrosDeLog): string {
   return qs ? `?${qs}` : ''
 }
 
+/** Un evento de acceso. **La misma forma que el `AccesoLog` de `libra-ui`**,
+ *  que es la que rinde la pantalla compartida en los otros cinco productos: si
+ *  esto divergiera, la pestaña de acá se vería distinta sin que nadie lo
+ *  hubiera decidido. */
+export type Acceso = {
+  id: number
+  ts: string
+  evento: 'login' | 'logout' | 'login_fallido' | string
+  username: string
+  ip: string
+  detalle: string
+}
+
 export const auditoria = {
   listar: (filtros: FiltrosDeLog = {}) =>
     api.get<PaginaDeLog>(`/api/auditoria${consulta(filtros)}`),
   entidades: () => api.get<string[]>('/api/auditoria/entidades'),
   usuarios: () => api.get<string[]>('/api/auditoria/usuarios'),
+  //  Los accesos no se paginan ni se filtran: son la segunda mitad de la
+  //  pantalla y llegan enteros, igual que en el router del motor.
+  accesos: () => api.get<Acceso[]>('/api/auditoria/accesos'),
 }
 
 /** El diff en una línea legible: `tarifa: 1000.00 → 1200.00`.
