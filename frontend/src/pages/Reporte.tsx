@@ -5,7 +5,7 @@
  * acá: son presentación, no dominio.
  */
 import { DataTable } from 'libra-ui/data-table'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, BarChart3 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
@@ -21,6 +21,7 @@ import type { Columna } from '@/components/impresion'
 import { BotonImprimir } from '@/components/impresion'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 type Fila = Record<string, string | number | null>
 
@@ -179,7 +180,7 @@ export default function Reporte() {
 
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">{entrada?.titulo ?? slug}</h1>
+          <TituloPantalla icono={BarChart3}>{entrada?.titulo ?? slug}</TituloPantalla>
           {entrada && (
             <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
               {entrada.descripcion}

@@ -10,9 +10,7 @@
  */
 import { EstadoDeOrden } from '@/components/EstadoDeOrden'
 import { DataTable } from 'libra-ui/data-table'
-import {
-  AlertTriangle, ArrowRight, BookOpen, ClipboardList, Receipt, Wallet,
-} from 'lucide-react'
+import { AlertTriangle, ArrowRight, BookOpen, ClipboardList, LayoutDashboard, Receipt, Wallet } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
@@ -25,6 +23,7 @@ import { mensajeDeError } from '@/components/AbmMaestro'
 import { irA } from '@/navegacion'
 import { hoyEnArgentina, formatearImporte } from '@/components/esquema-orden'
 import { sumarImportes } from '@/api/comprobantes'
+import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 /** El primer día del mes en curso, en hora de Argentina. */
 function primerDiaDelMes(): string {
@@ -86,7 +85,7 @@ export default function Inicio() {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-semibold">LibraCargo</h1>
+      <TituloPantalla icono={LayoutDashboard}>LibraCargo</TituloPantalla>
       <p className="text-muted-foreground mt-1 text-sm">
         Cómo viene {mesLegible}. Los saldos son de hoy y no tienen período.
       </p>

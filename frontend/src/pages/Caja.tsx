@@ -1,7 +1,7 @@
 /** Cobros y pagos. Cada movimiento con tercero deja su contrapartida en la
  *  cuenta corriente, y eso lo hace el servidor en la misma transacción. */
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
-import { Ban, Pencil, Plus } from 'lucide-react'
+import { Ban, Pencil, Plus, Wallet } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 type Borrador = {
   fecha: string
@@ -230,7 +231,7 @@ export default function Caja() {
   return (
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Caja</h1>
+        <TituloPantalla icono={Wallet}>Caja</TituloPantalla>
         <div className="flex gap-2">
           <BotonImprimir
             titulo="Movimientos de caja"

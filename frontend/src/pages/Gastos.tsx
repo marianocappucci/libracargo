@@ -13,7 +13,7 @@
  *  y nada en pantalla explicaba que el alta tocaba dos cuentas.
  */
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
-import { Ban, Pencil, Plus } from 'lucide-react'
+import { Ban, Pencil, Plus, ReceiptText } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 const VACIO = {
   fecha: new Date().toISOString().slice(0, 10),
@@ -192,7 +193,7 @@ export default function Gastos() {
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-semibold">Comprobantes de proveedores</h1>
+          <TituloPantalla icono={ReceiptText}>Comprobantes de proveedores</TituloPantalla>
           <p className="text-muted-foreground text-sm">
             Lo que el proveedor entrega y se le descuenta al fletero.
           </p>
