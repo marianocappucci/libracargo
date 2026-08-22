@@ -16,7 +16,7 @@ import type { Columna } from '@/components/impresion'
 import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { sumarImportes } from '@/api/comprobantes'
 import { hoyEnArgentina, formatearImporte } from '@/components/esquema-orden'
-import { Badge } from '@/components/ui/badge'
+import { BadgeEstado } from 'libra-ui/badge-estado'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -188,9 +188,9 @@ export default function Caja() {
     { accessorKey: 'fecha', header: sortableHeader('Fecha'), size: 100 },
     { id: 'tipo', header: 'Tipo', size: 95, accessorFn: (m: MovimientoCaja) => m.tipo,
       cell: ({ row }: { row: { original: MovimientoCaja } }) => (
-        <Badge variant={row.original.tipo === 'ingreso' ? 'secondary' : 'destructive'}>
+        <BadgeEstado tono={row.original.tipo === 'ingreso' ? 'ok' : 'negativo'}>
           {row.original.tipo}
-        </Badge>
+        </BadgeEstado>
       ) },
     // La elástica: es la única de texto libre, y la que puede venir larga.
     { accessorKey: 'concepto', header: sortableHeader('Concepto'), size: 190,
@@ -207,8 +207,8 @@ export default function Caja() {
     { id: 'estado', header: 'Estado', size: 90,
       cell: ({ row }: { row: { original: MovimientoCaja } }) => (
         row.original.anulado
-          ? <Badge variant="destructive">anulado</Badge>
-          : <Badge variant="outline">vigente</Badge>
+          ? <BadgeEstado tono="negativo">anulado</BadgeEstado>
+          : <BadgeEstado tono="ok">vigente</BadgeEstado>
       ) },
     { id: 'acciones', header: '', size: 80,
       cell: ({ row }: { row: { original: MovimientoCaja } }) => (

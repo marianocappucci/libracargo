@@ -20,7 +20,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import type { Maestro, Recurso } from '@/api/maestros'
 import { clienteDe } from '@/api/maestros'
-import { Badge } from '@/components/ui/badge'
+import { BadgeEstado } from 'libra-ui/badge-estado'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -194,9 +194,9 @@ export function AbmMaestro<T extends Maestro>({
       header: sortableHeader('Estado'),
       accessorFn: (f: T) => (f.activo ? 'Activo' : 'Baja'),
       cell: ({ row }: { row: { original: T } }) => (
-        <Badge variant={row.original.activo ? 'secondary' : 'destructive'}>
+        <BadgeEstado tono={row.original.activo ? 'ok' : 'negativo'}>
           {row.original.activo ? 'Activo' : 'Baja'}
-        </Badge>
+        </BadgeEstado>
       ),
     },
     {
