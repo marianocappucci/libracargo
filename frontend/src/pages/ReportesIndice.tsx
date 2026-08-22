@@ -4,13 +4,14 @@
  * no aparezca hasta tocar el frontend, y que uno que cambió sus parámetros quede
  * ofreciendo un filtro que ya no existe.
  */
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, BarChart3 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import type { Reporte } from '@/api/reportes'
 import { reportes } from '@/api/reportes'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 const NOMBRE_DE_PARAMETRO: Record<string, string> = {
   rango: 'fechas', cliente: 'cliente', fletero: 'fletero/transporte',
@@ -29,7 +30,7 @@ export default function ReportesIndice() {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-semibold">Reportes</h1>
+      <TituloPantalla icono={BarChart3}>Reportes</TituloPantalla>
       <p className="text-muted-foreground mt-1 text-sm">
         Cada uno se abre por separado y se parametriza por lo suyo. Todos se
         pueden imprimir.

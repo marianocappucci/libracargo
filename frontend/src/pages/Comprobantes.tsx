@@ -10,7 +10,7 @@
  * confiable que uno sano — que es justo cuando no hay que usarlo.
  */
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
-import { FileText, Plus } from 'lucide-react'
+import { FileText, Plus, Receipt } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
@@ -30,6 +30,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { irA } from '@/navegacion'
+import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 function Campo({ id, etiqueta, valor, alCambiar, tipo = 'text' }: {
   id: string; etiqueta: string; valor: string
@@ -216,7 +217,7 @@ export default function Comprobantes() {
   return (
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Comprobantes</h1>
+        <TituloPantalla icono={Receipt}>Comprobantes</TituloPantalla>
         <div className="flex gap-2">
           <BotonImprimir
             titulo="Comprobantes"

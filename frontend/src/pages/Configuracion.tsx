@@ -23,6 +23,7 @@ import {
   Choferes, Localidades, RazonesSociales, Terceros, TiposCarga, Vehiculos,
 } from '@/pages/maestros'
 import { cn } from '@/lib/utils'
+import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 const PESTANAS = [
   { id: 'empresa', label: 'Empresa', icon: Settings, contenido: DatosDeLaEmpresa },
@@ -62,7 +63,7 @@ export default function Configuracion() {
 
   return (
     <div className="p-6">
-      <h1 className="mb-4 text-2xl font-semibold">Configuración</h1>
+      <TituloPantalla icono={Settings} className="mb-4">Configuración</TituloPantalla>
 
       <div className="no-imprimir mb-6 flex flex-wrap gap-1 border-b">
         {PESTANAS.map(({ id, label, icon: Icono }) => (
