@@ -28,9 +28,13 @@ describe('el icono del título sale del sidebar', () => {
     // de encontrar el Layout, el router o las pantallas: dos listas vacías
     // comparadas contra dos listas vacías. Es exactamente la forma en que este
     // guard falló mientras se escribía.
-    const { rutasDelNav, pantallas, conIcono } = auditarTitulos(SRC)
+    const { rutasDelNav, pantallas, conIcono, sinTitulo } = auditarTitulos(SRC)
     expect(rutasDelNav).toBeGreaterThanOrEqual(10)
     expect(pantallas).toBeGreaterThanOrEqual(12)
-    expect(conIcono).toBe(pantallas)
+    expect(conIcono).toBeGreaterThan(0)
+    // 🔑 `conIcono` NO es igual a `pantallas`: `/usuarios` es un envoltorio de
+    // la pantalla que rinde `libra-ui`, y el título —con su icono— lo pone
+    // ella. Acá no hay ninguno, y está bien: el que había era un duplicado.
+    expect(sinTitulo.map((d) => d.ruta)).toEqual(['/usuarios'])
   })
 })
