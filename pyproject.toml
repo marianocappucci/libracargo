@@ -17,7 +17,7 @@ dependencies = [
     # reescribe la URL a `git+ssh` con la deploy key de solo lectura del motor
     # (ver Dockerfile), que es lo que va a hacer falta cuando la familia pase a
     # repos privados.
-    "libraauth @ git+https://github.com/marianocappucci/libraauth.git@v0.32.0",
+    "libraauth @ git+https://github.com/marianocappucci/libraauth.git@v0.33.0",
     # 🔑 **LibraCore entra ACÁ y no en F7, y sólo por `respaldo`.** El plan lo
     # tenía para la impresión (`pdf_generator`) y ARCA; el backup se pidió
     # antes. Se adelanta el paquete, no el alcance: hoy este producto importa
