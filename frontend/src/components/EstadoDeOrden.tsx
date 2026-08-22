@@ -8,15 +8,15 @@
  * Los tres estados salen de `EstadoOrden` del backend: `pendiente`,
  * `facturada` y `anulada`.
  */
-import { Badge } from '@/components/ui/badge'
+import { BadgeEstado } from 'libra-ui/badge-estado'
 
 /** `anulada` es la que hay que poder saltear de un vistazo — una orden anulada
  *  sigue en el listado (no se borra, ver ADR) y confundirla con una viva es el
  *  error caro. Las otras dos son estados normales del circuito. */
 export function EstadoDeOrden({ estado }: { estado: string }) {
   return (
-    <Badge variant={estado === 'anulada' ? 'destructive' : 'secondary'}>
+    <BadgeEstado tono={estado === 'anulada' ? 'negativo' : 'neutro'}>
       {estado}
-    </Badge>
+    </BadgeEstado>
   )
 }

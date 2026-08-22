@@ -22,7 +22,7 @@ import { mensajeDeError } from '@/components/AbmMaestro'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { formatearImporte } from '@/components/esquema-orden'
-import { Badge } from '@/components/ui/badge'
+import { BadgeEstado } from 'libra-ui/badge-estado'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -201,9 +201,9 @@ export default function Comprobantes() {
     { id: 'estado', header: 'Estado',
       accessorFn: (c: Comprobante) => (c.anulado ? 'anulado' : 'vigente'),
       cell: ({ row }: { row: { original: Comprobante } }) => (
-        <Badge variant={row.original.anulado ? 'destructive' : 'secondary'}>
+        <BadgeEstado tono={row.original.anulado ? 'negativo' : 'ok'}>
           {row.original.anulado ? 'anulado' : 'vigente'}
-        </Badge>
+        </BadgeEstado>
       ) },
     { id: 'acciones', header: '',
       cell: ({ row }: { row: { original: Comprobante } }) => (

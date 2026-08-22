@@ -27,7 +27,7 @@ import { formatearImporte } from '@/components/esquema-orden'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { irA } from '@/navegacion'
-import { Badge } from '@/components/ui/badge'
+import { BadgeEstado } from 'libra-ui/badge-estado'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -164,9 +164,9 @@ export default function Gastos() {
       accessorFn: (g: Gasto) => formatearImporte(g.importe) },
     { id: 'estado', header: 'Estado', size: 100,
       cell: ({ row }: { row: { original: Gasto } }) => (
-        <Badge variant={row.original.anulado ? 'destructive' : 'secondary'}>
+        <BadgeEstado tono={row.original.anulado ? 'negativo' : 'ok'}>
           {row.original.anulado ? 'anulado' : 'vigente'}
-        </Badge>
+        </BadgeEstado>
       ) },
     { id: 'acciones', header: '', size: 90,
       cell: ({ row }: { row: { original: Gasto } }) => (
