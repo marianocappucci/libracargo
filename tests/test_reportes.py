@@ -234,8 +234,13 @@ def test_el_catalogo_dice_que_hay_y_que_acepta_cada_uno(cliente):
     for reporte in catalogo:
         assert reporte["descripcion"].strip(), reporte["slug"]
         assert reporte["parametros"], reporte["slug"]
-        r = cliente.get(f"/api/reportes/{reporte['slug']}")
-        assert r.status_code == 200, f"{reporte['slug']}: {r.text[:200]}"
+        # Los listados de detalle **no corren sin rango** —es su regla, no un
+        # accidente—, así que a esos se les pasa uno. Sin esta rama el test
+        # confundiria "no existe el slug" con "le faltan las fechas".
+        rango = "?desde=2026-01-01&hasta=2026-12-31" if reporte["detalle"] else ""
+        slug = reporte["slug"]
+        r = cliente.get(f"/api/reportes/{slug}{rango}")
+        assert r.status_code == 200, f"{slug}: {r.text[:200]}"
 
 
 def test_el_resumen_se_puede_acotar_a_un_cliente(cliente, escenario):
@@ -311,3 +316,185 @@ def test_los_pendientes_de_facturar_agrupan_por_cliente(cliente, escenario):
     solo_b = cliente.get(
         f"/api/reportes/pendientes-de-facturar?cliente_id={escenario['cliente_b']}").json()
     assert [f["cliente"] for f in solo_b] == ["Molino Sur"]
+
+
+# ── Los listados ────────────────────────────────────────────────────────────
+#
+# Las filas de detalle de cada pantalla, para imprimir. Hasta el 2026-08-22 esto
+# era un botón "Imprimir" arriba a la derecha de cada listado; como ninguno
+# obligaba a poner fechas, se apretaba con la pantalla recién abierta y el papel
+# salía de noventa hojas. Lo que estos tests fijan es lo que cambió: **sin rango
+# no hay listado**.
+
+
+def test_el_catalogo_distingue_los_listados_de_los_agregados(cliente):
+    catalogo = {r["slug"]: r for r in cliente.get("/api/reportes").json()}
+    assert catalogo["por-cliente"]["detalle"] is False
+    assert catalogo["listado-ordenes"]["detalle"] is True
+    # El log sigue siendo de administración: cambia de lugar, no de permiso.
+    assert catalogo["listado-logs"]["solo_admin"] is True
+    assert catalogo["listado-caja"]["solo_admin"] is False
+    # Y todo listado ofrece rango: es el filtro que lo hace imprimible.
+    listados = [s for s, r in catalogo.items() if r["detalle"]]
+    assert len(listados) == 5
+    for slug in listados:
+        assert "rango" in catalogo[slug]["parametros"], slug
+
+
+@pytest.mark.parametrize("slug", ["listado-ordenes", "listado-comprobantes",
+                                  "listado-gastos", "listado-caja", "listado-logs"])
+def test_un_listado_sin_rango_completo_no_corre(cliente, escenario, slug):
+    """🔴 El 422 va con su control positivo.
+
+    Un 422 solo no prueba que la guarda exista: una ruta mal escrita, un enum que
+    no parsea o un parámetro de más contestan igual. Lo que lo prueba es que el
+    MISMO pedido con las dos fechas puestas devuelva 200.
+    """
+    assert cliente.get(f"/api/reportes/{slug}").status_code == 422
+    # Media fecha tampoco alcanza: "desde julio" sin corte sigue siendo todo.
+    assert cliente.get(f"/api/reportes/{slug}?desde=2026-07-01").status_code == 422
+    assert cliente.get(f"/api/reportes/{slug}?hasta=2026-07-31").status_code == 422
+    r = cliente.get(f"/api/reportes/{slug}?desde=2026-07-01&hasta=2026-07-31")
+    assert r.status_code == 200, r.text
+
+
+def test_el_listado_de_ordenes_trae_el_detalle_del_periodo(cliente, escenario):
+    julio = cliente.get(
+        "/api/reportes/listado-ordenes?desde=2026-07-01&hasta=2026-07-31").json()
+    # Las tres vigentes de julio **más la anulada**: en el papel un número que
+    # falta sin explicación es peor que una línea marcada "anulada".
+    assert len(julio) == 4
+    assert sum(1 for o in julio if o["estado"] == "anulada") == 1
+
+    # El control de que el rango se aplica: agosto tiene una sola.
+    agosto = cliente.get(
+        "/api/reportes/listado-ordenes?desde=2026-08-01&hasta=2026-08-31").json()
+    assert len(agosto) == 1
+    assert Decimal(agosto[0]["tarifa"]) == Decimal("8000.00")
+
+    cliente_a = escenario["cliente_a"]
+    del_cliente_a = cliente.get(
+        "/api/reportes/listado-ordenes?desde=2026-07-01&hasta=2026-07-31"
+        f"&cliente_id={cliente_a}").json()
+    assert len(del_cliente_a) == 2
+    assert {Decimal(o["tarifa"]) for o in del_cliente_a} == {
+        Decimal("1000.00"), Decimal("2000.00")}
+
+
+def test_el_listado_de_comprobantes_y_el_de_caja_se_acotan_por_lo_suyo(cliente, escenario):
+    comprobantes = cliente.get(
+        "/api/reportes/listado-comprobantes?desde=2026-07-01&hasta=2026-07-31").json()
+    assert len(comprobantes) == 1
+    assert Decimal(comprobantes[0]["total"]) == Decimal("3630.00")
+    assert cliente.get(
+        "/api/reportes/listado-comprobantes?desde=2026-08-01&hasta=2026-08-31").json() == []
+
+    caja = cliente.get(
+        "/api/reportes/listado-caja?desde=2026-07-01&hasta=2026-07-31").json()
+    assert len(caja) == 2
+    solo_ingresos = cliente.get(
+        "/api/reportes/listado-caja?desde=2026-07-01&hasta=2026-07-31&tipo=ingreso").json()
+    assert [m["tipo"] for m in solo_ingresos] == ["ingreso"]
+    assert Decimal(solo_ingresos[0]["importe"]) == Decimal("1500.00")
+    # `medio_pago` es nuevo en el listado de caja: el reporte agregado ya lo
+    # tenía y el listado no, así que el papel no podía contestar qué se cobró
+    # en efectivo.
+    en_efectivo = cliente.get(
+        "/api/reportes/listado-caja?desde=2026-07-01&hasta=2026-07-31"
+        "&medio_pago=efectivo").json()
+    assert [m["concepto"] for m in en_efectivo] == ["Pago flete"]
+
+
+def test_el_listado_de_caja_pagina_en_vez_de_perder_lo_que_no_entra(cliente, escenario):
+    """La hoja pide de a tandas hasta que no venga más.
+
+    Sin `desplazamiento` la segunda tanda devolvía **la primera otra vez**, así
+    que un listado más largo que `limite` se imprimía repetido o cortado sin
+    avisar.
+    """
+    rango = "desde=2026-07-01&hasta=2026-07-31"
+    primera = cliente.get(f"/api/reportes/listado-caja?{rango}&limite=1").json()
+    segunda = cliente.get(
+        f"/api/reportes/listado-caja?{rango}&limite=1&desplazamiento=1").json()
+    assert len(primera) == len(segunda) == 1
+    assert primera[0]["id"] != segunda[0]["id"]
+    tercera = cliente.get(
+        f"/api/reportes/listado-caja?{rango}&limite=1&desplazamiento=2").json()
+    assert tercera == []
+
+
+def test_el_listado_de_gastos_sale_del_mismo_listar_que_la_pantalla(cliente, escenario):
+    proveedor = crear(cliente, "/api/terceros",
+                      {"razon_social": "Gomería Del Centro", "es_proveedor": True})["id"]
+    crear(cliente, "/api/gastos", {
+        "fecha": "2026-07-18", "proveedor_id": proveedor,
+        "fletero_id": escenario["fletero"], "descripcion": "Cubiertas",
+        "importe": "150000.00"})
+    crear(cliente, "/api/gastos", {
+        "fecha": "2026-08-18", "proveedor_id": proveedor,
+        "fletero_id": escenario["fletero"], "descripcion": "Aceite",
+        "importe": "20000.00"})
+
+    julio = cliente.get(
+        "/api/reportes/listado-gastos?desde=2026-07-01&hasta=2026-07-31").json()
+    assert [g["descripcion"] for g in julio] == ["Cubiertas"]
+    del_proveedor = cliente.get(
+        "/api/reportes/listado-gastos?desde=2026-07-01&hasta=2026-08-31"
+        f"&proveedor_id={proveedor}").json()
+    assert len(del_proveedor) == 2
+
+
+def test_el_log_en_papel_lo_sigue_viendo_solo_un_administrador(cliente, escenario):
+    """🔴 Mover el log a reportes no puede ser la puerta de atrás.
+
+    El router de reportes pide `staff`; el log pide `admin`. Si la ruta nueva
+    heredara sólo la del router, un operador leería el log entero — que es
+    exactamente lo que `/api/auditoria` le niega.
+    """
+    rango = "desde=2026-07-01&hasta=2026-07-31"
+    assert cliente.get(f"/api/reportes/listado-logs?{rango}").status_code == 200
+
+    cliente.post("/api/usuarios", json={
+        "username": "marta", "name": "Marta", "password": "una-clave", "role": "staff"})
+    staff = TestClient(cliente.app, base_url="https://testserver")
+    assert staff.post("/auth/login",
+                      json={"username": "marta", "password": "una-clave"}).status_code == 200
+    # El control: la operadora SÍ ve los otros listados. Si diera 403 en todos,
+    # el 403 del log no diría nada sobre el rol.
+    assert staff.get(f"/api/reportes/listado-ordenes?{rango}").status_code == 200
+    assert staff.get(f"/api/reportes/listado-logs?{rango}").status_code == 403
+
+
+def test_el_log_en_papel_trae_las_filas_del_periodo_y_se_filtra(cliente, escenario):
+    rango = "desde=2026-07-01&hasta=2026-12-31"
+    filas = cliente.get(f"/api/reportes/listado-logs?{rango}").json()
+    assert filas, "el escenario da de alta terceros, ordenes y caja: algo tiene que haber"
+    assert {f["accion"] for f in filas} <= {"alta", "modificacion", "baja"}
+
+    solo_ordenes = cliente.get(
+        f"/api/reportes/listado-logs?{rango}&entidad=orden_carga").json()
+    assert solo_ordenes, "el escenario crea ordenes"
+    assert {f["entidad"] for f in solo_ordenes} == {"orden_carga"}
+    # Y el control de que el filtro filtra: son menos que el total.
+    assert len(solo_ordenes) < len(filas)
+
+
+def test_el_catalogo_no_le_ofrece_a_un_operador_lo_que_no_va_a_poder_abrir(cliente):
+    """El listado del log no aparece en el catálogo de quien no es admin.
+
+    Es la otra mitad del 403: un ítem que se puede ver y no se puede abrir es un
+    menú roto. El control es que la operadora SÍ vea los otros cuatro listados
+    — si no viera ninguno, la ausencia del log no diría nada sobre el rol.
+    """
+    cliente.post("/api/usuarios", json={
+        "username": "marta", "name": "Marta", "password": "una-clave", "role": "staff"})
+    staff = TestClient(cliente.app, base_url="https://testserver")
+    assert staff.post("/auth/login",
+                      json={"username": "marta", "password": "una-clave"}).status_code == 200
+
+    de_admin = {r["slug"] for r in cliente.get("/api/reportes").json()}
+    de_staff = {r["slug"] for r in staff.get("/api/reportes").json()}
+    assert "listado-logs" in de_admin
+    assert "listado-logs" not in de_staff
+    assert de_admin - de_staff == {"listado-logs"}
+    assert {"listado-ordenes", "listado-caja", "por-cliente"} <= de_staff

@@ -10,6 +10,11 @@ from __future__ import annotations
 from libraauth.repository import UserRepository
 from libraauth.session_auth import (
     SessionAuth,
+    # Si este usuario es el visitante de una demo publica. `json_api_require_role`
+    # lo deja pasar para LEER aunque su rol no alcance, asi que cualquier
+    # pantalla que esconda algo por rol tiene que preguntar por los dos — si no,
+    # la demo muestra un menu con la mitad de las opciones.
+    es_visitante_de_demo,
 )
 from libraauth.session_auth import (
     json_api_get_current_user as get_current_user,
@@ -39,7 +44,7 @@ from libraauth.session_auth import (
 
 __all__ = [
     "SessionAuth", "UserRepository", "construir_session_auth",
-    "get_current_user", "get_session_auth",
+    "es_visitante_de_demo", "get_current_user", "get_session_auth",
     "require_admin", "require_admin_o_servicio", "require_role", "require_staff",
 ]
 

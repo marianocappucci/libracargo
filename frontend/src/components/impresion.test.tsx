@@ -39,6 +39,27 @@ describe('traerTodo', () => {
     expect(todas.length).toBe(TOPE)
     expect(truncado).toBe(true)
   })
+
+  it('🔴 el tamaño de tanda es el tope REAL del endpoint, no siempre mil', async () => {
+    // El endpoint del log devuelve como mucho 500. Pidiéndole 500 pero
+    // comparando contra 1.000, la PRIMERA tanda ya parece corta y la vuelta
+    // corta ahi -- con `truncado: false`, o sea diciendo que trajo todo. Sobre
+    // los 15.884 registros de Suitrans eso imprimía 500 sin una sola marca.
+    const pagina = vi.fn(async (d: number, limite: number) =>
+      d < 1000 ? filas(d, limite) : filas(1000, 42))
+    const { filas: todas, truncado } = await traerTodo(pagina, 500)
+    expect(todas.length).toBe(1042)
+    expect(truncado).toBe(false)
+    expect(pagina).toHaveBeenCalledTimes(3)
+    expect(pagina.mock.calls.map((c) => c[1])).toEqual([500, 500, 500])
+
+    // El control: con el default habría cortado en la primera tanda de 500 y
+    // habría devuelto 500 filas diciendo que no falta nada.
+    const otra = vi.fn(async (d: number) => (d < 1000 ? filas(d, 500) : filas(1000, 42)))
+    const conElDefault = await traerTodo(otra)
+    expect(conElDefault.filas.length).toBe(500)
+    expect(conElDefault.truncado).toBe(false)
+  })
 })
 
 describe('BotonImprimir', () => {

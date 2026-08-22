@@ -4,6 +4,34 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ## [Unreleased]
 
+### Cambiado
+
+- **Los listados se imprimen desde Reportes, y ahí hay que elegir fechas.** Se
+  fue el botón **Imprimir** de arriba a la derecha de Órdenes, Comprobantes,
+  Comprobantes de proveedores, Caja y el Log de actividad: apretarlo con la
+  pantalla recién abierta mandaba al papel la tabla entera —las 4.337 órdenes
+  son unas noventa hojas, y el log de Suitrans arranca con 15.884 registros—.
+  - Reportes tiene ahora una sección **Listados para imprimir** con los cinco.
+    Cada uno pide **desde** y **hasta**: sin las dos fechas no corre, y no hay
+    botón que apretar. Ver ADR-023.
+  - Traen los mismos filtros, las mismas columnas y los mismos totales que
+    imprimía cada pantalla; el de caja además se puede acotar por medio de pago.
+  - **El log sigue siendo sólo para administradores**: cambió de lugar, no de
+    permiso.
+  - Lo que **no** se movió: imprimir **una** orden —el ícono de la fila y el
+    botón del detalle— y **una** cuenta corriente. Son una hoja, no un listado.
+  - El Log de actividad, de paso, se queda sólo con su título: la línea que
+    explicaba los registros migrados se sacó de la pantalla.
+
+### Arreglado
+
+- **La hoja del log imprimía 500 registros y decía que estaba completa.** El
+  endpoint devuelve como mucho 500 por pedido y la impresión comparaba contra
+  1.000, así que la primera tanda parecía la última y el aviso de "corta en el
+  tope" nunca salía.
+- **La hoja de caja pedía una sola tanda** y lo que no entraba se perdía sin
+  avisar. `GET /api/caja` era el único listado sin paginación; ahora la tiene.
+
 ### Agregado
 
 - **Editar y anular movimientos de caja**, lo último que faltaba del bloque
