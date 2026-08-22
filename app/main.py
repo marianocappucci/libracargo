@@ -21,6 +21,7 @@ from libraauth.session_auth import (
     demo_username,
 )
 from libraauth.smtp_settings import SmtpSettingsRepository, resolver_smtp_config
+from libraauth.terminos import TerminosRepository, build_terminos_router
 from libracore.config_router import build_backup_router
 from libracore.geografia import build_geo_router
 from libracore.respaldo import Instancia
@@ -156,7 +157,17 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     # `usuarios`. Con el factory del engine de auth de otro producto, la tabla
     # se crearía en el lugar equivocado.
     app.state.smtp_settings = SmtpSettingsRepository(db.fabrica_de_sesiones())
+    # Terminos y Condiciones del Servicio: la prueba de la aceptacion y lo que
+    # enciende el gate. MISMA fabrica de sesiones que el SMTP y los usuarios --
+    # la tabla tiene FK a `usuarios`, que no siempre vive en la base del dominio.
+    #
+    # 🔴 Sin esta linea el gate NO corta y la instancia no falla: se queda sin
+    # gate, en silencio. Por eso cada producto tiene un test que lo prueba.
+    app.state.terminos = TerminosRepository(db.fabrica_de_sesiones())
     app.include_router(build_smtp_settings_router())
+    # `GET /terminos`, `POST /terminos/aceptar`, `GET /terminos/historial`.
+    # NO se gatea desde afuera: es el unico camino para salir del gate.
+    app.include_router(build_terminos_router())
     app.state.password_reset = PasswordResetService(
         db.fabrica_de_sesiones(),
         product_name="LibraCargo",

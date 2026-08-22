@@ -80,5 +80,8 @@ extend-immutable-calls = [
 ]
 
 [tool.pytest.ini_options]
+markers = [
+    "sin_aceptar_terminos: deja al test afuera de la excepcion autouse del conftest, para medir el gate de Terminos con el corte puesto de verdad",
+]
 testpaths = ["tests"]
 addopts = "-q"
