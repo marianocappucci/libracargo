@@ -5,9 +5,17 @@
  * cargan una vez y después se los toca poco. Como siete ítems de menú tenían el
  * mismo peso que las pantallas de todos los días.
  *
- * Las pestañas no son componentes de Radix: son botones. El paquete `tabs` de
- * shadcn no está instalado en este producto, y traerlo para dibujar siete
- * botones sería agregar una dependencia por una lista.
+ * ## 2026-08-22 — las pestañas son las de shadcn, iguales a las de Contalibra
+ *
+ * Hasta hoy eran botones a mano con un subrayado, y el motivo escrito acá era
+ * *"el paquete `tabs` de shadcn no está instalado en este producto, y traerlo
+ * para dibujar siete botones sería agregar una dependencia por una lista"*.
+ *
+ * Venció por los dos lados. El humano pidió que las pestañas se vean como las
+ * de Contalibra —que son este primitivo— y además el paquete **hay que
+ * instalarlo igual**: desde `libra-ui` v0.35.0, el módulo `Configuracion` del
+ * kit importa `@/components/ui/tabs`, y este archivo consume `DatosBackupCard`
+ * de ahí. Sin vendorizarlo, el build no compila.
  */
 import { DatosBackupCard } from 'libra-ui/Configuracion'
 import {
@@ -22,7 +30,7 @@ import { DatosDeLaEmpresa } from '@/pages/DatosDeLaEmpresa'
 import {
   Choferes, Localidades, RazonesSociales, Terceros, TiposCarga, Vehiculos,
 } from '@/pages/maestros'
-import { cn } from '@/lib/utils'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 const PESTANAS = [
@@ -65,21 +73,19 @@ export default function Configuracion() {
     <div className="p-6">
       <TituloPantalla icono={Settings} className="mb-4">Configuración</TituloPantalla>
 
-      <div className="no-imprimir mb-6 flex flex-wrap gap-1 border-b">
-        {PESTANAS.map(({ id, label, icon: Icono }) => (
-          <button
-            key={id} type="button" onClick={() => elegir(id)}
-            aria-current={activa === id ? 'page' : undefined}
-            className={cn(
-              'flex items-center gap-2 rounded-t-md border-b-2 px-3 py-2 text-sm transition-colors',
-              activa === id
-                ? 'border-primary font-medium'
-                : 'text-muted-foreground hover:text-foreground border-transparent',
-            )}
-          >
-            <Icono className="size-4" /> {label}
-          </button>
-        ))}
+      {/* La barra separada del contenido por una línea, igual que la
+          Configuración de Contalibra. `value` y no `defaultValue`: la pestaña
+          activa la manda `?seccion=`, así que el conmutador es controlado —
+          con `defaultValue` entrar por un link a otra sección pintaría la
+          primera y mostraría el contenido de otra. */}
+      <div className="no-imprimir mb-6 border-b pb-2">
+        <Tabs value={activa} onValueChange={elegir}>
+          <TabsList>
+            {PESTANAS.map(({ id, label, icon: Icono }) => (
+              <TabsTrigger key={id} value={id}><Icono />{label}</TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
 
       {/* Cada pestaña trae su propia pantalla, con su tabla y su alta. No se
