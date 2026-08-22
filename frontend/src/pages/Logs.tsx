@@ -34,14 +34,19 @@
  * decirlo. Ver ADR-023.
  */
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronLeft, ChevronRight, Inbox, ScrollText } from 'lucide-react'
+import {
+  BookText, ChevronDown, ChevronLeft, ChevronRight, Inbox, LogIn, LogOut, ScrollText,
+  Shield, ShieldAlert,
+} from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import type { FiltrosDeLog, Registro } from '@/api/auditoria'
+import type { Acceso } from '@/api/auditoria'
 import { auditoria } from '@/api/auditoria'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { destinoDelLog } from '@/navegacion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -64,6 +69,19 @@ const ACCIONES: { id: string; label: string; color: string }[] = [
   { id: 'modificacion', label: 'Modificación', color: '#0d6efd' },
   { id: 'baja', label: 'Baja', color: '#dc3545' },
 ]
+
+/** Los mismos rótulos y los mismos tonos que la pantalla compartida de
+ *  `libra-ui`: el evento es una etiqueta, y en una lista sin columnas un icono
+ *  suelto se pierde entre el usuario y la IP. */
+const EVENTO_META: Record<string, { label: string; icon: typeof LogIn; className: string }> = {
+  login: { label: 'Ingreso', icon: LogIn, className: 'bg-emerald-600 text-white hover:bg-emerald-600' },
+  logout: { label: 'Salida', icon: LogOut, className: 'bg-muted-foreground text-white hover:bg-muted-foreground' },
+  login_fallido: { label: 'Intento fallido', icon: ShieldAlert, className: 'bg-destructive text-white hover:bg-destructive' },
+  //  Este no lo tiene la pantalla del motor porque allá no llega: es el
+  //  intento rechazado por el rate limiting, sin llegar a chequear la clave.
+  //  Es la firma de un ataque, así que se distingue del fallido común.
+  login_bloqueado: { label: 'Bloqueado', icon: ShieldAlert, className: 'bg-destructive text-white hover:bg-destructive' },
+}
 
 const FORMA_TS = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2}:\d{2})/
 
@@ -205,6 +223,22 @@ export default function Logs() {
       <div className="mb-4">
         <TituloPantalla icono={ScrollText}>Log de actividad</TituloPantalla>
       </div>
+
+      {/* Las dos mitades, en dos pestañas, igual que en los otros cinco
+          productos. Son dos preguntas distintas —"quién tocó esto" / "quién
+          entró"— que se miran en momentos distintos; apiladas, para llegar a
+          los accesos habría que pasar de largo 50 filas de actividad. */}
+      <Tabs defaultValue="actividad" className="gap-4">
+        <TabsList className="no-imprimir mb-4">
+          <TabsTrigger value="actividad">
+            <BookText className="size-4" />Actividad del sistema
+          </TabsTrigger>
+          <TabsTrigger value="accesos">
+            <Shield className="size-4" />Accesos de usuarios
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="actividad">
 
       <Card className="no-imprimir mb-4">
         <CardContent className="grid gap-4">
@@ -399,6 +433,74 @@ export default function Logs() {
           )}
         </CardContent>
       </Card>
+
+        </TabsContent>
+
+        <TabsContent value="accesos">
+          <Accesos />
+        </TabsContent>
+      </Tabs>
     </div>
+  )
+}
+
+/** Quién entró, quién salió y quién lo intentó sin lograrlo.
+ *
+ *  🔴 **Esta mitad no existía en este producto.** El registro lo hace
+ *  `libraauth`, pero es opt-in: sin `app.state.auth_events` no se anota nada
+ *  *y además* se apaga el rate limiting del login. Se cableó el 2026-08-22,
+ *  después de medir que `auth_log` tenía cero filas en las tres instancias.
+ *
+ *  Una lista y no una tabla: son cuatro datos por renglón, y encabezados de
+ *  columna para eso es andamiaje de más. Es la misma decisión que tomó la
+ *  pantalla compartida de `libra-ui`, y por eso se ve igual.
+ */
+function Accesos() {
+  const [eventos, setEventos] = useState<Acceso[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    auditoria.accesos().then(setEventos).catch((e) => setError(mensajeDeError(e)))
+  }, [])
+
+  if (error) {
+    return <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{error}</p>
+  }
+  return (
+    <Card>
+      {/* Sin título: lo dice la pestaña. Lo que no dice la pestaña es hasta
+          dónde llega la lista, y eso sí va. */}
+      <CardHeader className="flex items-center justify-end space-y-0">
+        <span className="text-xs text-muted-foreground">Últimos 100 eventos</span>
+      </CardHeader>
+      <CardContent className="p-0">
+        {eventos === null ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">Cargando…</p>
+        ) : eventos.length === 0 ? (
+          <SinDatos>Todavía no hay accesos registrados.</SinDatos>
+        ) : (
+          <ul className="divide-y">
+            {eventos.map((e) => {
+              const meta = EVENTO_META[e.evento]
+              const Icono = meta?.icon ?? Shield
+              const { fecha, hora } = partirTs(e.ts)
+              return (
+                <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
+                  <div className="flex items-center gap-3">
+                    <Badge className={`gap-1 ${meta?.className ?? ''}`}>
+                      <Icono className="size-3.5" />{meta?.label ?? e.evento}
+                    </Badge>
+                    <span className="font-medium">{e.username}</span>
+                  </div>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {e.ip || '—'} · {hora === '—' ? fecha : `${fecha} ${hora}`}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   )
 }
