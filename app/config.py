@@ -15,7 +15,7 @@ class Config:
     #: los ZIP de backup. **Tiene que ser un volumen**, no una carpeta del
     #: árbol de código — en `dev` ese árbol es un bind mount del checkout del
     #: servidor, y un `git pull` con archivos nuevos adentro es un problema.
-    directorio_de_datos: str = "./datos"
+    directorio_de_datos: str = "./data"
 
     @classmethod
     def desde_entorno(cls) -> Config:
@@ -34,5 +34,5 @@ class Config:
             database_url=url,
             entorno=os.environ.get("ENTORNO", "dev"),
             debug=os.environ.get("DEBUG", "").lower() in {"1", "true", "si"},
-            directorio_de_datos=os.environ.get("DATA_DIR", "./datos"),
+            directorio_de_datos=os.environ.get("DATA_DIR", "./data"),
         )
