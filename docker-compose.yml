@@ -61,7 +61,7 @@ services:
       # arriba: ese árbol es el checkout de git del servidor, y dejarle
       # archivos nuevos adentro le complica el `git pull` del próximo deploy.
       # Va después del bind mount a propósito — el montaje más específico gana.
-      - libracargo-datos:/app/datos
+      - libracargo-datos:/app/data
     command: uvicorn app.asgi:app --host 0.0.0.0 --port 8000 --reload
     environment:
       # Las tres sin default: la app tiene que fallar al arrancar si falta
@@ -78,9 +78,9 @@ services:
       # que no ponerlo no abre nada; lo que abriria algo seria ponerle un valor
       # adivinable, y por eso no hay uno de ejemplo.
       - LIBRA_SERVICE_TOKEN=${LIBRA_SERVICE_TOKEN:-}
-      # Dónde escribe los backups. Sin esto caen en `./datos` relativo al
+      # Dónde escribe los backups. Sin esto caen en `./data` relativo al
       # directorio de trabajo, o sea adentro del bind mount.
-      - DATA_DIR=/app/datos
+      - DATA_DIR=/app/data
       - TZ=America/Argentina/Buenos_Aires
     networks: [stack-net, datos]
 
