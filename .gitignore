@@ -1,6 +1,9 @@
 __pycache__/
 *.py[cod]
 .venv/
+# El venv del host desde el que se corre `scripts/panel_admin.py` en el VPS.
+# Vive dentro del checkout y no se versiona, igual que en los otros seis.
+.venv-scripts/
 .env
 .env.*
 !.env.example
@@ -8,6 +11,7 @@ node_modules/
 frontend/dist/
 .pytest_cache/
 .ruff_cache/
+data/
 .coverage
 htmlcov/
 .claude/
