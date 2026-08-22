@@ -16,11 +16,20 @@ const CATALOGO = [
     slug: 'por-cliente', titulo: 'Clientes',
     descripcion: 'Ranking de clientes por lo facturado.',
     parametros: ['rango', 'cliente', 'limite'],
+    detalle: false, solo_admin: false,
   },
   {
     slug: 'caja', titulo: 'Caja',
     descripcion: 'Ingresos y egresos del período.',
     parametros: ['rango', 'tercero', 'medio_pago', 'tipo_caja'],
+    detalle: false, solo_admin: false,
+  },
+  // Un listado: filas de detalle, y el rango obligatorio.
+  {
+    slug: 'listado-ordenes', titulo: 'Listado de órdenes',
+    descripcion: 'Las órdenes del período, una por línea.',
+    parametros: ['rango', 'cliente', 'fletero'],
+    detalle: true, solo_admin: false,
   },
 ]
 
@@ -53,7 +62,9 @@ describe('catálogo de reportes', () => {
     await waitFor(() => expect(screen.getByText('Clientes')).toBeInTheDocument())
     expect(screen.getByText('Ranking de clientes por lo facturado.')).toBeInTheDocument()
     // Los parámetros se muestran con nombre de persona, no con el del backend.
-    expect(screen.getByText(/fechas, cliente/)).toBeInTheDocument()
+    // La lista completa y no un pedazo: hay más de un reporte que empieza con
+    // "fechas, cliente" y un regex parcial matchearía los dos.
+    expect(screen.getByText(/fechas, cliente, cuántas filas/)).toBeInTheDocument()
   })
 })
 
@@ -105,5 +116,63 @@ describe('Reporte', () => {
     abrir('caja')
     await waitFor(() =>
       expect(screen.getByText('Ingresos y egresos del período.')).toBeInTheDocument())
+  })
+})
+
+describe('los listados: el rango es obligatorio', () => {
+  beforeEach(() => get.mockReset())
+
+  it('🔑 sin desde y hasta no corre, y no hay botón de imprimir', async () => {
+    // Es el cambio entero: antes esto era un botón arriba a la derecha de la
+    // pantalla de órdenes, y apretarlo con la pantalla recién abierta mandaba
+    // las 4.337 órdenes al papel.
+    responder([{ fecha: '2026-07-05', tarifa: '1000.00' }])
+    abrir('listado-ordenes')
+    await waitFor(() => expect(screen.getByLabelText('Desde')).toBeInTheDocument())
+    expect(screen.getByText(/Elegí un/)).toBeInTheDocument()
+    expect(screen.queryByText('Imprimir')).toBeNull()
+    // Y no se pidió el reporte: la guarda no es cosmética.
+    expect(get.mock.calls.some(
+      (l) => String(l[0] ?? '').includes('/api/reportes/listado-ordenes'))).toBe(false)
+  })
+
+  it('con las dos fechas corre y aparece el botón', async () => {
+    // El control positivo del test de arriba: si el botón nunca apareciera, el
+    // "queryByText(Imprimir) === null" pasaría igual con la guarda rota.
+    responder([{ fecha: '2026-07-05', tarifa: '1000.00' }])
+    abrir('listado-ordenes')
+    fireEvent.change(await screen.findByLabelText('Desde'),
+                     { target: { value: '2026-07-01' } })
+    fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: '2026-07-31' } })
+
+    await waitFor(() => expect(screen.getByText('Imprimir')).toBeInTheDocument())
+    expect(get.mock.calls.some((l) => {
+      const ruta = String(l[0] ?? '')
+      return ruta.includes('/api/reportes/listado-ordenes')
+        && ruta.includes('desde=2026-07-01') && ruta.includes('hasta=2026-07-31')
+    })).toBe(true)
+  })
+
+  it('un reporte agregado NO exige rango: corre con la pantalla vacía', async () => {
+    // El control cruzado: si la guarda se aplicara a todos, los siete reportes
+    // de siempre dejarían de correr al abrirlos.
+    responder([])
+    abrir('por-cliente')
+    await waitFor(() => expect(get.mock.calls.some(
+      (l) => String(l[0] ?? '').includes('/api/reportes/por-cliente'))).toBe(true))
+    expect(screen.queryByText(/Elegí un/)).toBeNull()
+  })
+})
+
+describe('el índice separa los listados de los reportes', () => {
+  beforeEach(() => get.mockReset())
+
+  it('los listados van en su propia sección, y dice que piden fechas', async () => {
+    responder()
+    render(<MemoryRouter><ReportesIndice /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('Clientes')).toBeInTheDocument())
+    expect(screen.getByText('Listados para imprimir')).toBeInTheDocument()
+    expect(screen.getByText('Listado de órdenes')).toBeInTheDocument()
+    expect(screen.getByText(/sin fechas es la tabla entera/)).toBeInTheDocument()
   })
 })

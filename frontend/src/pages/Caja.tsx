@@ -12,9 +12,6 @@ import { cargarOpciones } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { irA } from '@/navegacion'
 import { Elegir } from '@/components/Elegir'
-import type { Columna } from '@/components/impresion'
-import { BotonImprimir, traerTodo } from '@/components/impresion'
-import { sumarImportes } from '@/api/comprobantes'
 import { hoyEnArgentina, formatearImporte } from '@/components/esquema-orden'
 import { BadgeEstado } from 'libra-ui/badge-estado'
 import { Button } from '@/components/ui/button'
@@ -162,17 +159,6 @@ export default function Caja() {
     }
   }
 
-  const COLUMNAS_IMPRESAS: Columna<MovimientoCaja>[] = [
-    { encabezado: 'Fecha', valor: (m) => m.fecha },
-    { encabezado: 'Tipo', valor: (m) => m.tipo },
-    { encabezado: 'Concepto', valor: (m) => m.concepto },
-    { encabezado: 'Tercero',
-      valor: (m) => terceros.find((t) => t.id === m.tercero_id)?.etiqueta ?? '' },
-    { encabezado: 'Medio', valor: (m) => m.medio_pago },
-    { encabezado: 'Recibo', valor: (m) => m.recibo },
-    { encabezado: 'Importe', valor: (m) => m.importe, numerica: true, moneda: true },
-  ]
-
   // 🔴 **Los anchos son obligatorios acá, no cosmética.** El `DataTable` pasa a
   // `table-fixed` en cuanto **alguna** columna declara `size`, y entonces le
   // pone a la tabla un `minWidth` igual a la suma de los anchos. Las columnas
@@ -232,25 +218,12 @@ export default function Caja() {
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
         <TituloPantalla icono={Wallet}>Caja</TituloPantalla>
-        <div className="flex gap-2">
-          <BotonImprimir
-            titulo="Movimientos de caja"
-            filtros={[desde && `desde ${desde}`, hasta && `hasta ${hasta}`,
-                      tipo && `tipo ${tipo}`].filter(Boolean).join(' · ') || 'sin filtros'}
-            columnas={COLUMNAS_IMPRESAS}
-            traer={() => traerTodo(async (desplazamiento, limite) =>
-              desplazamiento > 0 ? [] : caja.listar({ desde, hasta, tipo, limite }))}
-            totales={(f) => [
-              { etiqueta: 'Ingresos',
-                valor: sumarImportes(f.filter((m) => m.tipo === 'ingreso').map((m) => m.importe)) },
-              { etiqueta: 'Egresos',
-                valor: sumarImportes(f.filter((m) => m.tipo === 'egreso').map((m) => m.importe)) },
-            ]}
-          />
-          <Button onClick={() => abrir(null)}>
-            <Plus className="size-4" /> Nuevo movimiento
-          </Button>
-        </div>
+        {/* El listado se imprime desde reportes (`listado-caja`), que exige
+            rango. Y de paso deja de estar el truco de `desplazamiento > 0 ? []`:
+            aca la hoja pedia UNA tanda y lo que no entraba se perdia callado. */}
+        <Button onClick={() => abrir(null)}>
+          <Plus className="size-4" /> Nuevo movimiento
+        </Button>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">

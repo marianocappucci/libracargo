@@ -24,8 +24,6 @@ import { cargarOpciones } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { Elegir } from '@/components/Elegir'
 import { formatearImporte } from '@/components/esquema-orden'
-import type { Columna } from '@/components/impresion'
-import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { irA } from '@/navegacion'
 import { BadgeEstado } from 'libra-ui/badge-estado'
 import { Button } from '@/components/ui/button'
@@ -140,16 +138,6 @@ export default function Gastos() {
     }
   }
 
-  const COLUMNAS_IMPRESAS: Columna<Gasto>[] = [
-    { encabezado: 'Fecha', valor: (g) => g.fecha },
-    { encabezado: 'Proveedor', valor: (g) => nombre(opciones?.proveedores, g.proveedor_id) },
-    { encabezado: 'Fletero', valor: (g) => nombre(opciones?.fleteros, g.fletero_id) },
-    { encabezado: 'Comprobante', valor: (g) => g.comprobante },
-    { encabezado: 'Detalle', valor: (g) => g.descripcion },
-    { encabezado: 'Importe', valor: (g) => g.importe, numerica: true, moneda: true },
-    { encabezado: 'Estado', valor: (g) => (g.anulado ? 'anulado' : 'vigente') },
-  ]
-
   const columnas = [
     { id: 'fecha', header: sortableHeader('Fecha'), accessorFn: (g: Gasto) => g.fecha, size: 110 },
     { id: 'proveedor', header: 'Proveedor', size: 175,
@@ -198,13 +186,10 @@ export default function Gastos() {
             Lo que el proveedor entrega y se le descuenta al fletero.
           </p>
         </div>
+        {/* El listado se imprime desde reportes (`listado-gastos`), que exige
+            rango. Este boton ni siquiera escribia los filtros en el encabezado
+            de la hoja: dos papeles distintos salian identicos. */}
         <div className="no-imprimir flex gap-2">
-          {/* No se imprime la pantalla: se pide de nuevo, con los mismos
-              filtros y paginando. La grilla muestra una pagina y quien manda a
-              imprimir espera el listado entero. */}
-          <BotonImprimir titulo="Comprobantes de proveedores" columnas={COLUMNAS_IMPRESAS}
-                         traer={() => traerTodo(async (desplazamiento, limite) =>
-                           api.listar({ ...filtros, desplazamiento, limite }))} />
           <Button onClick={() => abrir(null)}>
             <Plus className="size-4" /> Nuevo comprobante
           </Button>

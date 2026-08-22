@@ -10,12 +10,19 @@ export type Reporte = {
   titulo: string
   descripcion: string
   parametros: Parametro[]
+  /** Devuelve **filas de detalle**, no agregados: es un listado para imprimir.
+   *  Los de detalle **no corren sin rango** — el endpoint contesta 422 y la
+   *  pantalla ni lo pide. Antes cada listado tenía su propio botón de imprimir
+   *  arriba a la derecha y nada obligaba a poner fechas: salían noventa hojas. */
+  detalle: boolean
+  /** Sólo lo ve un administrador. El log de actividad es el único. */
+  solo_admin: boolean
 }
 
 export type Parametro =
-  | 'rango' | 'cliente' | 'fletero' | 'tercero' | 'razon_social'
+  | 'rango' | 'cliente' | 'fletero' | 'proveedor' | 'tercero' | 'razon_social'
   | 'origen' | 'destino' | 'medio_pago' | 'tipo_caja' | 'rol'
-  | 'incluir_en_cero' | 'limite'
+  | 'incluir_en_cero' | 'limite' | 'entidad' | 'usuario' | 'accion'
 
 /** Los importes viajan como STRING: son `NUMERIC` en la base y `Decimal` en
  *  Python. Pasarlos por `number` los mete en un float binario. */

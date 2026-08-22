@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user, require_staff
 from app.db import obtener_sesion
 from app.models.cuentas import MovimientoCaja
-from app.models.enums import AccionAuditoria, RolCuenta, TipoMovimientoCaja
+from app.models.enums import AccionAuditoria, MedioPago, RolCuenta, TipoMovimientoCaja
 from app.routers.maestros import traducir_integridad
 from app.schemas.cuentas import (
     FilaDeCuenta,
@@ -60,8 +60,13 @@ def listar_caja(
     desde: date | None = None,
     hasta: date | None = None,
     tercero_id: int | None = None,
+    medio_pago: MedioPago | None = None,
     tipo: TipoMovimientoCaja | None = None,
     limite: int = Query(default=200, ge=1, le=1000),
+    # Paginación como en órdenes, comprobantes y gastos. Faltaba, y el listado
+    # impreso de caja no tenía cómo pedir la segunda tanda: pedía `limite` y lo
+    # que no entraba se perdía sin decirlo.
+    desplazamiento: int = Query(default=0, ge=0),
 ):
     consulta = select(MovimientoCaja)
     if desde is not None:
@@ -70,11 +75,13 @@ def listar_caja(
         consulta = consulta.where(MovimientoCaja.fecha <= hasta)
     if tercero_id is not None:
         consulta = consulta.where(MovimientoCaja.tercero_id == tercero_id)
+    if medio_pago is not None:
+        consulta = consulta.where(MovimientoCaja.medio_pago == medio_pago)
     if tipo is not None:
         consulta = consulta.where(MovimientoCaja.tipo == tipo)
     consulta = consulta.order_by(
         MovimientoCaja.fecha.desc(), MovimientoCaja.id.desc()
-    ).limit(limite)
+    ).limit(limite).offset(desplazamiento)
     return list(sesion.scalars(consulta))
 
 
