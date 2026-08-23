@@ -17,6 +17,7 @@ import { arca } from '@/api/arca'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { formatearFecha } from '@/components/esquema-orden'
 
 /** Cuántos días antes de vencer se empieza a avisar. Un certificado de ARCA
  *  dura dos años: con un mes hay tiempo de sobra para renovarlo, y menos que
@@ -24,9 +25,7 @@ import { Label } from '@/components/ui/label'
 const DIAS_DE_AVISO = 30
 
 function fechaCorta(iso: string | null): string {
-  if (!iso) return '—'
-  const [a, m, d] = iso.slice(0, 10).split('-')
-  return `${d}-${m}-${a}`
+  return iso ? formatearFecha(iso) : '—'
 }
 
 function SubirArchivo({ etiqueta, nombre, alElegir, deshabilitado }: {

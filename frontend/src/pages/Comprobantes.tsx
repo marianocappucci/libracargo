@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { irA } from '@/navegacion'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
+import { formatearFecha } from '@/components/esquema-orden'
 
 function Campo({ id, etiqueta, valor, alCambiar, tipo = 'text' }: {
   id: string; etiqueta: string; valor: string
@@ -286,7 +287,7 @@ export default function Comprobantes() {
               <ul className="divide-y rounded border">
                 {detalle.ordenes.map((o) => (
                   <li key={o.id} className="flex items-center gap-3 p-2">
-                    <span className="flex-1">#{o.id} · {o.fecha} · remito {o.remito || 's/n'}</span>
+                    <span className="flex-1">#{o.id} · {formatearFecha(o.fecha)} · remito {o.remito || 's/n'}</span>
                     <span className="tabular-nums">{o.total}</span>
                   </li>
                 ))}

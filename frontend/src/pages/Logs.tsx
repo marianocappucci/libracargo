@@ -55,6 +55,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
+import { formatearFecha } from '@/components/esquema-orden'
 
 const POR_PAGINA = 50
 
@@ -363,7 +364,7 @@ export default function Logs() {
                     <Fragment key={g.fecha}>
                       <tr className="bg-muted/50">
                         <td colSpan={5} className="px-3 py-1.5">
-                          <span className="text-xs font-semibold text-muted-foreground">{g.fecha}</span>
+                          <span className="text-xs font-semibold text-muted-foreground">{formatearFecha(g.fecha)}</span>
                         </td>
                       </tr>
                       {g.filas.map((r) => {

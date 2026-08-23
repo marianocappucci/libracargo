@@ -24,6 +24,7 @@ import { irA } from '@/navegacion'
 import { hoyEnArgentina, formatearImporte } from '@/components/esquema-orden'
 import { sumarImportes } from '@/api/comprobantes'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
+import { formatearFecha } from '@/components/esquema-orden'
 
 /** El primer día del mes en curso, en hora de Argentina. */
 function primerDiaDelMes(): string {
@@ -136,7 +137,8 @@ export default function Inicio() {
         </div>
         <DataTable
           columns={[
-            { id: 'fecha', header: 'Fecha', accessorFn: (o: Orden) => o.fecha },
+            { id: 'fecha', header: 'Fecha', accessorFn: (o: Orden) => o.fecha,
+              cell: ({ row }: { row: { original: Orden } }) => formatearFecha(row.original.fecha) },
             { id: 'cliente', header: 'Cliente',
               accessorFn: (o: Orden) => nombre(opciones?.clientes, o.cliente_id) },
             { id: 'ruta', header: 'Ruta',
