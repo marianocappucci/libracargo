@@ -34,6 +34,7 @@ import { BotonImprimir, traerTodo } from '@/components/impresion'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
+import { formatearFecha, formatearFechaHoraDeTexto } from '@/components/esquema-orden'
 
 type Fila = Record<string, string | number | null>
 
@@ -119,7 +120,7 @@ function columnasDe(slug: string, o: Opciones | null): Columna<Fila>[] {
     // mudara acá. Los anulados salen, marcados: un número que falta en la
     // secuencia impresa no tiene explicación en el papel.
     'listado-ordenes': [
-      { encabezado: 'Fecha', valor: (f) => f.fecha },
+      { encabezado: 'Fecha', valor: (f) => formatearFecha(String(f.fecha ?? '')) },
       { encabezado: 'Cliente', valor: (f) => nombre(o?.clientes, f.cliente_id) },
       { encabezado: 'Origen', valor: (f) => nombre(o?.localidades, f.origen_id) },
       { encabezado: 'Destino', valor: (f) => nombre(o?.localidades, f.destino_id) },
@@ -131,7 +132,7 @@ function columnasDe(slug: string, o: Opciones | null): Columna<Fila>[] {
       { encabezado: 'Comisión', valor: (f) => f.comision, numerica: true, moneda: true },
     ],
     'listado-comprobantes': [
-      { encabezado: 'Fecha', valor: (f) => f.fecha },
+      { encabezado: 'Fecha', valor: (f) => formatearFecha(String(f.fecha ?? '')) },
       { encabezado: 'Comprobante',
         valor: (f) => {
           const c = f as unknown as Comprobante
@@ -145,7 +146,7 @@ function columnasDe(slug: string, o: Opciones | null): Columna<Fila>[] {
       { encabezado: 'Total', valor: (f) => f.total, numerica: true, moneda: true },
     ],
     'listado-gastos': [
-      { encabezado: 'Fecha', valor: (f) => f.fecha },
+      { encabezado: 'Fecha', valor: (f) => formatearFecha(String(f.fecha ?? '')) },
       { encabezado: 'Proveedor', valor: (f) => nombre(o?.proveedores, f.proveedor_id) },
       { encabezado: 'Fletero', valor: (f) => nombre(o?.fleteros, f.fletero_id) },
       { encabezado: 'Comprobante', valor: (f) => f.comprobante },
@@ -154,7 +155,7 @@ function columnasDe(slug: string, o: Opciones | null): Columna<Fila>[] {
       { encabezado: 'Estado', valor: (f) => (f.anulado ? 'anulado' : 'vigente') },
     ],
     'listado-caja': [
-      { encabezado: 'Fecha', valor: (f) => f.fecha },
+      { encabezado: 'Fecha', valor: (f) => formatearFecha(String(f.fecha ?? '')) },
       { encabezado: 'Tipo', valor: (f) => f.tipo },
       { encabezado: 'Concepto', valor: (f) => f.concepto },
       // Todos los terceros y no clientes + fleteros: un pago a proveedor salía
@@ -166,7 +167,7 @@ function columnasDe(slug: string, o: Opciones | null): Columna<Fila>[] {
       { encabezado: 'Estado', valor: (f) => (f.anulado ? 'anulado' : 'vigente') },
     ],
     'listado-logs': [
-      { encabezado: 'Cuándo', valor: (f) => String(f.ts ?? '').replace('T', ' ').slice(0, 16) },
+      { encabezado: 'Cuándo', valor: (f) => formatearFechaHoraDeTexto(String(f.ts ?? '')) },
       { encabezado: 'Usuario', valor: (f) => f.usuario_nombre ?? '' },
       { encabezado: 'Acción', valor: (f) => f.accion },
       { encabezado: 'Entidad', valor: (f) => f.entidad },

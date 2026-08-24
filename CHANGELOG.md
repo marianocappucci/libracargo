@@ -4,6 +4,23 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ## [Unreleased]
 
+### Agregado
+
+- **Emitir por ARCA y traer el CAE.** La razón social que tiene ARCA habilitado
+  ya no registra el comprobante con un número tipeado a mano: el número lo pide
+  ARCA (`FECompUltimoAutorizado + 1`), el punto de venta sale de la razón social
+  y el comprobante nace con su CAE y su vencimiento. Ver ADR-024.
+  - ⚠️ **La razón social que todavía no cargó su certificado sigue igual que
+    antes**, con el número a mano. No hay que hacer nada para que siga
+    andando — y en cuanto se carga el par y se habilita, esa razón social pasa a
+    emitir.
+  - 🔴 **Si ARCA rechaza, no queda comprobante**: las órdenes vuelven a
+    pendientes y no se toma el número. Un comprobante con un número que ARCA no
+    autorizó dejaría el correlativo tomado de este lado y libre del otro.
+  - La migración `0010` agrega tres columnas nullable y **no toca ninguna
+    fila**: los comprobantes que vinieron del legado no tienen CAE y nunca lo
+    van a tener.
+
 ### Cambiado
 
 - **Los listados se imprimen desde Reportes, y ahí hay que elegir fechas.** Se

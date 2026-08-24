@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { origenDelMovimiento } from '@/navegacion'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
+import { formatearFecha } from '@/components/esquema-orden'
 
 const ROLES: { valor: Rol; etiqueta: string }[] = [
   { valor: 'cliente', etiqueta: 'Cliente' },
@@ -94,7 +95,7 @@ export default function CuentaCorriente() {
   }[rol]
 
   const COLUMNAS_IMPRESAS: Columna<FilaDeCuenta>[] = [
-    { encabezado: 'Fecha', valor: (f) => f.movimiento.fecha },
+    { encabezado: 'Fecha', valor: (f) => formatearFecha(f.movimiento.fecha) },
     { encabezado: 'Concepto', valor: (f) => f.movimiento.concepto },
     { encabezado: 'Detalle', valor: (f) => f.movimiento.descripcion },
     { encabezado: 'Debe', valor: (f) => f.movimiento.debe, numerica: true, moneda: true },
@@ -104,7 +105,9 @@ export default function CuentaCorriente() {
 
   const columnas = [
     { accessorKey: 'movimiento.fecha', header: 'Fecha',
-      accessorFn: (f: FilaDeCuenta) => f.movimiento.fecha },
+      accessorFn: (f: FilaDeCuenta) => f.movimiento.fecha,
+      cell: ({ row }: { row: { original: FilaDeCuenta } }) =>
+        formatearFecha(row.original.movimiento.fecha) },
     { id: 'concepto', header: 'Concepto',
       accessorFn: (f: FilaDeCuenta) => f.movimiento.concepto },
     { id: 'descripcion', header: 'Detalle',

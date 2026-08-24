@@ -437,6 +437,10 @@ esté entre ellas.
   ya existe en LibraCore (`arca_wsaa` + `arca_wsfe`); lo que **no** se puede
   reusar es `arca_facturacion`, que está atado al esquema de `facturas` y
   `arca_config` de LibraCore y este producto tiene el suyo.
+  > ⚠️ **Este último punto quedó superado el 2026-08-24 por el ADR-024**, que
+  > implementa la emisión. Lo de arriba se conserva como estaba —es lo que se
+  > decidió entonces y por qué— pero **ya no describe el comportamiento
+  > vigente**. La otra mitad de este ADR, la de MercadoPago, sigue en pie.
 
 
 ## ADR-021 — El bloque de proveedores es un gasto imputado a un fletero, no una factura de compra
@@ -564,3 +568,69 @@ esté entre ellas.
     la tabla aclara cuántas hay y cuántas se están viendo. Un corte callado se
     lee como el listado completo, y ahí la pantalla y el papel dicen cosas
     distintas.
+
+
+## ADR-024 — Emitir por ARCA reemplaza al alta manual, pero sólo donde ARCA está habilitado
+
+- Estado: aceptada
+- Fecha: 2026-08-24
+- Supersede: la mitad **"emitir"** del ADR-020. La otra mitad de aquel —
+  MercadoPago descartado, *"se había confundido de producto"*— **sigue en pie**.
+- Contexto: el ADR-020 difirió la emisión *"para cuando haya certificados"*, y
+  el ROADMAP la dejó como una línea: *"F8 — Emisión ARCA real vía LibraCore"*.
+  Con la paridad de la migración ya verificada (F5), el humano reabrió esa
+  mitad. El diseño no estaba escrito, y tenía tres decisiones abiertas.
+
+- Decisión 1 — **el número lo da ARCA, no la persona**, y no admite convivencia
+  dentro de un mismo comprobante. ARCA numera correlativamente por punto de
+  venta y tipo, y rechaza cualquier número que no sea
+  `FECompUltimoAutorizado + 1`: uno tipeado a mano que coincida es casualidad, y
+  uno que no, es un rechazo. El punto de venta sale de la razón social, que es
+  donde está dado de alta en ARCA. Un `numero` en el payload se ignora.
+
+- Decisión 2 — 🔑 **pero el alta manual no desaparece de golpe: sobrevive donde
+  ARCA no está habilitado.** Es una precisión sobre la decisión anterior, y el
+  motivo es operativo, no de diseño: la instancia del cliente tiene
+  `configuracion_arca` **vacía**. Aplicar *"emitir reemplaza al alta"* de forma
+  literal la dejaría **sin poder facturar**, que es una regresión sobre un
+  sistema vivo. El alta manual es el camino de la razón social que todavía no
+  cargó su certificado, y desaparece en cuanto lo carga y lo habilita.
+  > `habilitado` no es lo mismo que "tiene los archivos": cargar el par y no
+  > habilitar es un estado legítimo —el cliente lo subió y todavía no quiere
+  > emitir— y ahí sigue registrando.
+
+- Decisión 3 — 🔴 **el pedido de CAE va adentro de la misma transacción que el
+  alta.** O el comprobante existe con CAE, o no existe y las órdenes vuelven a
+  pendientes. Un comprobante con un número que ARCA no autorizó deja el
+  correlativo **tomado de este lado y libre del otro**, y el próximo intento
+  choca contra `uq_comprobantes_numeracion` sin que nadie entienda por qué.
+  > La garantía es que el `commit` **nunca ocurre**, no el `rollback` explícito:
+  > `obtener_sesion` cierra la sesión en su `finally` y SQLAlchemy descarta la
+  > transacción abierta. Medido con una mutación — sacar el rollback no cambia
+  > el resultado. Se deja igual porque hace explícita la intención.
+
+- Decisión 4 — **el par de certificados se pasa en bytes**, no por ruta. Acá
+  vive en la base (ADR-020, decisión 2), así que la API por rutas de
+  `arca_wsaa.autenticar()` no servía. LibraCore `v1.49.0` suma
+  `autenticar_con_bytes()` y `par_en_disco()`: el par igual tiene que tocar el
+  disco —la firma del TRA la hace `openssl` por subproceso, y openssl lee de
+  archivos— pero la clave se escribe con **0600** y se borra **siempre**,
+  también si el bloque explota. Vive en el motor y no acá para que cada producto
+  que guarde credenciales fuera del volumen no improvise su propio temporal.
+
+- Decisión 5 — **del motor se reusa sólo la capa de protocolo**, `arca_wsaa` +
+  `arca_wsfe`, como el propio ADR-020 anticipaba. `libracore.arca_facturacion`
+  está atado a **su** esquema de `facturas` y `arca_config`.
+
+- Consecuencias: la migración `0010` agrega `cae`, `cae_vencimiento` y
+  `cae_solicitado_en`, las tres nullable y sin default. **`cae IS NULL` es el
+  estado normal** de los 741 comprobantes que vinieron del legado —de un sistema
+  que facturaba por afuera— y de todo lo que se registre a mano: no es una fila
+  incompleta. `cae_solicitado_en` es aparte de `fecha` porque un reintento
+  después de que ARCA estuvo caído deja las dos separadas.
+
+- Lo que **no** hace: notas de crédito contra ARCA con su comprobante asociado
+  (`CbtesAsoc`), reintento del CAE sobre un comprobante ya registrado, y PDF con
+  QR de ARCA. Los tres quedan para cuando haya un certificado real cargado — hoy
+  la emisión está construida y verificada **contra mocks y homologación**, no
+  contra ARCA de verdad.

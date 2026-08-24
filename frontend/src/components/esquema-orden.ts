@@ -55,13 +55,15 @@ export type DatosOrden = z.output<typeof esquemaOrden>
  * de Argentina ya es el dia siguiente. Una orden cargada de noche nacia con la
  * fecha de manana, y el error no se ve --es una fecha plausible-- hasta que no
  * cierra un listado por dia.
+ *
+ * Delega en `libra-ui/fechas` desde la unificacion del 2026-08-24: la cuenta
+ * era correcta pero era la cuarta copia de lo mismo en la familia, y de las
+ * cinco que habia solo tres fijaban la zona. El nombre se conserva porque lo
+ * importan varias pantallas de este producto.
  */
-export function hoyEnArgentina(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Argentina/Buenos_Aires',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date())
-}
+import { hoyISO } from 'libra-ui/fechas'
+
+export { hoyISO as hoyEnArgentina }
 
 /** Un importe en pesos: `$ 1.173.307.438,05`.
  *
@@ -87,6 +89,29 @@ export function formatearImporte(valor: string | number | null | undefined): str
   return `${negativo ? '-' : ''}$ ${miles},${centavos}`
 }
 
+/** `dd-mm-aaaa` a partir del texto ISO que devuelve la API.
+ *
+ * 🔴 Se reordena el TEXTO, sin construir un `Date`. Un `aaaa-mm-dd` no es un
+ * instante sino un dia del calendario: `new Date('2026-08-22')` es medianoche
+ * UTC, o sea las 21:00 del 21 en Argentina, asi que convertirlo de zona corre
+ * el dia para atras SIEMPRE -- no es un caso de borde nocturno. Es el mismo
+ * cuidado que ya tenia `hoyEnArgentina` en la otra direccion.
+ *
+ * Acepta tambien un timestamp (`2026-08-22T14:30:00`) y se queda con la fecha.
+ * Lo que no tiene forma de ISO vuelve tal cual: recortarlo a ciegas armaria una
+ * fecha con pedazos de otra cosa.
+ */
+export function formatearFecha(valor: string | null | undefined): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(valor ?? '')
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : (valor ?? '')
+}
+
+/** `dd-mm-aaaa HH:MM` a partir del texto ISO que devuelve la API. */
+export function formatearFechaHoraDeTexto(valor: string | null | undefined): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(valor ?? '')
+  return m ? `${m[3]}-${m[2]}-${m[1]} ${m[4]}:${m[5]}` : formatearFecha(valor)
+}
+
 /** `dd-mm-aaaa HH:MM`, hora de Argentina, reloj de 24 h.
  *
  * El formato de la familia es de PRESENTACION: la API y la base siguen en ISO.
@@ -104,7 +129,7 @@ export function formatearFechaHora(valor: Date): string {
 }
 
 export const ORDEN_VACIA: Partial<EntradaOrden> = {
-  fecha: hoyEnArgentina(),
+  fecha: hoyISO(),
   tarifa: '0.00',
   alicuota_iva: '21.00',
   comision: '0.00',
