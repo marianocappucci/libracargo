@@ -34,9 +34,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 import { formatearFecha } from '@/components/esquema-orden'
+import { hoyISO } from 'libra-ui/fechas'
 
 const VACIO = {
-  fecha: new Date().toISOString().slice(0, 10),
+  fecha: hoyISO(),
   proveedor_id: '' as number | '',
   fletero_id: '' as number | '',
   comprobante: '',

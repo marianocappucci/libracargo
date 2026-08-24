@@ -55,13 +55,15 @@ export type DatosOrden = z.output<typeof esquemaOrden>
  * de Argentina ya es el dia siguiente. Una orden cargada de noche nacia con la
  * fecha de manana, y el error no se ve --es una fecha plausible-- hasta que no
  * cierra un listado por dia.
+ *
+ * Delega en `libra-ui/fechas` desde la unificacion del 2026-08-24: la cuenta
+ * era correcta pero era la cuarta copia de lo mismo en la familia, y de las
+ * cinco que habia solo tres fijaban la zona. El nombre se conserva porque lo
+ * importan varias pantallas de este producto.
  */
-export function hoyEnArgentina(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Argentina/Buenos_Aires',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date())
-}
+import { hoyISO } from 'libra-ui/fechas'
+
+export { hoyISO as hoyEnArgentina }
 
 /** Un importe en pesos: `$ 1.173.307.438,05`.
  *
@@ -127,7 +129,7 @@ export function formatearFechaHora(valor: Date): string {
 }
 
 export const ORDEN_VACIA: Partial<EntradaOrden> = {
-  fecha: hoyEnArgentina(),
+  fecha: hoyISO(),
   tarifa: '0.00',
   alicuota_iva: '21.00',
   comision: '0.00',

@@ -21,15 +21,14 @@ import { ordenes as apiOrdenes, cargarOpciones } from '@/api/ordenes'
 import type { Opciones } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { irA } from '@/navegacion'
-import { hoyEnArgentina, formatearImporte } from '@/components/esquema-orden'
+import { formatearImporte } from '@/components/esquema-orden'
 import { sumarImportes } from '@/api/comprobantes'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 import { formatearFecha } from '@/components/esquema-orden'
+import { primerDiaDelMesISO } from 'libra-ui/fechas'
 
 /** El primer día del mes en curso, en hora de Argentina. */
-function primerDiaDelMes(): string {
-  return `${hoyEnArgentina().slice(0, 7)}-01`
-}
+const primerDiaDelMes = primerDiaDelMesISO
 
 function Tarjeta({ titulo, valor, detalle, a, icono: Icono }: {
   titulo: string; valor: string; detalle: string
