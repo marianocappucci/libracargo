@@ -14,7 +14,7 @@ import { createPortal } from 'react-dom'
 import type { Configuracion } from '@/api/configuracion'
 import { urlDelLogo } from '@/api/configuracion'
 import type { Opciones, Orden } from '@/api/ordenes'
-import { formatearFechaHora, formatearImporte } from '@/components/esquema-orden'
+import { formatearFecha, formatearFechaHora, formatearImporte } from '@/components/esquema-orden'
 
 function nombre(lista: { id: number; etiqueta: string }[] | undefined, id: number | null) {
   return lista?.find((o) => o.id === id)?.etiqueta ?? ''
@@ -57,7 +57,7 @@ export function OrdenImpresa({ orden, opciones, empresa }: {
         <div className="titulo">
           <p className="que">ORDEN DE CARGA</p>
           <p className="numero">Nº {String(orden.id).padStart(8, '0')}</p>
-          <p className="fecha">{orden.fecha}</p>
+          <p className="fecha">{formatearFecha(orden.fecha)}</p>
         </div>
       </header>
 

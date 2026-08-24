@@ -33,6 +33,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
+import { formatearFecha } from '@/components/esquema-orden'
 
 const VACIO = {
   fecha: new Date().toISOString().slice(0, 10),
@@ -139,7 +140,9 @@ export default function Gastos() {
   }
 
   const columnas = [
-    { id: 'fecha', header: sortableHeader('Fecha'), accessorFn: (g: Gasto) => g.fecha, size: 110 },
+    { id: 'fecha', header: sortableHeader('Fecha'), size: 110,
+      accessorFn: (g: Gasto) => g.fecha,
+      cell: ({ row }: { row: { original: Gasto } }) => formatearFecha(row.original.fecha) },
     { id: 'proveedor', header: 'Proveedor', size: 175,
       accessorFn: (g: Gasto) => nombre(opciones?.proveedores, g.proveedor_id) },
     { id: 'fletero', header: 'Se le descuenta a', size: 175,
