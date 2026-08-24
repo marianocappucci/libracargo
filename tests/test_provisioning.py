@@ -113,9 +113,25 @@ def test_el_deploy_declara_las_migraciones_que_este_repo_tiene(script):
         "saltear en silencio y la instancia va a quedar con el código nuevo "
         "sobre el esquema viejo."
     )
-    # La forma plana la rechaza el motor con TypeError al importar, así que si
-    # llegamos acá ya está anidada. Lo que queda por exigir es que el comando
-    # sea el que aplica ESTA cadena.
+    # 🔑 **Acá se aserta lo que el DEPLOY hace con el valor, no el valor.**
+    # Comparar `declarados` contra la tupla que uno escribió tres líneas más
+    # arriba en el otro archivo se cumple por construcción y no prueba nada: la
+    # primera versión de este test pasaba en verde con una forma que
+    # `cmd_actualizar` no sabe ejecutar. Lo que importa es que el motor
+    # INSTALADO pueda consumirla.
+    #
+    # Estas dos líneas son textualmente lo que hace `cmd_actualizar` por cada
+    # comando: lo imprime con `" ".join(...)` y lo splatea en el `compose run`.
+    # Con la forma plana —`("alembic", "upgrade", "head")` en vez de anidada—
+    # el `join` revienta acá, que es donde tiene que reventar.
+    for comando in declarados:
+        assert not isinstance(comando, str), (
+            f"scripts/{script}.py declara {declarados!r} en forma PLANA. El "
+            "deploy la iteraría carácter por carácter. Anidala: "
+            "migraciones=((...),)"
+        )
+        " ".join(comando)  # lo que hace cmd_actualizar antes de correrlo
+
     assert any("alembic" in c for c in declarados), (
         f"scripts/{script}.py declara {declarados!r}, que no incluye el "
         "`alembic` de la cadena propia de este repo."
