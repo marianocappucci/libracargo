@@ -33,7 +33,7 @@ from app.schemas.comprobantes import (
     FacturarIn,
     TotalDeRazonSocial,
 )
-from app.servicios import auditoria
+from app.servicios import auditoria, emision_arca
 from app.servicios.comprobantes import etiqueta, sumar_ordenes, totales_por_razon_social
 
 router = APIRouter(prefix="/api/comprobantes", tags=["comprobantes"],
@@ -125,12 +125,26 @@ def traer(id_: int, sesion: Session = Depends(obtener_sesion)):
 
 
 @router.post("", response_model=ComprobanteOut, status_code=201)
-def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
+async def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
              actual: dict = Depends(get_current_user)):
     """Agrupa órdenes pendientes en un comprobante, en una sola transacción.
 
-    El número lo tipea una persona: el sistema **registra**, no emite. La
-    unicidad la garantiza la base con `(razon_social, tipo, punto_venta,
+    🔑 **Hay dos caminos, y los decide la razón social**, no el que llama:
+
+    - **Emite** si tiene ARCA habilitado: el número lo da ARCA
+      (`FECompUltimoAutorizado + 1`), el punto de venta sale de la razón social,
+      y el comprobante nace con CAE. Un `numero` en el payload se ignora — ARCA
+      rechaza cualquiera que no sea el que sigue.
+    - **Registra** si no: el número lo tipea una persona, como hasta ahora. Es
+      el camino de lo que todavía no tiene certificado cargado, y el que sostiene
+      la instancia del cliente mientras tanto.
+
+    ⚠️ **Si ARCA rechaza, no queda comprobante.** El pedido de CAE va adentro de
+    la misma transacción: o existe con CAE, o no existe. Un comprobante con un
+    número que ARCA no autorizó dejaría el correlativo tomado del lado de acá y
+    libre del lado de ellos.
+
+    La unicidad la garantiza la base con `(razon_social, tipo, punto_venta,
     numero)` — el legado tenía `(numero, razon_social)` y no contemplaba ni el
     tipo ni el punto de venta, así que dos comprobantes distintos con el mismo
     número entraban sin que nada los frenara.
@@ -179,9 +193,31 @@ def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
         # un 409 con el nombre de una restricción, que no explica nada.
         raise HTTPException(422, "las ordenes elegidas suman cero: no hay nada que facturar")
 
+    # ── El número: de ARCA si emite, del payload si registra ───────────────
+    emite = emision_arca.emite_por_arca(sesion, datos.razon_social_id)
+    ta = cfg_arca = razon = None
+    if emite:
+        try:
+            numero, ta, cfg_arca, razon = await emision_arca.numero_que_sigue(
+                sesion, datos.razon_social_id, datos.tipo,
+            )
+        except emision_arca.ArcaNoConfigurado as e:
+            raise HTTPException(409, str(e)) from None
+        except emision_arca.ArcaRechazo as e:
+            raise HTTPException(502, f"ARCA no pudo dar el numero: {e}") from None
+        punto_venta = razon.punto_venta
+    else:
+        if datos.numero is None:
+            raise HTTPException(
+                422,
+                "falta el numero: esta razon social no tiene ARCA habilitado, "
+                "asi que el comprobante se registra con el numero que tenga",
+            )
+        numero, punto_venta = datos.numero, datos.punto_venta
+
     comprobante = Comprobante(
         razon_social_id=datos.razon_social_id, tipo=datos.tipo,
-        punto_venta=datos.punto_venta, numero=datos.numero, fecha=datos.fecha,
+        punto_venta=punto_venta, numero=numero, fecha=datos.fecha,
         cliente_id=datos.cliente_id,
         neto=suma.neto, iva=suma.iva, total=suma.total,
     )
@@ -200,10 +236,29 @@ def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
             orden.razon_social_id = datos.razon_social_id
         sesion.add(MovimientoCuenta(
             fecha=datos.fecha, tercero_id=datos.cliente_id, rol=RolCuenta.CLIENTE,
-            concepto=etiqueta(datos.tipo, datos.punto_venta, datos.numero),
+            # El numero REAL, no el del payload: cuando emite ARCA el del
+            # payload viene vacio, y la cuenta corriente nombraria un
+            # comprobante inexistente.
+            concepto=etiqueta(datos.tipo, punto_venta, numero),
             descripcion="Ordenes " + ", ".join(str(o.id) for o in ordenes),
             debe=suma.total, haber=0, comprobante_id=comprobante.id,
         ))
+        if emite:
+            # Adentro de la transaccion a proposito: si ARCA rechaza, el
+            # `commit` NUNCA ocurre y el comprobante no existe --- las ordenes
+            # siguen pendientes. No queda un numero tomado de este lado y libre
+            # del otro.
+            #
+            # ⚠️ La garantia es esa, no el `rollback` de abajo: `obtener_sesion`
+            # cierra la sesion en su `finally` y SQLAlchemy descarta la
+            # transaccion abierta al cerrar. Medido: sacar el rollback no cambia
+            # el resultado. Se deja igual porque hace explicita la intencion y
+            # no depende de la semantica de `close()`.
+            try:
+                await emision_arca.pedir_cae(sesion, comprobante, ta, cfg_arca, razon)
+            except emision_arca.ArcaRechazo as e:
+                sesion.rollback()
+                raise HTTPException(502, f"ARCA rechazo el comprobante: {e}") from None
         auditoria.registrar(sesion, actual, "comprobante", comprobante.id,
                             AccionAuditoria.ALTA, despues=comprobante)
         sesion.commit()

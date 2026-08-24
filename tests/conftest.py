@@ -3,10 +3,14 @@ from __future__ import annotations
 import os
 
 import pytest
+from fastapi.testclient import TestClient
+from libraauth.models import Base as AuthBase
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from app import db
+from app.config import Config
+from app.main import crear_app
 from app.models import Base
 
 URL = os.environ.get(
@@ -119,3 +123,47 @@ def _terminos_ya_aceptados(request):
     mp.setattr(TerminosRepository, "esta_aceptada", lambda self: True)
     yield
     mp.undo()
+
+
+# ── App logueada y maestros minimos ────────────────────────────────────────
+#
+# Viven aca y no en un modulo de test porque las usan varios. Importarlas de
+# `test_comprobantes` ataba un archivo a otro y ademas ruff lo lee como
+# redefinicion (F811) en cuanto el otro archivo las toma como parametro.
+
+USUARIO, CLAVE = "admin", "clave-de-prueba"
+
+
+@pytest.fixture
+def cliente(engine, sesion, monkeypatch):
+    monkeypatch.setenv("ENV", "development")
+    monkeypatch.setenv("LIBRACARGO_ADMIN_USERNAME", USUARIO)
+    monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
+    AuthBase.metadata.drop_all(engine)
+    AuthBase.metadata.create_all(engine)
+    cfg = Config(database_url=os.environ["DATABASE_URL"], entorno="test", debug=False)
+    c = TestClient(crear_app(cfg), base_url="https://testserver")
+    assert c.post("/auth/login", json={"username": USUARIO, "password": CLAVE}).status_code == 200
+    yield c
+    AuthBase.metadata.drop_all(engine)
+
+
+def _crear(c, ruta, datos):
+    r = c.post(ruta, json=datos)
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+@pytest.fixture
+def datos(cliente):
+    """Los maestros mínimos para que una orden exista."""
+    return {
+        "cliente": _crear(cliente, "/api/terceros",
+                          {"razon_social": "Agro Norte", "es_cliente": True}),
+        "otro_cliente": _crear(cliente, "/api/terceros",
+                               {"razon_social": "Molino Sur", "es_cliente": True}),
+        "origen": _crear(cliente, "/api/localidades", {"nombre": "Suipacha"}),
+        "destino": _crear(cliente, "/api/localidades", {"nombre": "Rosario"}),
+        "razon": _crear(cliente, "/api/razones-sociales", {"nombre": "Suitrans"}),
+        "otra_razon": _crear(cliente, "/api/razones-sociales", {"nombre": "Mauricio"}),
+    }

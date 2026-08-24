@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Date,
+    DateTime,
     Enum,
     ForeignKey,
     Index,
@@ -58,6 +59,18 @@ class Comprobante(Base, Auditable):
 
     anulado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     origen_legado: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+    #: El CAE que devolvio ARCA. `None` es el estado normal de todo lo migrado
+    #: --- 741 comprobantes de un sistema que facturaba por afuera --- y de todo
+    #: lo que se registre a mano mientras la razon social no tenga ARCA activo.
+    #: No es una fila incompleta.
+    cae: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    cae_vencimiento: Mapped[date | None] = mapped_column(Date, nullable=True)
+    #: Cuando se le pidio, que no es la fecha del comprobante: un reintento
+    #: despues de que ARCA estuvo caido deja las dos separadas.
+    cae_solicitado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         UniqueConstraint(

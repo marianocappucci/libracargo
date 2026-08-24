@@ -13,7 +13,7 @@
 > exactamente la diferencia que el gate de F5 tiene que poder descartar.
 """
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -50,7 +50,11 @@ class FacturarIn(BaseModel):
     cliente_id: int
     tipo: TipoComprobante
     punto_venta: int = Field(default=1, ge=0, le=99999)
-    numero: int = Field(ge=1)
+    #: ⚠️ Opcional **sólo porque puede venir de ARCA**. Cuando la razón social
+    #: emite, el número lo da `FECompUltimoAutorizado + 1` y mandarlo desde el
+    #: cliente no tiene sentido: ARCA rechaza cualquier otro. Cuando registra a
+    #: mano sigue siendo obligatorio, y lo exige el endpoint.
+    numero: int | None = Field(default=None, ge=1)
     orden_ids: list[int] = Field(min_length=1)
 
     @field_validator("orden_ids")
@@ -83,6 +87,12 @@ class ComprobanteOut(BaseModel):
     total: Decimal
     anulado: bool
     origen_legado: str | None = None
+
+    #: `None` es el estado normal de todo lo migrado y de lo que se registre a
+    #: mano: la pantalla lo lee como "sin CAE", no como un dato que falta.
+    cae: str | None = None
+    cae_vencimiento: date | None = None
+    cae_solicitado_en: datetime | None = None
 
 
 class SumaDeOrdenes(BaseModel):
