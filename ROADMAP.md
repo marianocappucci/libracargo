@@ -58,9 +58,22 @@ Dirección estratégica. Las tareas concretas están en `TASKS.md`.
 
 - Resultado: orden de carga y comprobantes en PDF vía `pdf_generator`.
 
+### F8 — Emisión ARCA
+
+- Resultado: la razón social con ARCA habilitado **emite**: el número lo da
+  `FECompUltimoAutorizado + 1` y el comprobante nace con CAE. La que no lo tiene
+  sigue registrando con el número que tipea una persona — ver ADR-024.
+- Del motor se reusa **sólo la capa de protocolo** (`arca_wsaa` + `arca_wsfe`),
+  con el par en bytes porque acá vive en la base.
+- ⚠️ **Construido y verificado contra mocks y homologación, no contra ARCA
+  real**: `configuracion_arca` está vacía en la instancia del cliente. Falta
+  cargar un certificado y emitir una de prueba antes de darlo por cerrado.
+
 ## Futuro
 
-- **F8 — Emisión ARCA** real vía LibraCore.
+- **Notas de crédito contra ARCA** con su `CbtesAsoc`, reintento del CAE sobre
+  un comprobante ya registrado, y PDF con QR de ARCA — las tres piden un
+  certificado real cargado.
 - Portal del cliente para consultar sus órdenes y su cuenta corriente.
 - App del chofer para confirmar entrega — hoy no hay estado de viaje en
   ninguna parte.
