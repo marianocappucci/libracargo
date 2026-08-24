@@ -95,6 +95,29 @@ configure(
     # pantalla sale de `libracore.respaldo` (ver `build_backup_router` en
     # `app/main.py`).
     backup_zip=True,
+    # 🔴 **Sin esta línea el deploy no aplica ninguna revisión.** El motor trae
+    # el paso desde LibraCore `v1.48.0` —`cmd_actualizar` corre estos comandos
+    # con `compose run --rm` ANTES del `up -d`, así la migración usa el código
+    # nuevo mientras la instancia todavía sirve el viejo— pero el default es
+    # vacío, así que un producto que no declara nada no ve ningún paso y su
+    # deploy pasa de largo.
+    #
+    # Es lo que pasó el 2026-08-24: la revisión `0010` viajó a `main` adentro
+    # de la imagen, el deploy salió con código 0 y las dos instancias quedaron
+    # con el código nuevo sobre el esquema viejo. `healthy`, `/salud` en 200 y
+    # cero errores en los logs; y todo `SELECT` sobre `comprobantes` muriendo
+    # con `column comprobantes.cae does not exist`. Ningún chequeo de salud lo
+    # agarra porque el proceso arranca bien: el error recién ocurre cuando
+    # alguien consulta la tabla.
+    #
+    # Una sola cadena: este producto no usa LibraGenda, así que no tiene la
+    # `alembic_version` del motor al lado de la propia. Gestiolibra y MedLibra
+    # sí, y por eso declaran dos comandos en orden.
+    #
+    # ⚠️ Va en los DOS scripts a propósito: comparten el `_cfg` global y
+    # `tests/test_provisioning.py` los compara campo por campo. Declararlo en
+    # uno solo pone ese test en rojo, que es exactamente lo que tiene que pasar.
+    migraciones=(("alembic", "upgrade", "head"),),
     # `health_path` **no se pasa**: desde hoy este producto sirve `/health`
     # además de `/salud`, que es el default del motor y la ruta de los otros
     # seis. Ver el comentario en `app/routers/salud.py` — con la SPA horneada,

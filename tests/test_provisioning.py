@@ -17,6 +17,7 @@ las otras dos.
 """
 
 import importlib
+import pathlib
 
 import pytest
 
@@ -73,6 +74,52 @@ def test_los_dos_scripts_configuran_LO_MISMO():
 
     distintos = {k: (uno[k], otro[k]) for k in uno if uno[k] != otro[k]}
     assert not distintos, f"los dos scripts configuran distinto: {distintos}"
+
+
+@pytest.mark.parametrize("script", ["nuevo_cliente", "panel_admin"])
+def test_el_deploy_declara_las_migraciones_que_este_repo_tiene(script):
+    """Un producto con revisiones de Alembic tiene que declararlas.
+
+    **Por qué existe.** El paso lo trae el motor desde LibraCore `v1.48.0`,
+    pero `migraciones` es opcional y su default es vacío — así que un producto
+    que no la declara no ve ningún paso y su deploy pasa de largo, en silencio.
+    Pasó el 2026-08-24: la revisión `0010` viajó a `main` adentro de la imagen,
+    `actualizar` salió con código 0 y las dos instancias quedaron con el código
+    nuevo sobre el esquema viejo.
+
+    🔑 **Ningún chequeo de salud lo agarra.** El proceso arranca perfecto; el
+    error recién ocurre cuando alguien consulta la tabla. `healthy` y `/salud`
+    en 200 fueron verdes honestos sobre una app rota.
+
+    La condición sale **del repo**, no de un literal: si hay revisiones en
+    `migrations/versions/`, tiene que haber comandos. Un literal acá sería una
+    tercera copia que puede divergir igual que las otras dos — y si algún día
+    este producto deja de usar Alembic, el test deja de exigir solo.
+    """
+    from libracore.provisioning import get_config
+
+    raiz = pathlib.Path(__file__).parent.parent
+    revisiones = sorted((raiz / "migrations" / "versions").glob("*.py"))
+
+    importlib.reload(importlib.import_module(f"scripts.{script}"))
+    declarados = get_config().migraciones
+
+    if not revisiones:
+        return  # sin cadena propia no hay nada que correr
+
+    assert declarados, (
+        f"este repo tiene {len(revisiones)} revisiones de Alembic y "
+        f"scripts/{script}.py no declara `migraciones`: el deploy las va a "
+        "saltear en silencio y la instancia va a quedar con el código nuevo "
+        "sobre el esquema viejo."
+    )
+    # La forma plana la rechaza el motor con TypeError al importar, así que si
+    # llegamos acá ya está anidada. Lo que queda por exigir es que el comando
+    # sea el que aplica ESTA cadena.
+    assert any("alembic" in c for c in declarados), (
+        f"scripts/{script}.py declara {declarados!r}, que no incluye el "
+        "`alembic` de la cadena propia de este repo."
+    )
 
 
 def test_el_producto_declara_planes_con_sus_modulos():
