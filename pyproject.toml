@@ -28,7 +28,7 @@ dependencies = [
     # `init_core_schema()` que no es componible por tabla, y el DDL que no es
     # el schema real—. `respaldo` no toca nada de eso: recibe una URL y
     # corre `pg_dump`. Por eso este adelanto no arrastra ninguna de las tres.
-    "libracore @ git+https://github.com/marianocappucci/libracore.git@v1.43.0",
+    "libracore @ git+https://github.com/marianocappucci/libracore.git@v1.49.0",
 ]
 
 # Los motores de la familia entran en F1, desde repos privados por deploy key.
