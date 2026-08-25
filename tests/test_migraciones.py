@@ -113,6 +113,41 @@ def test_upgrade_downgrade_upgrade(base_limpia):
             os.environ["DATABASE_URL"] = original
 
 
+def test_la_cadena_escribe_su_version_en_una_tabla_PROPIA(base_limpia):
+    """🔴 Dos cadenas en la misma base no pueden compartir `alembic_version`.
+
+    Este repo tiene **una sola base**: el esquema de LibraCore vive en la misma
+    que el dominio, sin `_core` aparte como en LibraClub, Gestiolibra y
+    MedLibra. Y LibraCore tiene su propia cadena de Alembic, que usa el nombre
+    por defecto. Si las dos escribieran en `alembic_version`, cada `upgrade`
+    pisaría la revisión de la otra y la siguiente correría sobre un esquema que
+    no es el que espera.
+
+    **No se aserta el valor de `VERSION_TABLE`.** Importar la constante y
+    compararla contra el literal que uno escribió en `env.py` se cumple por
+    construcción: pasaría igual si `context.configure()` no la recibiera. Lo
+    que se mide es la base **después de migrar de verdad** — qué tabla existe y
+    cuál no.
+    """
+    command.upgrade(_alembic(base_limpia), "head")
+    eng = create_engine(base_limpia)
+    with eng.connect() as con:
+        tablas = set(con.execute(text(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name LIKE 'alembic_version%'"
+        )).scalars().all())
+    eng.dispose()
+
+    assert "alembic_version_libracargo" in tablas, (
+        f"la cadena de este producto no escribió su tabla propia: {sorted(tablas)}")
+    # 🔑 La otra mitad, que es la que importa: el nombre genérico tiene que
+    # quedar LIBRE para la cadena de LibraCore. Sin este assert el test pasaría
+    # con las dos tablas presentes, que es exactamente el estado a medias.
+    assert "alembic_version" not in tablas, (
+        "quedó también la tabla genérica: la cadena del motor no puede usarla "
+        f"sin chocar. Tablas: {sorted(tablas)}")
+
+
 def test_los_modelos_no_tienen_cambios_sin_migrar(base_limpia):
     """`alembic check`: el schema de los modelos y la cadena no divergen."""
     original = os.environ.get("DATABASE_URL")
