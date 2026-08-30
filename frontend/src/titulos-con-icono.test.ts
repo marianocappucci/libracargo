@@ -32,9 +32,14 @@ describe('el icono del título sale del sidebar', () => {
     expect(rutasDelNav).toBeGreaterThanOrEqual(10)
     expect(pantallas).toBeGreaterThanOrEqual(12)
     expect(conIcono).toBeGreaterThan(0)
-    // 🔑 `conIcono` NO es igual a `pantallas`: `/usuarios` es un envoltorio de
-    // la pantalla que rinde `libra-ui`, y el título —con su icono— lo pone
-    // ella. Acá no hay ninguno, y está bien: el que había era un duplicado.
-    expect(sinTitulo.map((d) => d.ruta)).toEqual(['/usuarios'])
+    // 🔑 `conIcono` NO es igual a `pantallas`: hay dos envoltorios de pantallas
+    // que rinde `libra-ui`, y el título —con su icono— lo pone ella. Acá no hay
+    // ninguno, y está bien: el que había era un duplicado.
+    //
+    // `/configuracion` se sumó el 2026-08-30, al pasar a `createConfiguracion`:
+    // antes este producto dibujaba su propia barra de pestañas con las clases
+    // de `tabs.tsx` copiadas a mano, y su propio `TituloPantalla`. Se veía casi
+    // igual y era otro mecanismo.
+    expect(sinTitulo.map((d) => d.ruta)).toEqual(['/configuracion', '/usuarios'])
   })
 })
