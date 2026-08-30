@@ -1,96 +1,84 @@
-/** Configuración: una sola entrada en el menú, y las opciones en pestañas.
+/** Configuración de LibraCargo.
  *
- * Mismo patrón que Contalibra —la rueda en la barra lateral y las pestañas del
- * otro lado—, y por el mismo motivo: los maestros y los datos de la empresa se
- * cargan una vez y después se los toca poco. Como siete ítems de menú tenían el
- * mismo peso que las pantallas de todos los días.
+ *  El armado viene de `libra-ui/Configuracion`, que desde la v0.47.0 es **la
+ *  pantalla de Configuración de la familia entera** — la de Contalibra, con su
+ *  barra de pestañas, la sub-navegación de Integraciones, el botón de *Backup
+ *  rápido* y los tutoriales. Hasta hoy este producto dibujaba su propia barra
+ *  con las mismas clases copiadas a mano: se veía casi igual, pero era otro
+ *  mecanismo y divergía sin que nadie lo notara.
  *
- * ## 2026-08-22 — las pestañas son las de shadcn, iguales a las de Contalibra
+ *  ## Dos cosas que este producto NO comparte, y por qué
  *
- * Hasta hoy eran botones a mano con un subrayado, y el motivo escrito acá era
- * *"el paquete `tabs` de shadcn no está instalado en este producto, y traerlo
- * para dibujar siete botones sería agregar una dependencia por una lista"*.
+ *  🔴 **La tarjeta de Empresa es la suya.** Los datos de la empresa de este
+ *  producto viven en una **tabla propia** (`/api/configuracion`) y tienen más
+ *  campos que los ocho del `config.json` del motor: nombre de fantasía,
+ *  localidad, provincia, código postal, sitio web y pie de impresión, que salen
+ *  en el membrete de la orden. Usar la del kit sería perderlos.
  *
- * Venció por los dos lados. El humano pidió que las pestañas se vean como las
- * de Contalibra —que son este primitivo— y además el paquete **hay que
- * instalarlo igual**: desde `libra-ui` v0.35.0, el módulo `Configuracion` del
- * kit importa `@/components/ui/tabs`, y este archivo consume `DatosBackupCard`
- * de ahí. Sin vendorizarlo, el build no compila.
+ *  🔴 **ARCA es por RAZÓN SOCIAL, y sigue siéndolo.** Una empresa de transporte
+ *  factura bajo varias razones sociales, cada una con su CUIT, su punto de venta
+ *  y su propio par de certificado y clave. El router del motor maneja **una sola
+ *  fila** por instancia: pasarlo ahí no sería normalizar, sería borrarle la
+ *  capacidad. Es el mismo caso que Contalibra, que también es multi-empresa.
+ *
+ *  Su pantalla, además, ya hace lo que la del motor vino a traerle al resto:
+ *  sube el certificado y la clave, y dice cuándo vence. Entra como una
+ *  integración propia —que es lo que es— y no como pestaña de primer nivel.
+ *
+ *  ## Lo que sí gana
+ *
+ *  La pestaña de **Correo (SMTP)**, que este producto no tenía aunque su router
+ *  estaba montado desde siempre: el SMTP sólo entraba por el backoffice de la
+ *  suite. Con el tutorial de la contraseña de aplicación de Gmail.
  */
-import { DatosBackupCard } from 'libra-ui/Configuracion'
+import { createConfiguracion } from 'libra-ui/Configuracion'
 import {
-  Building2, Database, MapPin, Package, Settings, ShieldCheck, Truck, Users,
-  UserSquare,
+  Building2, MapPin, Package, Settings, ShieldCheck, Truck, Users, UserSquare,
 } from 'lucide-react'
-import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
 
 import { FacturacionArca } from '@/pages/Arca'
 import { DatosDeLaEmpresa } from '@/pages/DatosDeLaEmpresa'
 import {
   Choferes, Localidades, RazonesSociales, Terceros, TiposCarga, Vehiculos,
 } from '@/pages/maestros'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
-const PESTANAS = [
-  { id: 'empresa', label: 'Empresa', icon: Settings, contenido: DatosDeLaEmpresa },
-  { id: 'terceros', label: 'Terceros', icon: Users, contenido: Terceros },
-  { id: 'choferes', label: 'Choferes', icon: UserSquare, contenido: Choferes },
-  { id: 'vehiculos', label: 'Vehículos', icon: Truck, contenido: Vehiculos },
-  { id: 'localidades', label: 'Localidades', icon: MapPin, contenido: Localidades },
-  { id: 'tipos-carga', label: 'Tipos de carga', icon: Package, contenido: TiposCarga },
-  { id: 'razones-sociales', label: 'Razones sociales', icon: Building2,
-    contenido: RazonesSociales },
-  // Va después de razones sociales y no antes: el certificado de ARCA es de
-  // un CUIT, y el CUIT lo pone la razón social. Configurar ARCA sin razones
-  // sociales cargadas no tiene por dónde empezar.
-  { id: 'arca', label: 'Facturación (ARCA)', icon: ShieldCheck,
-    contenido: FacturacionArca },
-  // La pantalla es la compartida de `libra-ui`, la misma que ven los otros
-  // seis productos. Lo único de este producto es el gate de rol, que lo pone
-  // el backend.
-  { id: 'datos', label: 'Datos / Backup', icon: Database,
-    contenido: DatosBackupCard },
-] as const
+export const Configuracion = createConfiguracion({
+  // El icono que el sidebar de este producto le da a /configuracion.
+  icono: Settings,
+  // Sale en el tutorial de Gmail —es el nombre que hay que ponerle a la
+  // contraseña de aplicación— y en el de Padrón A13.
+  producto: 'LibraCargo',
+  // Ver el docstring: la tarjeta es la propia, pero la pestaña sigue siendo la
+  // PRIMERA, como en los otros siete.
+  empresa: { contenido: <DatosDeLaEmpresa /> },
+  integraciones: {
+    email: true,
+    extra: [
+      // Va acá y no como pestaña de primer nivel porque es exactamente eso:
+      // con qué otro sistema habla este producto.
+      {
+        clave: 'arca', label: 'ARCA / AFIP', icono: ShieldCheck,
+        contenido: <FacturacionArca />,
+      },
+    ],
+  },
+  // Los maestros. Se cargan al arrancar y después se tocan poco, que es el
+  // criterio por el que están en Configuración y no como siete ítems del menú
+  // lateral con el mismo peso que las pantallas de todos los días.
+  propias: [
+    { clave: 'terceros', label: 'Terceros', icono: Users, contenido: <Terceros /> },
+    { clave: 'choferes', label: 'Choferes', icono: UserSquare, contenido: <Choferes /> },
+    { clave: 'vehiculos', label: 'Vehículos', icono: Truck, contenido: <Vehiculos /> },
+    { clave: 'localidades', label: 'Localidades', icono: MapPin, contenido: <Localidades /> },
+    { clave: 'tipos-carga', label: 'Tipos de carga', icono: Package, contenido: <TiposCarga /> },
+    // Última de los maestros y no primera: el certificado de ARCA es de un
+    // CUIT, y el CUIT lo pone la razón social. Configurar ARCA sin razones
+    // sociales cargadas no tiene por dónde empezar.
+    {
+      clave: 'razones-sociales', label: 'Razones sociales', icono: Building2,
+      contenido: <RazonesSociales />,
+    },
+  ],
+})
 
-export default function Configuracion() {
-  // La pestaña va en la URL: así se puede mandar el link de "cargá los
-  // vehículos acá" y cae en la pestaña, no en la primera.
-  const [parametros, setParametros] = useSearchParams()
-  const inicial = parametros.get('seccion') ?? 'empresa'
-  const [activa, setActiva] = useState(
-    PESTANAS.some((p) => p.id === inicial) ? inicial : 'empresa')
-
-  const elegir = (id: string) => {
-    setActiva(id)
-    setParametros(id === 'empresa' ? {} : { seccion: id }, { replace: true })
-  }
-
-  const Contenido = (PESTANAS.find((p) => p.id === activa) ?? PESTANAS[0]).contenido
-
-  return (
-    <div className="p-6">
-      <TituloPantalla icono={Settings} className="mb-4">Configuración</TituloPantalla>
-
-      {/* La barra separada del contenido por una línea, igual que la
-          Configuración de Contalibra. `value` y no `defaultValue`: la pestaña
-          activa la manda `?seccion=`, así que el conmutador es controlado —
-          con `defaultValue` entrar por un link a otra sección pintaría la
-          primera y mostraría el contenido de otra. */}
-      <div className="no-imprimir mb-6 border-b pb-2">
-        <Tabs value={activa} onValueChange={elegir}>
-          <TabsList>
-            {PESTANAS.map(({ id, label, icon: Icono }) => (
-              <TabsTrigger key={id} value={id}><Icono />{label}</TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-      </div>
-
-      {/* Cada pestaña trae su propia pantalla, con su tabla y su alta. No se
-          reimplementa nada: son las mismas que ya existían. */}
-      <Contenido />
-    </div>
-  )
-}
+export default Configuracion
