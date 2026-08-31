@@ -1,15 +1,27 @@
 /** Facturación electrónica: las credenciales de ARCA de cada razón social.
  *
- *  🔑 **Esta pantalla configura, no emite.** Hoy el comprobante se registra con
- *  el número que tipea una persona, igual que en el sistema viejo. Emitir es la
- *  fase siguiente, y lo que hace falta antes es tener las credenciales cargadas
- *  y **verificadas** — que es lo que se hace acá.
+ *  🔑 **Lo que se carga acá decide cómo se numera un comprobante.** La razón
+ *  social con el par cargado y la facturación habilitada emite contra ARCA y el
+ *  número se lo da el organismo; la que no, sigue registrando con el número que
+ *  tipea una persona, como el sistema viejo. Los dos caminos conviven a
+ *  propósito — ver `app/servicios/emision_arca.py`.
  *
  *  Lo que la pantalla contesta y ningún nombre de archivo puede: si el
- *  certificado es un certificado, **cuándo vence**, y si el certificado y la
- *  clave son pareja.
+ *  certificado es un certificado, **cuándo vence**, si el certificado y la clave
+ *  son pareja, y —apretando *Probar conexión*— si ARCA además lo **acepta**.
+ *
+ *  🔴 Esa última es la que no se deduce de nada local: dar de alta la relación
+ *  con `wsfe` en el Administrador de Relaciones es un trámite del portal y no
+ *  deja marca en el archivo. Un par impecable sin esa relación pasa las tres
+ *  validaciones de acá y lo rechaza ARCA al emitir el primer comprobante.
+ *
+ *  El instructivo de cómo sacar el certificado sale de `libra-ui`: es el mismo
+ *  que ven los otros siete productos de la familia. Se importa y no se copia
+ *  para que corregirlo una vez lo corrija en todos — que es de lo que se trata
+ *  la pantalla de Configuración compartida.
  */
-import { AlertTriangle, CheckCircle2, ShieldCheck, Trash2, Upload } from 'lucide-react'
+import { TutorialArcaCertificado } from 'libra-ui/Configuracion'
+import { AlertTriangle, CheckCircle2, PlugZap, ShieldCheck, Trash2, Upload } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import type { Ambiente, ConfiguracionArca } from '@/api/arca'
@@ -114,9 +126,32 @@ function Tarjeta({ cfg, alCambiar, alFallar }: {
 }) {
   const id = cfg.razon_social_id
   const listo = cfg.certificado != null && cfg.tiene_clave && cfg.coinciden === true
+  const hayCredenciales = cfg.certificado != null && cfg.tiene_clave
+
+  // El resultado de probar vive en la tarjeta y no en la pantalla: una
+  // instancia tiene varias razones sociales, y un aviso arriba de todo no
+  // diría de cuál está hablando.
+  const [probando, setProbando] = useState(false)
+  const [prueba, setPrueba] = useState<{ ok: boolean; texto: string } | null>(null)
 
   const correr = (promesa: Promise<ConfiguracionArca>) =>
     promesa.then(alCambiar).catch((e) => alFallar(mensajeDeError(e)))
+
+  async function probar() {
+    setProbando(true)
+    // Se limpia ANTES de pedir: dejar el resultado anterior en pantalla
+    // mientras corre el nuevo hace que un "Autenticado OK" viejo parezca la
+    // respuesta a este click.
+    setPrueba(null)
+    try {
+      const r = await arca.probar(id)
+      setPrueba({ ok: true, texto: `ARCA aceptó las credenciales (${r.ambiente}, ${r.servicio}).` })
+    } catch (e) {
+      setPrueba({ ok: false, texto: mensajeDeError(e) })
+    } finally {
+      setProbando(false)
+    }
+  }
 
   return (
     <div className="mb-4 rounded-lg border p-4">
@@ -158,6 +193,13 @@ function Tarjeta({ cfg, alCambiar, alFallar }: {
           <Label htmlFor={`hab-${id}`}>Habilitar facturación electrónica</Label>
         </div>
 
+        {hayCredenciales && (
+          <Button variant="outline" size="sm" disabled={probando}
+                  onClick={() => void probar()}>
+            <PlugZap className="size-4" /> {probando ? 'Probando…' : 'Probar conexión'}
+          </Button>
+        )}
+
         {(cfg.certificado || cfg.tiene_clave) && (
           <Button variant="ghost" size="sm" className="ml-auto"
                   onClick={() => correr(arca.borrarCredenciales(id))}>
@@ -165,6 +207,19 @@ function Tarjeta({ cfg, alCambiar, alFallar }: {
           </Button>
         )}
       </div>
+
+      {prueba && (
+        <p role="status"
+           className={`mt-3 text-sm font-medium ${
+             prueba.ok
+               ? 'text-emerald-600 dark:text-emerald-500'
+               : 'text-destructive'
+           }`}>
+          {prueba.ok ? <CheckCircle2 className="mr-1 inline size-4" />
+                     : <AlertTriangle className="mr-1 inline size-4" />}
+          {prueba.texto}
+        </p>
+      )}
 
       {cfg.ambiente === 'produccion' && cfg.habilitado && (
         <p className="text-muted-foreground mt-3 text-xs">
@@ -200,11 +255,27 @@ export function FacturacionArca() {
           <ShieldCheck className="size-5" /> Facturación electrónica (ARCA)
         </h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          El certificado de ARCA es de un CUIT, así que se carga por razón social. Acá se
-          cargan y se verifican las credenciales; <strong>emitir todavía no está</strong>:
-          los comprobantes se registran con el número que se tipea.
+          El certificado de ARCA es de un CUIT, así que se carga por razón social. La razón
+          social que tenga el par cargado y la facturación habilitada{' '}
+          <strong>emite con CAE y el número se lo da ARCA</strong>; la que no, sigue
+          registrando con el número que se tipea.
         </p>
       </div>
+
+      <TutorialArcaCertificado />
+
+      {/* 🔴 El paso 3 del instructivo manda a poner el punto de venta "en el
+          campo de abajo". Es cierto en los otros siete productos, donde la
+          `ArcaCard` del kit lo pide en el formulario, y NO acá: en LibraCargo
+          el punto de venta es de la razón social, porque una empresa de
+          transporte factura bajo varias y cada una tiene el suyo. Sin esta
+          línea el instructivo apunta a un campo que en esta pantalla no
+          existe, que es peor que no tener instructivo. */}
+      <p className="text-muted-foreground mb-4 text-xs">
+        En LibraCargo el <strong>punto de venta</strong> no se carga en esta pantalla: es
+        de cada razón social, junto con el CUIT. Los dos se editan en{' '}
+        <strong>Configuración → Razones sociales</strong> y se ven arriba de cada tarjeta.
+      </p>
 
       {error && (
         <p role="alert" className="border-destructive/40 mb-4 rounded border p-3 text-sm">
