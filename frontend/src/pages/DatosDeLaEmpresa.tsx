@@ -5,9 +5,19 @@
  *
  * Es de la instancia, no del despliegue: por eso vive en la base y no en el
  * `.env`. El cliente cambia su teléfono sin que nadie redespliegue nada.
+ *
+ * 🔴 **La condición de IVA se elige de una lista, y la lista sale del kit.**
+ * Este producto tiene tarjeta de Empresa propia —sus datos viven en tabla
+ * propia y tienen más campos que los ocho del `config.json` del motor—, y por
+ * eso se quedó afuera del `<Select>` que la `EmpresaCard` de `libra-ui` les da
+ * a los otros seis: acá era un campo de texto libre donde entraba cualquier
+ * cosa. `CONDICIONES_IVA` se importa y no se copia, que es la diferencia entre
+ * corregirla una vez y corregirla en cada producto.
  */
 import { Trash2, Upload } from 'lucide-react'
 import { useEffect, useState } from 'react'
+
+import { CONDICIONES_IVA } from 'libra-ui/Configuracion'
 
 import type { Configuracion as Datos } from '@/api/configuracion'
 import { VACIA, configuracion, recordarConfiguracion, urlDelLogo } from '@/api/configuracion'
@@ -15,12 +25,14 @@ import { mensajeDeError } from '@/components/AbmMaestro'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 
 const CAMPOS: [keyof Datos, string][] = [
   ['razon_social', 'Razón social'],
   ['nombre_fantasia', 'Nombre de fantasía'],
   ['cuit', 'CUIT'],
-  ['condicion_iva', 'Condición frente al IVA'],
   ['ingresos_brutos', 'Ingresos brutos'],
   ['inicio_actividades', 'Inicio de actividades'],
   ['domicilio', 'Domicilio'],
@@ -44,6 +56,11 @@ export function DatosDeLaEmpresa() {
   }, [])
 
   const set = (c: Partial<Datos>) => setDatos((d) => ({ ...d, ...c }))
+
+  const guardada = datos.condicion_iva ?? ''
+  const condiciones = !guardada || CONDICIONES_IVA.some((c) => c.valor === guardada)
+    ? CONDICIONES_IVA
+    : [...CONDICIONES_IVA, { valor: guardada, label: guardada }]
 
   async function guardar() {
     setError(null); setAviso(null); setGuardando(true)
@@ -100,6 +117,23 @@ export function DatosDeLaEmpresa() {
                    onChange={(e) => set({ [campo]: e.target.value } as Partial<Datos>)} />
           </div>
         ))}
+      </div>
+
+      {/* 🔑 Si lo guardado no está entre las tres, entra como una opción más:
+          sin eso el `<Select>` no lo encuentra, muestra el campo vacío, y el
+          primer guardado lo pisa en silencio. Es la misma salvaguarda que la
+          `EmpresaCard` del kit. */}
+      <div className="mt-4 grid max-w-sm gap-1">
+        <Label htmlFor="c-condicion_iva">Condición frente al IVA</Label>
+        <Select value={datos.condicion_iva ?? ''}
+                onValueChange={(v) => set({ condicion_iva: v })}>
+          <SelectTrigger id="c-condicion_iva"><SelectValue placeholder="Elegí una" /></SelectTrigger>
+          <SelectContent>
+            {condiciones.map((c) => (
+              <SelectItem key={c.valor} value={c.valor}>{c.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="mt-4 grid gap-1">
