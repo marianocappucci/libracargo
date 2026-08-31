@@ -250,3 +250,152 @@ def test_sin_sesion_no_se_toca_la_configuracion_de_arca(engine, monkeypatch):
         assert anonimo.get("/api/arca").status_code == 401
     finally:
         AuthBase.metadata.drop_all(engine)
+
+
+# --------------------------------------------------------------- probar conexion
+
+def _con_par(cliente, razon, *, cert=None, clave=None):
+    """Deja el par cargado en esa razón social y devuelve lo que subió."""
+    if cert is None or clave is None:
+        cert, clave = _par()
+    assert cliente.post(f"/api/arca/{razon}/certificado",
+                        files={"archivo": ("c.crt", cert, "application/x-x509-ca-cert")}
+                        ).status_code == 200
+    assert cliente.post(f"/api/arca/{razon}/clave",
+                        files={"archivo": ("c.key", clave, "application/x-pem-file")}
+                        ).status_code == 200
+    return cert, clave
+
+
+def _wsaa(monkeypatch, *, falla=None):
+    """Reemplaza la autenticación real. Devuelve la lista de llamadas.
+
+    🔑 La lista **también sirve de control negativo**: los casos que tienen que
+    cortarse antes de salir a la red se verifican con `llamadas == []`, no sólo
+    con el código de respuesta. Sin eso, un 400 que igual hubiera llamado a ARCA
+    pasaría el test.
+    """
+    from app.routers import arca as router_arca
+
+    llamadas = []
+
+    async def autenticar(certificado, clave, ambiente, servicio="wsfe"):
+        llamadas.append({"ambiente": ambiente, "servicio": servicio,
+                         "certificado": certificado, "clave": clave})
+        if falla:
+            raise RuntimeError(falla)
+        return {"token": "UN-TOKEN", "sign": "UNA-FIRMA",
+                "expiracion": "2026-08-31T23:59:59-03:00"}
+
+    monkeypatch.setattr(router_arca.arca_wsaa, "autenticar_con_bytes", autenticar)
+    return llamadas
+
+
+def test_probar_autentica_y_no_devuelve_el_ticket(cliente, razon, monkeypatch):
+    """El token y la firma son credenciales de sesión: no salen por la API."""
+    cert, clave = _con_par(cliente, razon)
+    llamadas = _wsaa(monkeypatch)
+
+    r = cliente.post(f"/api/arca/{razon}/probar")
+
+    assert r.status_code == 200, r.text
+    cuerpo = r.json()
+    assert cuerpo["ok"] is True
+    assert cuerpo["cuit"] == "30-11111111-1"
+    assert cuerpo["servicio"] == "wsfe"
+    assert cuerpo["expira"] == "2026-08-31T23:59:59-03:00"
+    assert "UN-TOKEN" not in r.text and "UNA-FIRMA" not in r.text
+    assert "token" not in cuerpo and "sign" not in cuerpo
+    # Y el par que se mandó a firmar es el que está guardado, no otro.
+    assert llamadas[0]["certificado"] == cert
+    assert llamadas[0]["clave"] == clave
+
+
+def test_probar_usa_el_ambiente_guardado_y_el_servicio_de_la_emision(
+        cliente, razon, monkeypatch):
+    """Probar contra homologación un ARCA de producción no probaría nada."""
+    _con_par(cliente, razon)
+    assert cliente.put(f"/api/arca/{razon}",
+                       json={"ambiente": "produccion", "habilitado": True}
+                       ).status_code == 200
+    llamadas = _wsaa(monkeypatch)
+
+    r = cliente.post(f"/api/arca/{razon}/probar")
+
+    assert r.status_code == 200, r.text
+    assert llamadas == [dict(llamadas[0])]
+    assert llamadas[0]["ambiente"] == "produccion"
+    # El mismo servicio que autentica `emision_arca`: probar contra otro diría
+    # que el certificado anda y dejaría afuera la relación que hace falta.
+    assert llamadas[0]["servicio"] == "wsfe"
+    assert r.json()["ambiente"] == "produccion"
+
+
+def test_probar_sin_credenciales_no_sale_a_la_red(cliente, razon, monkeypatch):
+    llamadas = _wsaa(monkeypatch)
+
+    r = cliente.post(f"/api/arca/{razon}/probar")
+
+    assert r.status_code == 400
+    assert "certificado" in r.json()["detail"]
+    assert llamadas == []
+
+
+def test_probar_con_media_credencial_no_sale_a_la_red(cliente, razon, monkeypatch):
+    cert, _ = _par()
+    assert cliente.post(f"/api/arca/{razon}/certificado",
+                        files={"archivo": ("c.crt", cert, "application/x-x509-ca-cert")}
+                        ).status_code == 200
+    llamadas = _wsaa(monkeypatch)
+
+    r = cliente.post(f"/api/arca/{razon}/probar")
+
+    assert r.status_code == 400
+    assert llamadas == []
+
+
+def test_probar_con_un_par_que_no_coincide_lo_dice_sin_preguntarle_a_arca(
+        cliente, razon, monkeypatch):
+    """El rechazo sería seguro, y su texto hablaría de la firma y no de la causa."""
+    cert, _ = _par()
+    _, otra_clave = _par()
+    _con_par(cliente, razon, cert=cert, clave=otra_clave)
+    llamadas = _wsaa(monkeypatch)
+
+    r = cliente.post(f"/api/arca/{razon}/probar")
+
+    assert r.status_code == 400
+    assert "no son pareja" in r.json()["detail"]
+    assert llamadas == []
+
+
+def test_si_arca_rechaza_el_texto_de_arca_llega_a_la_pantalla(cliente, razon, monkeypatch):
+    """Es el caso que este botón existe para mostrar: par impecable, ARCA que no.
+
+    El texto distingue "el certificado no está habilitado para wsfe" de "la hora
+    del servidor está corrida", y las dos se arreglan en lugares distintos.
+    """
+    _con_par(cliente, razon)
+    _wsaa(monkeypatch, falla="Computador no autorizado a acceder al servicio")
+
+    r = cliente.post(f"/api/arca/{razon}/probar")
+
+    assert r.status_code == 502
+    assert "Computador no autorizado" in r.json()["detail"]
+
+
+def test_probar_no_crea_la_configuracion_ni_cambia_nada(cliente, razon, monkeypatch):
+    """Probar es una consulta: no da de alta la fila ni toca `habilitado`."""
+    _con_par(cliente, razon)
+    antes = cliente.get("/api/arca").json()
+    _wsaa(monkeypatch)
+
+    assert cliente.post(f"/api/arca/{razon}/probar").status_code == 200
+
+    assert cliente.get("/api/arca").json() == antes
+
+
+def test_probar_una_razon_social_que_no_existe_es_404(cliente, razon, monkeypatch):
+    llamadas = _wsaa(monkeypatch)
+    assert cliente.post("/api/arca/99999/probar").status_code == 404
+    assert llamadas == []

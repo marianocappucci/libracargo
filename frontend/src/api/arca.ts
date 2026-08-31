@@ -41,6 +41,21 @@ function subir(ruta: string, archivo: File): Promise<ConfiguracionArca> {
   return api.postForm<ConfiguracionArca>(ruta, cuerpo)
 }
 
+/** El resultado de *Probar conexión*.
+ *
+ *  🔑 **No trae el token ni la firma que devuelve WSAA.** Son credenciales de
+ *  sesión de ARCA; el backend las usa y las descarta, y no salen por la API.
+ */
+export type PruebaArca = {
+  ok: boolean
+  ambiente: Ambiente
+  cuit: string | null
+  /** El webservice contra el que se probó — el mismo que usa la emisión. */
+  servicio: string
+  /** Hasta cuándo vale el ticket de acceso, tal como lo manda ARCA. */
+  expira: string | null
+}
+
 export const arca = {
   listar: () => api.get<ConfiguracionArca[]>('/api/arca'),
   guardar: (razonSocialId: number, datos: { ambiente: Ambiente; habilitado: boolean }) =>
@@ -51,4 +66,8 @@ export const arca = {
     subir(`/api/arca/${razonSocialId}/clave`, archivo),
   borrarCredenciales: (razonSocialId: number) =>
     api.del<ConfiguracionArca>(`/api/arca/${razonSocialId}/credenciales`),
+  /** Autentica de verdad contra ARCA. Es lo único que dice que el organismo
+   *  acepta el certificado: leer los archivos no lo puede contestar. */
+  probar: (razonSocialId: number) =>
+    api.post<PruebaArca>(`/api/arca/${razonSocialId}/probar`),
 }
