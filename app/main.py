@@ -25,6 +25,7 @@ from libraauth.terminos import TerminosRepository, build_terminos_router
 from libracore.config_router import build_backup_router
 from libracore.geografia import build_geo_router
 from libracore.respaldo import Instancia
+from libracore.smtp_router import build_smtp_probe_router
 
 from app import db
 from app.auth import UserRepository, construir_session_auth, require_admin, require_staff
@@ -165,6 +166,19 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     # gate, en silencio. Por eso cada producto tiene un test que lo prueba.
     app.state.terminos = TerminosRepository(db.fabrica_de_sesiones())
     app.include_router(build_smtp_settings_router())
+    # `POST /admin/smtp/probar`: abre la conexion, negocia TLS y hace login.
+    #
+    # 🔑 Resuelve por el MISMO camino que los envios (`smtp_efectivo` sobre el
+    # resolver de abajo), que es lo que hace que el boton signifique algo: un
+    # endpoint que probara otra config diria "Conectado" contra un servidor
+    # mientras los mails salen por otro. El gate lo pone el producto porque el
+    # router del motor no trae ninguno, y esto abre una sesion SMTP con las
+    # credenciales del cliente.
+    app.include_router(
+        build_smtp_probe_router(
+            lambda: resolver_smtp_config(db.fabrica_de_sesiones())),
+        dependencies=[Depends(require_admin)],
+    )
     # `GET /terminos`, `POST /terminos/aceptar`, `GET /terminos/historial`.
     # NO se gatea desde afuera: es el unico camino para salir del gate.
     app.include_router(build_terminos_router())
