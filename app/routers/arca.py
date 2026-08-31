@@ -1,9 +1,10 @@
-"""Configuración de ARCA: el certificado y la clave con los que se va a facturar.
+"""Configuración de ARCA: el certificado y la clave con los que se factura.
 
-**Esto configura, no emite.** Emitir es la fase siguiente y no está: hoy el
-comprobante se registra con el número que tipea una persona. Lo que hace falta
-antes de poder emitir es tener las credenciales cargadas y **verificadas**, y
-eso es lo que hay acá.
+**Esto configura; emitir lo hace `app.servicios.emision_arca`.** Una razón
+social con el par cargado y `habilitado` emite con CAE y el número se lo da
+ARCA; una sin habilitar sigue registrando con el número que tipea una persona.
+O sea que lo que se carga acá es exactamente lo que decide cuál de los dos
+caminos toma un alta de comprobante.
 
 ## Lo que la pantalla contesta y ningún nombre de archivo puede
 
@@ -11,8 +12,11 @@ eso es lo que hay acá.
   a ARCA;
 - **cuándo vence** — duran dos años y el día que vencen la facturación deja de
   andar sin que nadie haya tocado nada;
-- y si el certificado y la clave **son pareja**, que es el error de armado que
-  se ve perfecto en pantalla y falla recién contra ARCA.
+- si el certificado y la clave **son pareja**, que es el error de armado que
+  se ve perfecto en pantalla y falla recién contra ARCA;
+- y —con *Probar conexión*— si ARCA además **lo acepta**: un par impecable al
+  que nadie le dio de alta la relación con `wsfe` en el Administrador de
+  Relaciones pasa las tres validaciones locales y lo rechaza el organismo.
 
 Todo el router es de administrador: acá se sube una clave privada.
 """
@@ -20,6 +24,7 @@ Todo el router es de administrador: acá se sube una clave privada.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from libracore import arca_wsaa
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -28,7 +33,7 @@ from app.db import obtener_sesion
 from app.models.configuracion_arca import ConfiguracionArca
 from app.models.enums import AccionAuditoria, AmbienteArca
 from app.models.maestros import RazonSocial
-from app.schemas.arca import ArcaIn, ArcaOut, CertificadoOut
+from app.schemas.arca import ArcaIn, ArcaOut, CertificadoOut, PruebaArcaOut
 from app.servicios import auditoria
 from app.servicios.arca import ArchivoInvalido, leer_certificado, leer_clave, son_pareja
 
@@ -37,6 +42,14 @@ router = APIRouter(prefix="/api/arca", tags=["arca"], dependencies=[Depends(requ
 #: Un certificado de ARCA son un par de KB. El tope está para que un archivo
 #: equivocado —un PDF, un ZIP— se rechace por tamaño antes de intentar parsearlo.
 MAXIMO = 64 * 1024
+
+#: El webservice contra el que prueba *Probar conexión*.
+#:
+#: 🔑 Es **el mismo que usa la emisión** (`emision_arca`, que autentica con
+#: `servicio="wsfe"` por defecto). Probar contra otro servicio diría que el
+#: certificado está bien y dejaría afuera justo la relación que hace falta para
+#: facturar, que es la que falta casi siempre.
+SERVICIO = "wsfe"
 
 
 def _razon_social(sesion: Session, razon_social_id: int) -> RazonSocial:
@@ -215,3 +228,56 @@ def borrar_credenciales(razon_social_id: int, sesion: Session = Depends(obtener_
     sesion.commit()
     sesion.refresh(cfg)
     return _a_salida(sesion, cfg)
+
+
+@router.post("/{razon_social_id}/probar", response_model=PruebaArcaOut)
+async def probar(razon_social_id: int, sesion: Session = Depends(obtener_sesion)):
+    """Autentica de verdad contra WSAA con el par de esta razón social.
+
+    🔑 **Es el único chequeo que dice que ARCA acepta el certificado.** Leer los
+    archivos contesta que están bien armados —que parsean, que no vencieron, que
+    son pareja— y las tres cosas pueden ser ciertas con un certificado que ARCA
+    rechaza: el alta de la relación con `wsfe` en el Administrador de Relaciones
+    es un trámite aparte, en el portal, y no deja ninguna marca en el archivo.
+
+    Sin este botón esa diferencia recién aparecía **al emitir el primer
+    comprobante**, con el texto de ARCA saliendo por el alta de un comprobante
+    que además queda sin hacerse.
+
+    No escribe nada: no crea la fila de configuración si no existe, no toca
+    `habilitado` y no queda en el log de actividad — probar es una consulta.
+    """
+    rs = _razon_social(sesion, razon_social_id)
+    cfg = sesion.scalar(
+        select(ConfiguracionArca).where(ConfiguracionArca.razon_social_id == razon_social_id)
+    )
+    if cfg is None or cfg.certificado is None or cfg.clave is None:
+        raise HTTPException(
+            400, "faltan el certificado o la clave: subí las dos mitades antes de probar")
+    try:
+        pareja = son_pareja(cfg.certificado, cfg.clave)
+    except ArchivoInvalido as err:
+        raise HTTPException(400, str(err)) from None
+    if not pareja:
+        # Se corta acá y no se sale a la red: el par no coincide, así que el
+        # rechazo de ARCA sería seguro y su texto hablaría de la firma, no de
+        # la causa. La pantalla ya lo dice; el botón tiene que decir lo mismo.
+        raise HTTPException(
+            400, "el certificado y la clave no son pareja: ARCA va a rechazar la firma")
+
+    ambiente = cfg.ambiente or AmbienteArca.HOMOLOGACION
+    try:
+        ticket = await arca_wsaa.autenticar_con_bytes(
+            cfg.certificado, cfg.clave, ambiente.value, SERVICIO)
+    except Exception as e:
+        # El texto de ARCA va tal cual, igual que en la emisión: distingue "el
+        # certificado no está habilitado para wsfe" de "la hora del servidor
+        # está corrida", y las dos se arreglan en lugares distintos.
+        raise HTTPException(502, f"ARCA rechazó la autenticación: {e}") from None
+
+    return PruebaArcaOut(
+        ok=True, ambiente=ambiente, cuit=rs.cuit, servicio=SERVICIO,
+        # `.get`: lo que interesa del ticket es que lo haya dado. Si ARCA no
+        # mandó el vencimiento, el aviso se muestra igual sin esa parte.
+        expira=ticket.get("expiracion") or None,
+    )
