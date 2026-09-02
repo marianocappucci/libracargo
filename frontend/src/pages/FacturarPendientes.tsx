@@ -16,12 +16,13 @@ import { ArrowLeft, Receipt } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
+import type { Ensayo } from '@/api/comprobantes'
 import { comprobantes, sumarImportes } from '@/api/comprobantes'
 import type { Opciones, Orden } from '@/api/ordenes'
 import { cargarOpciones, ordenes as apiOrdenes } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { Elegir } from '@/components/Elegir'
-import { hoyEnArgentina, formatearImporte } from '@/components/esquema-orden'
+import { formatearFecha, hoyEnArgentina, formatearImporte } from '@/components/esquema-orden'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -82,6 +83,10 @@ export default function FacturarPendientes() {
   const [cargando, setCargando] = useState(false)
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // El resultado de un ensayo contra homologación. No se navega a ningún
+  // lado: no hay comprobante que abrir, y el dato que el operador vino a
+  // buscar —que ARCA contestó y con qué número— está acá.
+  const [ensayo, setEnsayo] = useState<Ensayo | null>(null)
 
   const clienteId = params.get('cliente') ?? ''
 
@@ -157,6 +162,7 @@ export default function FacturarPendientes() {
 
   async function facturar() {
     setError(null)
+    setEnsayo(null)
     setEnviando(true)
     try {
       const creado = await comprobantes.facturar({
@@ -168,6 +174,16 @@ export default function FacturarPendientes() {
         numero: Number(borrador.numero),
         orden_ids: aFacturar.map((o) => o.id),
       })
+      // 🔴 **Un ensayo NO se navega.** Con el selector de ARCA en
+      // homologación el backend corre el alta entera y la revierte: no hay
+      // comprobante que abrir. Navegar al listado dejaría al operador mirando
+      // una tabla sin su comprobante y sin ninguna explicación — que es la
+      // forma más cara de fallar acá, porque parece que no funcionó.
+      if (creado && 'ensayo' in creado) {
+        setEnsayo(creado)
+        setEnviando(false)
+        return
+      }
       // Se vuelve al listado **con el comprobante recién hecho abierto**: la
       // pregunta que sigue a facturar es siempre "¿cómo quedó?".
       navegar(creado?.id ? `/comprobantes?ver=${creado.id}` : '/comprobantes')
@@ -196,6 +212,33 @@ export default function FacturarPendientes() {
         <p role="alert" className="mb-4 rounded border border-destructive/40 p-3 text-sm">
           {error}
         </p>
+      )}
+
+      {ensayo && (
+        <section role="status" aria-label="Resultado del ensayo"
+                 className="mb-4 rounded border p-4 text-sm">
+          <h2 className="mb-1 font-semibold">
+            Ensayo contra homologación — no se guardó nada
+          </h2>
+          {/* El "no se guardó nada" va en el título y no en una nota al pie: es
+              lo primero que el operador tiene que entender, porque acaba de
+              apretar Facturar y la pantalla no lo llevó a ningún comprobante. */}
+          <p className="mb-3 text-muted-foreground">
+            ARCA contestó, así que el camino de emisión funciona. Las órdenes
+            siguen pendientes y la cuenta corriente no se movió. Para facturar
+            de verdad, pasá el ambiente a producción en Configuración → ARCA.
+          </p>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+            <dt className="text-muted-foreground">Número</dt>
+            <dd>{String(ensayo.punto_venta).padStart(4, '0')}-
+                {String(ensayo.numero).padStart(8, '0')}</dd>
+            <dt className="text-muted-foreground">CAE</dt>
+            <dd>{ensayo.cae || '—'}</dd>
+            <dt className="text-muted-foreground">Vence</dt>
+            <dd>{ensayo.cae_vencimiento
+                 ? formatearFecha(ensayo.cae_vencimiento) : '—'}</dd>
+          </dl>
+        </section>
       )}
 
       <section className="mb-6 rounded border p-4">
