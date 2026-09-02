@@ -25,7 +25,7 @@ from libraauth.models import Base as AuthBase
 from libracore import config_manager
 
 from app.main import crear_app
-from tests.conftest import config_de_prueba, par_de_arca
+from tests.conftest import USUARIO, config_de_prueba, par_de_arca
 
 
 def _subir(cliente, ambiente: str, cert: bytes, clave: bytes) -> None:
@@ -165,6 +165,76 @@ def test_lo_que_no_es_un_certificado_se_rechaza_antes_de_tocar_el_disco(cliente)
     assert r.status_code == 422, r.text
     assert not os.path.isdir(config_manager.CERTS_DIR) or not os.listdir(
         config_manager.CERTS_DIR), "escribió el archivo igual"
+
+
+# ── 4. Quién tocó las credenciales ─────────────────────────────────────────
+#
+# El router propio de este producto anotaba cada cambio de ARCA. El compartido
+# no anotaba **nada** hasta LibraCore `v1.74.0`, que agregó `al_cambiar` — este
+# hueco fue el que lo pidió. Lo que se mide acá es el cable, no el hook: que el
+# motor lo llame ya lo prueba la suite del motor.
+
+
+def _asientos(cliente, **filtros):
+    r = cliente.get("/api/auditoria", params={"entidad": "arca_config", **filtros})
+    assert r.status_code == 200, r.text
+    return r.json()["registros"]
+
+
+def test_subir_el_par_deja_asiento_de_quien_lo_hizo(cliente):
+    """Es la pantalla donde se sube una clave privada: sin esto, quién la
+    cambió no queda en ningún lado."""
+    cert, clave = par_de_arca()
+    _subir(cliente, "homologacion", cert, clave)
+
+    asientos = _asientos(cliente)
+    acciones = [a["datos_despues"]["accion"] for a in asientos]
+    assert "certificado" in acciones and "clave" in acciones, asientos
+    # El usuario, que es el punto entero de auditar.
+    assert all(a["usuario_nombre"] == USUARIO for a in asientos), asientos
+    # Y de qué ambiente: borrar el de homologación es rutina, el de producción
+    # deja al cliente sin facturar.
+    assert all(a["datos_despues"]["ambiente"] == "homologacion" for a in asientos)
+
+
+def test_el_asiento_no_lleva_la_clave_privada(cliente):
+    """🔑 Un log de auditoría con la clave adentro es peor que no tener log.
+
+    El motor ya lo garantiza del lado del `detalle`; esto cierra el cable de
+    este lado, que es el que podría agregarle campos.
+    """
+    cert, clave = par_de_arca()
+    _subir(cliente, "homologacion", cert, clave)
+
+    crudo = repr(_asientos(cliente))
+    assert "PRIVATE KEY" not in crudo
+    assert clave.decode().strip() not in crudo
+    assert cert.decode().strip() not in crudo
+
+
+def test_borrar_queda_como_baja(cliente):
+    """Sacar el par no es una modificación más: es lo que deja la instancia sin
+    poder facturar, y en el log tiene que poder filtrarse como tal."""
+    cert, clave = par_de_arca()
+    _subir(cliente, "homologacion", cert, clave)
+    assert cliente.delete("/api/arca/credenciales",
+                          params={"ambiente": "homologacion"}).status_code == 200
+
+    bajas = _asientos(cliente, accion="baja")
+    assert len(bajas) == 1, bajas
+    assert bajas[0]["datos_despues"]["accion"] == "borrar"
+
+
+def test_leer_la_pantalla_no_ensucia_el_log(cliente):
+    """El control negativo. Sin él, "hay asientos" pasaría con un hook que
+    registra cualquier request."""
+    cert, clave = par_de_arca()
+    _subir(cliente, "homologacion", cert, clave)
+    antes = len(_asientos(cliente))
+
+    cliente.get("/api/arca")
+    cliente.get("/api/arca/estado")
+    assert len(_asientos(cliente)) == antes
 
 
 @pytest.mark.parametrize("ambiente", ["", "prod", "PRODUCCION_"])

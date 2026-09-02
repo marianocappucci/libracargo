@@ -31,7 +31,13 @@ from libracore.respaldo import Instancia
 from libracore.smtp_router import build_smtp_probe_router
 
 from app import db
-from app.auth import UserRepository, construir_session_auth, require_admin, require_staff
+from app.auth import (
+    UserRepository,
+    construir_session_auth,
+    get_current_user,
+    require_admin,
+    require_staff,
+)
 from app.config import Config
 from app.routers import (
     auditoria,
@@ -49,6 +55,7 @@ from app.routers import auth as auth_router
 # Con alias: mas abajo hay una variable local llamada usuarios con el
 # repositorio, y sin el alias el import queda pisado.
 from app.routers import usuarios as usuarios_router
+from app.servicios import auditoria_arca
 from app.servicios.emision_arca import EMPRESA_ARCA
 
 
@@ -252,8 +259,19 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     # un slug de más no pueda dejarla ciega—: es que un segundo literal haría
     # que la pantalla y el alta creen **dos filas distintas**, y ahí sí no hay
     # con qué elegir. Ver `EMPRESA_ARCA`.
+    #
+    # 🔴 **`al_cambiar` es lo que devuelve el registro que este producto
+    # tenía y perdió al normalizar.** El router propio anotaba cada alta,
+    # upload y borrado del par; el compartido no anotaba nada hasta LibraCore
+    # `v1.74.0`. Sin esta línea la pantalla funciona igual y la tabla de
+    # auditoría queda muda justo sobre la clave privada del cliente.
     app.include_router(
-        build_arca_router(prefix="/api/arca", empresa_por_defecto=EMPRESA_ARCA),
+        build_arca_router(
+            prefix="/api/arca",
+            empresa_por_defecto=EMPRESA_ARCA,
+            usuario_actual=get_current_user,
+            al_cambiar=auditoria_arca.construir_hook(db.fabrica_de_sesiones()),
+        ),
         dependencies=[Depends(require_admin)],
     )
 
