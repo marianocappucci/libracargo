@@ -66,21 +66,34 @@ def levantar_mariadb(imagen: str = IMAGEN_POR_DEFECTO,
         raise RuntimeError("MariaDB arrancó pero no publicó el puerto")
     puerto = int(puerto_crudo[0].rsplit(":", 1)[1])
 
-    # 🔴 La sonda es una CONSULTA, no un ping.  contesta que
+    # 🔴 La sonda es una CONSULTA, no un ping. `mysqladmin ping` contesta que
     # el servidor está vivo aunque rechace las credenciales, y durante la
     # inicialización de la imagen hay un servidor temporal que hace exactamente
     # eso: la espera terminaba en verde y la restauración moría con "Access
     # denied". Un chequeo que no puede fallar no es un chequeo.
+    #
+    # 🔴 **Y la consulta va CONTRA `BASE_TEMPORAL`, no suelta.** Con un
+    # `SELECT 1` sin base, la sonda pasa en cuanto el servidor acepta
+    # credenciales —que ocurre ANTES de que el entrypoint termine de crear la
+    # base de `MARIADB_DATABASE`—, así que la espera daba por listo un servidor
+    # donde `legado` todavía no existía. El síntoma llegaba una línea después,
+    # como `ERROR 1049 (42000): Unknown database 'legado'`, y sólo en una
+    # máquina lenta: el CI se cayó así el 2026-09-02, en un job que tardó 6m45s
+    # contra los 4m20s habituales.
+    #
+    # Es la misma trampa que el párrafo de arriba, un nivel más adentro: la
+    # sonda no podía fallar por lo único que el llamador necesita.
     for _ in range(120):
         if _docker("inspect", "-f", "{{.State.Running}}", nombre).stdout.strip() != "true":
             registro = _docker("logs", "--tail", "20", nombre).stderr
             raise RuntimeError(f"MariaDB se murió al arrancar: {registro}")
         listo = _docker("exec", nombre, "mariadb", "-uroot", "-plegado-efimero",
-                        "-N", "-B", "-e", "SELECT 1")
+                        "-N", "-B", "-e", "SELECT 1", BASE_TEMPORAL)
         if listo.returncode == 0 and listo.stdout.strip() == "1":
             return nombre, puerto
         time.sleep(1)
-    raise RuntimeError("MariaDB no llegó a aceptar una consulta en 120 s")
+    raise RuntimeError(
+        f"MariaDB no llegó a aceptar una consulta contra {BASE_TEMPORAL} en 120 s")
 
 
 def restaurar_dump(contenedor: str, dump: Path) -> None:
