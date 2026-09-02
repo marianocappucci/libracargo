@@ -6,6 +6,27 @@ export type TipoComprobante =
   | 'factura_a' | 'factura_b' | 'factura_c'
   | 'nota_credito_a' | 'nota_credito_b' | 'nota_credito_c'
 
+/** Lo que devuelve facturar cuando el ambiente de ARCA es homologación.
+ *
+ *  🔴 **No es un `Comprobante` incompleto: no existe.** El backend corre el
+ *  alta entera contra ARCA —número, pedido, CAE— y la revierte, porque acá un
+ *  comprobante además mueve la cuenta corriente y cierra las órdenes. Por eso
+ *  no tiene `id`, y por eso el `POST` contesta 200 y no 201.
+ *
+ *  Se distingue por `ensayo`, que sólo viene en esta forma. Guiarse por la
+ *  ausencia de `id` sería frágil: cualquier respuesta a medias la cumpliría.
+ */
+export type Ensayo = {
+  ensayo: true
+  ambiente: string
+  tipo: TipoComprobante
+  punto_venta: number
+  numero: number
+  total: string
+  cae: string | null
+  cae_vencimiento: string | null
+}
+
 export type Comprobante = {
   id: number
   razon_social_id: number
@@ -99,6 +120,11 @@ export const comprobantes = {
     const qs = p.toString()
     return api.get<TotalDeRazonSocial[]>(`/api/comprobantes/totales${qs ? `?${qs}` : ''}`)
   },
-  facturar: (datos: unknown) => api.post<Comprobante>('/api/comprobantes', datos),
+  // 🔑 La unión no es cosmética: obliga a quien llame a **decidir cuál de
+  // los dos recibió** antes de tocar `.id`. Con `Comprobante` a secas,
+  // TypeScript deja leer el id de un ensayo —que no lo tiene— y el error
+  // aparece recién en pantalla, como una navegación a la nada.
+  facturar: (datos: unknown) =>
+    api.post<Comprobante | Ensayo>('/api/comprobantes', datos),
   anular: (id: number) => api.del<Comprobante>(`/api/comprobantes/${id}`),
 }

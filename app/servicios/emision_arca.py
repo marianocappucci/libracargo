@@ -176,6 +176,23 @@ def emite_por_arca(sesion: Session, razon_social_id: int) -> bool:
     return configuracion_activa(sesion, razon_social_id) is not None
 
 
+def es_ensayo(cfg: dict | None) -> bool:
+    """Si lo que se va a emitir con esta configuración **no es del cliente**.
+
+    Un comprobante contra homologación trae CAE y numeración del WSFE de
+    homologación: no es un comprobante, es la prueba de que el camino funciona.
+    En este producto además no es inocuo guardarlo — el comprobante mueve la
+    cuenta corriente y cierra las órdenes de carga—, así que el alta se corre
+    entera y se **revierte**. Ver `facturar` en `app/routers/comprobantes.py`.
+
+    🔑 **Sale del `ambiente` de la MISMA config con la que se pidió el número**,
+    no de una lectura nueva. Dos lecturas dejarían la decisión de guardar o no
+    apoyada en un selector que pudo moverse en el medio — y las dos direcciones
+    duelen: revertir un comprobante real, o guardar uno de prueba.
+    """
+    return (cfg or {}).get("ambiente") == "homologacion"
+
+
 async def numero_que_sigue(
     sesion: Session, razon_social_id: int, tipo: TipoComprobante
 ) -> tuple[int, dict, dict, RazonSocial]:

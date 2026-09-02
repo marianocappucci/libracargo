@@ -171,4 +171,56 @@ describe('Facturar pendientes', () => {
       punto_venta: 1, numero: 123, orden_ids: [1],
     })
   })
+
+  // ── El ensayo contra homologación ────────────────────────────────────────
+  //
+  // Con el ambiente de ARCA en homologación el backend corre el alta entera y
+  // la revierte, así que contesta algo que **no tiene `id`**. Lo que se prueba
+  // acá es que la pantalla lo muestre en vez de navegar: un `navigate` con un
+  // id `undefined` deja al operador en el listado, sin su comprobante y sin
+  // ninguna explicación — que parece que no funcionó.
+
+  const ENSAYO = {
+    ensayo: true, ambiente: 'homologacion', tipo: 'factura_a',
+    punto_venta: 5, numero: 42, total: '1210.00',
+    cae: '75123456789012', cae_vencimiento: '2026-12-31',
+  }
+
+  async function facturarConRespuesta(respuesta: unknown) {
+    responder([orden(1)])
+    post.mockResolvedValue(respuesta)
+    await abrir()
+    await waitFor(() => expect(casilla(1)).toBeInTheDocument())
+    fireEvent.click(casilla(1))
+    fireEvent.change(screen.getByLabelText('Número'), { target: { value: '123' } })
+    fireEvent.click(screen.getByText('Facturar'))
+    await waitFor(() => expect(post).toHaveBeenCalled())
+  }
+
+  it('un ensayo se muestra en la pantalla, con su número y su CAE', async () => {
+    await facturarConRespuesta(ENSAYO)
+
+    const panel = await screen.findByRole('status', { name: 'Resultado del ensayo' })
+    expect(panel).toHaveTextContent('no se guardó nada')
+    expect(panel).toHaveTextContent('0005-00000042')
+    expect(panel).toHaveTextContent('75123456789012')
+  })
+
+  it('un ensayo NO navega: la pantalla se queda donde está', async () => {
+    // El control de lo de arriba. Sin esto, "se ve el panel" pasaría igual con
+    // una pantalla que además se fue a otro lado.
+    await facturarConRespuesta(ENSAYO)
+
+    expect(screen.getByRole('heading', { name: 'Facturar pendientes' }))
+      .toBeInTheDocument()
+    expect(screen.getByText('Facturar')).not.toBeDisabled()
+  })
+
+  it('un comprobante de verdad no muestra el panel del ensayo', async () => {
+    // La otra dirección: si el panel apareciera siempre, los dos tests de
+    // arriba pasarían y la pantalla mentiría en el caso normal.
+    await facturarConRespuesta({ id: 9 })
+
+    expect(screen.queryByRole('status', { name: 'Resultado del ensayo' })).toBeNull()
+  })
 })

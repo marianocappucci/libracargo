@@ -26,7 +26,7 @@ CUIT = "20-28993360-4"
 
 
 def _configurar_arca(cliente, *, cuit=CUIT, punto_venta=5,
-                     ambiente="homologacion", empresa=emision_arca.EMPRESA_ARCA):
+                     ambiente="produccion", empresa=emision_arca.EMPRESA_ARCA):
     """Deja la instancia lista para emitir: el par en disco y el CUIT cargado.
 
     Es **una configuración por instancia**, no una por razón social: así la
@@ -391,6 +391,130 @@ def test_el_selector_manda_cual_de_los_dos_pares_firma(cliente, datos, monkeypat
     assert con_produccion[1] == "produccion"
     assert con_produccion[2] != con_homologacion[2], (
         "los dos ambientes firmaron con el MISMO archivo de certificado")
+
+
+# ── El ensayo contra homologacion ──────────────────────────────────────────
+
+
+@pytest.fixture
+def razon_en_homologacion(cliente, datos):
+    """La instancia configurada para PROBAR: el selector en homologación."""
+    razon = _crear(cliente, "/api/razones-sociales", {
+        "nombre": "Suitrans SA", "cuit": CUIT, "punto_venta": 5,
+    })
+    _configurar_arca(cliente, ambiente="homologacion")
+    return razon
+
+
+def test_el_ensayo_recorre_el_camino_entero_contra_arca(cliente, datos,
+                                                        razon_en_homologacion,
+                                                        monkeypatch):
+    """🔑 El valor del ensayo es que NO es una simulación local.
+
+    Pide el número correlativo, arma el pedido y trae el CAE, todo contra el
+    WSFE de homologación. Si sólo devolviera un cartel, no probaría nada de lo
+    que se rompe al cortar a producción.
+    """
+    pedidos = _arca_responde(monkeypatch, ultimo=41)
+    a = orden(cliente, datos, "1000.00", razon_social_id=razon_en_homologacion)
+
+    r = facturar(cliente, datos, [a], razon=razon_en_homologacion, numero=None)
+
+    assert r.status_code == 200, r.text   # 200 y no 201: no se creó nada
+    cuerpo = r.json()
+    assert cuerpo["ensayo"] is True
+    assert cuerpo["ambiente"] == "homologacion"
+    assert cuerpo["numero"] == 42, "el número lo tenía que dar ARCA igual"
+    assert cuerpo["cae"] == "75123456789012"
+    assert "id" not in cuerpo, "un ensayo no tiene id porque no tiene fila"
+
+    # Y hablo con ARCA de verdad: las tres llamadas del camino de emisión.
+    assert [p[0] for p in pedidos] == ["autenticar", "ultimo", "cae"], pedidos
+    assert pedidos[0][1] == "homologacion"
+
+
+def test_el_ensayo_NO_deja_nada(cliente, datos, razon_en_homologacion, monkeypatch):
+    """🔴 Las tres mitades del daño que un comprobante de prueba haría acá.
+
+    En otro producto alcanzaría con marcar la fila y filtrarla. Acá el
+    comprobante **mueve la cuenta corriente** del cliente y **cierra las
+    órdenes**, que después no se pueden volver a facturar. Se miran las tres:
+    con una sola, aflojar el rollback pasaría en verde.
+    """
+    _arca_responde(monkeypatch, ultimo=41)
+    a = orden(cliente, datos, "1000.00", razon_social_id=razon_en_homologacion)
+
+    assert facturar(cliente, datos, [a], razon=razon_en_homologacion,
+                    numero=None).status_code == 200
+
+    assert cliente.get("/api/comprobantes").json() == [], "quedó el comprobante"
+    assert cliente.get(f"/api/cuentas/cliente/{datos['cliente']}").json()[
+        "movimientos"] == [], "movió la cuenta corriente del cliente"
+    quedo = cliente.get(f"/api/ordenes/{a['id']}").json()
+    assert quedo["estado"] == "pendiente", "cerró la orden"
+    assert quedo["comprobante_id"] is None
+
+
+def test_el_ensayo_no_deja_asiento_de_auditoria(cliente, datos,
+                                                razon_en_homologacion, monkeypatch):
+    """Un alta que se revirtió no es un alta.
+
+    Registrarla sería un log que miente en la dirección más cara: dice que
+    existe un comprobante que nadie va a encontrar.
+    """
+    _arca_responde(monkeypatch, ultimo=41)
+    a = orden(cliente, datos, "1000.00", razon_social_id=razon_en_homologacion)
+    facturar(cliente, datos, [a], razon=razon_en_homologacion, numero=None)
+
+    r = cliente.get("/api/auditoria", params={"entidad": "comprobante"})
+    assert r.json()["registros"] == [], r.json()
+
+
+def test_la_misma_orden_se_puede_facturar_de_verdad_despues_del_ensayo(
+        cliente, datos, razon_en_homologacion, monkeypatch):
+    """🔑 Lo que el ensayo tiene que dejar posible, y es el punto de todo esto.
+
+    Probar con el cliente y **después** cortar a facturación real sobre las
+    mismas órdenes. Si el ensayo las cerrara, el corte empezaría con la
+    operación a medio facturar.
+    """
+    _arca_responde(monkeypatch, ultimo=41)
+    a = orden(cliente, datos, "1000.00", razon_social_id=razon_en_homologacion)
+    assert facturar(cliente, datos, [a], razon=razon_en_homologacion,
+                    numero=None).status_code == 200
+
+    # El corte: el selector pasa a producción.
+    assert cliente.put("/api/arca", json={
+        "empresa": emision_arca.EMPRESA_ARCA, "cuit": CUIT, "punto_venta": 5,
+        "ambiente": "produccion", "alias": "",
+    }).status_code == 200
+    certificado, clave = par_de_arca()
+    for tramo, archivo in (("certificado", certificado), ("clave", clave)):
+        assert cliente.post(f"/api/arca/{tramo}", params={"ambiente": "produccion"},
+                            files={"archivo": ("c", archivo, "text/plain")},
+                            ).status_code == 200
+
+    _arca_responde(monkeypatch, ultimo=7)
+    r = facturar(cliente, datos, [a], razon=razon_en_homologacion, numero=None)
+    assert r.status_code == 201, r.text
+    assert r.json()["numero"] == 8, "la numeración real arranca donde dice ARCA"
+
+
+def test_con_el_selector_en_produccion_se_guarda_como_siempre(cliente, datos,
+                                                              razon_con_arca,
+                                                              monkeypatch):
+    """El control que hace que los de arriba signifiquen algo.
+
+    Sin esto, "no queda nada" pasaría igual con un alta que no guarda nunca.
+    """
+    _arca_responde(monkeypatch, ultimo=41)
+    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+
+    r = facturar(cliente, datos, [a], razon=razon_con_arca, numero=None)
+    assert r.status_code == 201, r.text
+    assert r.json()["cae"] == "75123456789012"
+    assert len(cliente.get("/api/comprobantes").json()) == 1
+    assert cliente.get(f"/api/cuentas/cliente/{datos['cliente']}").json()["movimientos"]
 
 
 # ── Los importes que se le mandan ───────────────────────────────────────────
