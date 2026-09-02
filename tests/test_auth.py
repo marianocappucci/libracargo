@@ -14,8 +14,8 @@ from fastapi.testclient import TestClient
 from libraauth.models import Base as AuthBase
 
 from app.auth import COOKIE
-from app.config import Config
 from app.main import crear_app
+from tests.conftest import config_de_prueba
 
 USUARIO, CLAVE = "admin", "clave-de-prueba"
 
@@ -40,9 +40,8 @@ def entorno(engine, monkeypatch):
 
 @pytest.fixture
 def cliente(entorno):
-    import os
 
-    cfg = Config(database_url=os.environ["DATABASE_URL"], entorno="test", debug=False)
+    cfg = config_de_prueba()
     return TestClient(crear_app(cfg), base_url="https://testserver")
 
 
@@ -86,7 +85,6 @@ def test_sin_clave_de_admin_la_app_no_levanta(engine, monkeypatch):
     intercambiables: si un día esto arranca igual sin la variable, alguien
     cambió de variante y la instancia queda con una clave que nadie eligió.
     """
-    import os
 
     monkeypatch.delenv("ENV", raising=False)
     monkeypatch.delenv("LIBRACARGO_ADMIN_PASSWORD", raising=False)
@@ -94,9 +92,7 @@ def test_sin_clave_de_admin_la_app_no_levanta(engine, monkeypatch):
     AuthBase.metadata.drop_all(engine)
     AuthBase.metadata.create_all(engine)
     try:
-        cfg = Config(
-            database_url=os.environ["DATABASE_URL"], entorno="production", debug=False
-        )
+        cfg = config_de_prueba(entorno="production")
         with pytest.raises(RuntimeError, match="ADMIN_PASSWORD"):
             crear_app(cfg)
     finally:
@@ -110,16 +106,13 @@ def test_sin_secreto_de_sesion_la_app_no_levanta(engine, monkeypatch):
     desarrollo que está escrito en el código fuente: cualquiera que lea el repo
     —público— podría fabricar una cookie válida.
     """
-    import os
 
     monkeypatch.delenv("ENV", raising=False)
     monkeypatch.delenv("SECRET_KEY", raising=False)
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
     AuthBase.metadata.drop_all(engine)
     AuthBase.metadata.create_all(engine)
-    cfg = Config(
-        database_url=os.environ["DATABASE_URL"], entorno="production", debug=False
-    )
+    cfg = config_de_prueba(entorno="production")
     try:
         with pytest.raises(RuntimeError, match="SECRET_KEY"):
             crear_app(cfg)

@@ -60,16 +60,11 @@ class MedioPago(enum.Enum):
     OTRO = "otro"
 
 
-class AmbienteArca(enum.Enum):
-    """Los dos ambientes de ARCA.
-
-    Homologacion no emite comprobantes fiscales: es donde se prueba el armado
-    sin consecuencias. El default de una instancia nueva es este, para que
-    habilitar produccion sea siempre un acto deliberado.
-    """
-
-    HOMOLOGACION = "homologacion"
-    PRODUCCION = "produccion"
+# `AmbienteArca` vivía acá hasta el 2026-09-02, cuando la configuración de
+# ARCA pasó a `arca_config` de LibraCore. Los dos ambientes los declara ahora
+# el motor (`arca_router.AMBIENTES`), que además es quien resuelve las URLs
+# de WSAA y WSFE a partir de ellos: una copia acá sería un segundo lugar
+# donde escribir `homologacion` mal.
 
 
 class AccionAuditoria(enum.Enum):

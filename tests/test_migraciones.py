@@ -105,8 +105,11 @@ def test_upgrade_downgrade_upgrade(base_limpia):
         # y ese es el punto: el numero se toca a mano al agregarla, asi una
         # tabla que aparece sin querer --por un modelo importado de mas-- se ve.
         # Subio a 14 con la 0006 (`configuracion_arca`) y a 15 con la 0007
-        # (`gastos_de_proveedor`).
-        assert tablas == 15
+        # (`gastos_de_proveedor`), y **bajo a 14** con la 0011: la
+        # configuracion de ARCA paso a `arca_config` de LibraCore, que vive
+        # en otra base. Que el numero BAJE es el punto de tenerlo a mano:
+        # una tabla que se va sin querer se ve igual que una que aparece.
+        assert tablas == 14
         eng.dispose()
     finally:
         if original:
@@ -116,12 +119,17 @@ def test_upgrade_downgrade_upgrade(base_limpia):
 def test_la_cadena_escribe_su_version_en_una_tabla_PROPIA(base_limpia):
     """🔴 Dos cadenas en la misma base no pueden compartir `alembic_version`.
 
-    Este repo tiene **una sola base**: el esquema de LibraCore vive en la misma
-    que el dominio, sin `_core` aparte como en LibraClub, Gestiolibra y
-    MedLibra. Y LibraCore tiene su propia cadena de Alembic, que usa el nombre
-    por defecto. Si las dos escribieran en `alembic_version`, cada `upgrade`
-    pisaría la revisión de la otra y la siguiente correría sobre un esquema que
-    no es el que espera.
+    Desde el 2026-09-02 este repo tiene **dos** bases: el esquema de LibraCore
+    se mudó a `libracargo_core`, como en LibraClub, Gestiolibra y MedLibra,
+    porque no puede convivir con el del dominio —los dos declaran `usuarios` y
+    `auth_log`—. O sea que hoy las dos cadenas ya no comparten base y el nombre
+    propio dejó de ser lo único que las separa.
+
+    **Se mantiene igual**, y no es por costumbre: el nombre por defecto es lo
+    que haría que un `libracore-migrar` apuntado por error a la base del
+    dominio —un `--prefijo` olvidado, y `DATABASE_URL` está ahí mismo— pisara
+    la revisión de este repo en vez de fallar. Con un nombre propio, ese error
+    deja las dos versiones a la vista en vez de una sola equivocada.
 
     **No se aserta el valor de `VERSION_TABLE`.** Importar la constante y
     compararla contra el literal que uno escribió en `env.py` se cumple por

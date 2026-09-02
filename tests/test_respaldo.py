@@ -24,8 +24,8 @@ import pytest
 from fastapi.testclient import TestClient
 from libraauth.models import Base as AuthBase
 
-from app.config import Config
 from app.main import crear_app
+from tests.conftest import URL_CORE, config_de_prueba, par_de_arca
 
 ADMIN, CLAVE = "admin", "clave-de-prueba"
 
@@ -44,10 +44,7 @@ def cliente(engine, sesion, tmp_path, monkeypatch):
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
     AuthBase.metadata.drop_all(engine)
     AuthBase.metadata.create_all(engine)
-    cfg = Config(
-        database_url=os.environ["DATABASE_URL"], entorno="test", debug=False,
-        directorio_de_datos=str(tmp_path),
-    )
+    cfg = config_de_prueba(directorio_de_datos=str(tmp_path))
     c = TestClient(crear_app(cfg), base_url="https://testserver")
     assert c.post("/auth/login", json={"username": ADMIN, "password": CLAVE}).status_code == 200
     c.carpeta = tmp_path / "backups"
@@ -65,22 +62,40 @@ def _dumps_del_zip(contenido: bytes) -> dict[str, int]:
         }
 
 
-def test_el_zip_trae_la_base_y_no_viene_vacia(cliente):
+def test_el_zip_trae_LAS_DOS_bases_y_ninguna_viene_vacia(cliente):
     """Lo que hay que medir es el contenido, no que el endpoint haya contestado.
 
     Un `pg_dump` que falla a mitad deja un archivo con nombre de backup y cero
     bytes adentro, y el ZIP se arma igual. El tamaño es lo que separa un backup
     de un archivo que se llama como uno.
+
+    🔴 **Y son dos desde que la configuración de ARCA vive en LibraCore.** Un
+    ZIP con una sola mitad no se puede restaurar: o volvés el dominio y las
+    credenciales quedan de otro momento, o al revés. El modo de fallar es mudo
+    —restaurar deja una instancia que no puede facturar y no lo dice— y por eso
+    se aserta el conjunto exacto y no "que esté la del dominio".
     """
     r = cliente.get("/api/config/backup-ahora")
     assert r.status_code == 200, r.text
     assert r.headers["content-type"] == "application/zip"
 
     dumps = _dumps_del_zip(r.content)
-    assert set(dumps) == {"libracargo.dump"}, dumps
+    assert set(dumps) == {"libracargo.dump", _dump_del_core()}, dumps
     # Un dump de un schema real no baja de unos pocos KB ni comprimido. El
     # umbral es flojo a propósito: lo que cierra es el caso de los 0 bytes.
-    assert dumps["libracargo.dump"] > 1000, dumps
+    for nombre, tamaño in dumps.items():
+        assert tamaño > 1000, (nombre, dumps)
+
+
+def _dump_del_core() -> str:
+    """Cómo se llama, dentro del ZIP, el dump de la base de LibraCore.
+
+    Sale del nombre de la base y no de un literal: en la suite es
+    `libracargo_test_core` y en el VPS `libracargo_core`, así que un literal
+    acá mediría otra cosa que producción. `respaldo.dumps` nombra a la
+    principal por el `nombre` de la instancia y a las extra **por su base**.
+    """
+    return URL_CORE.rsplit("/", 1)[-1] + ".dump"
 
 
 def _razones_sociales(cliente) -> list[str]:
@@ -112,11 +127,49 @@ def test_restaurar_deja_la_base_como_estaba(cliente):
     r = cliente.post("/api/config/restore",
                      files={"backup_file": ("copia.zip", copia, "application/zip")})
     assert r.status_code == 200, r.text
-    assert r.json()["bases_restauradas"] == ["libracargo.dump"]
+    assert sorted(r.json()["bases_restauradas"]) == sorted(
+        ["libracargo.dump", _dump_del_core()])
 
     quedan = _razones_sociales(cliente)
     assert "Antes SA" in quedan, "el restore contestó ok y no repuso nada"
     assert "Después SRL" not in quedan, "quedó lo posterior al backup: no se reemplazó nada"
+
+
+def test_el_zip_se_lleva_el_certificado_de_ARCA(cliente):
+    """🔑 La propiedad que se pagó al mover el par de la base al disco.
+
+    Antes el certificado y la clave eran columnas `LargeBinary`, así que
+    entraban al ZIP por ser parte del dump y no había nada que declarar. Ahora
+    los escribe `arca_router` en `CERTS_DIR`, y lo único que los mete en el
+    backup es el `directorios=[...]` de `_instancia_a_respaldar`. Sacarlo no
+    rompe ninguna otra cosa: el backup sigue saliendo, pesa casi lo mismo, y
+    restaurarlo deja una instancia que **no puede facturar y no lo dice**.
+
+    Se mide el archivo adentro del ZIP y no que la carpeta esté declarada:
+    comparar `instancia.directorios` contra lo que uno escribió en `main.py` se
+    cumple por construcción.
+    """
+    certificado, clave = par_de_arca()
+    assert cliente.post("/api/arca/certificado", params={"ambiente": "homologacion"},
+                        files={"archivo": ("c.crt", certificado, "text/plain")},
+                        ).status_code == 200
+    assert cliente.post("/api/arca/clave", params={"ambiente": "homologacion"},
+                        files={"archivo": ("c.key", clave, "text/plain")},
+                        ).status_code == 200
+
+    contenido = cliente.get("/api/config/backup-ahora").content
+    with zipfile.ZipFile(io.BytesIO(contenido)) as z:
+        guardados = {
+            i.filename: z.read(i.filename)
+            for i in z.infolist()
+            if i.filename.startswith("datos/") and not i.is_dir()
+        }
+
+    assert guardados, "el ZIP no trae ningún archivo de datos: falta `directorios`"
+    # 🔑 Los BYTES, no el nombre. Un archivo vacío con el nombre correcto
+    # restaura una instancia que no puede autenticar contra ARCA.
+    assert certificado in guardados.values(), sorted(guardados)
+    assert clave in guardados.values(), sorted(guardados)
 
 
 def test_antes_de_restaurar_se_guarda_el_estado_anterior(cliente):

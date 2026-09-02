@@ -1,11 +1,9 @@
 from app.models.auditoria import RegistroAuditoria
 from app.models.base import Base
 from app.models.configuracion import ConfiguracionEmpresa
-from app.models.configuracion_arca import ConfiguracionArca
 from app.models.cuentas import MovimientoCaja, MovimientoCuenta
 from app.models.enums import (
     AccionAuditoria,
-    AmbienteArca,
     CondicionIVA,
     EstadoOrden,
     MedioPago,
@@ -24,8 +22,7 @@ from app.models.maestros import (
 from app.models.operacion import Comprobante, GastoDeProveedor, OrdenCarga
 
 __all__ = [
-    "AccionAuditoria", "AmbienteArca", "Base", "Chofer", "Comprobante",
-    "ConfiguracionArca", "CondicionIVA",
+    "AccionAuditoria", "Base", "Chofer", "Comprobante", "CondicionIVA",
     "EstadoOrden", "GastoDeProveedor", "Localidad", "MedioPago", "MovimientoCaja",
     "MovimientoCuenta", "OrdenCarga", "RazonSocial", "ConfiguracionEmpresa",
     "RegistroAuditoria",

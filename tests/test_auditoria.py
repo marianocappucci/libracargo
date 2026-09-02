@@ -6,14 +6,13 @@ transacción** que el cambio, que guarde el diff y no la fila entera, y que un
 `PUT` que no cambió nada no ensucie el log.
 """
 
-import os
 
 import pytest
 from fastapi.testclient import TestClient
 from libraauth.models import Base as AuthBase
 
-from app.config import Config
 from app.main import crear_app
+from tests.conftest import config_de_prueba
 
 ADMIN, CLAVE = "admin", "clave-de-prueba"
 
@@ -25,7 +24,7 @@ def cliente(engine, sesion, monkeypatch):
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
     AuthBase.metadata.drop_all(engine)
     AuthBase.metadata.create_all(engine)
-    cfg = Config(database_url=os.environ["DATABASE_URL"], entorno="test", debug=False)
+    cfg = config_de_prueba()
     c = TestClient(crear_app(cfg), base_url="https://testserver")
     assert c.post("/auth/login", json={"username": ADMIN, "password": CLAVE}).status_code == 200
     yield c
@@ -174,7 +173,7 @@ def test_sin_sesion_no_se_ve_el_log(engine, monkeypatch):
     monkeypatch.setenv("ENV", "development")
     AuthBase.metadata.drop_all(engine)
     AuthBase.metadata.create_all(engine)
-    cfg = Config(database_url=os.environ["DATABASE_URL"], entorno="test", debug=False)
+    cfg = config_de_prueba()
     anonimo = TestClient(crear_app(cfg, sembrar_admin=False), base_url="https://testserver")
     try:
         assert anonimo.get("/api/auditoria").status_code == 401

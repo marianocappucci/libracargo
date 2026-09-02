@@ -24,14 +24,13 @@ Lo que fijan estos tests, en orden de lo que se rompe sin que se note:
 4. Que sea admin-only: quién entró y desde qué IP no es dato de cualquiera.
 """
 
-import os
 
 import pytest
 from fastapi.testclient import TestClient
 from libraauth.models import Base as AuthBase
 
-from app.config import Config
 from app.main import crear_app
+from tests.conftest import config_de_prueba
 
 ADMIN, CLAVE = "admin", "clave-de-prueba"
 
@@ -42,7 +41,7 @@ def _app(engine, monkeypatch):
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
     AuthBase.metadata.drop_all(engine)
     AuthBase.metadata.create_all(engine)
-    cfg = Config(database_url=os.environ["DATABASE_URL"], entorno="test", debug=False)
+    cfg = config_de_prueba()
     return TestClient(crear_app(cfg), base_url="https://testserver")
 
 

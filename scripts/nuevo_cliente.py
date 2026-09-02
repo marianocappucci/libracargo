@@ -56,6 +56,17 @@ configure(
     # de la imagen y `-alpine` ordena por bytes: una instancia nueva que ordenara
     # distinto que dev sería un cambio de comportamiento invisible.
     postgres_image="postgres:16",
+    # 🔴 **El schema de LibraCore NO puede compartir base con el del
+    # dominio.** Los dos declaran `usuarios` y `auth_log`; el segundo
+    # `CREATE TABLE IF NOT EXISTS` no hace nada y el motor termina
+    # leyendo la tabla de `libraauth`. Misma razón por la que Gestiolibra,
+    # MedLibra y LibraClub la llevan aparte — allá el choque era `clients`.
+    #
+    # Prender esto hace que un alta nueva cree `libracargo_core` con un
+    # init de PostgreSQL. ⚠️ Ese init corre UNA vez, al inicializar el
+    # volumen: las instancias que ya existen necesitan el `CREATE
+    # DATABASE` a mano antes de recibir esta versión.
+    base_core_separada=True,
     # El backup del cron arma el MISMO ZIP que la pantalla de Configuración →
     # Datos / Backup, en vez de un `tar.gz` aparte que la pantalla no lista y el
     # cliente no puede restaurar. Este producto puede prenderlo porque su
@@ -77,14 +88,23 @@ configure(
     # agarra porque el proceso arranca bien: el error recién ocurre cuando
     # alguien consulta la tabla.
     #
-    # Una sola cadena: este producto no usa LibraGenda, así que no tiene la
-    # `alembic_version` del motor al lado de la propia. Gestiolibra y MedLibra
-    # sí, y por eso declaran dos comandos en orden.
+    # Dos cadenas y en este orden: primero la de LibraCore contra SU base,
+    # después la propia contra la del dominio. Las dos escriben una
+    # `alembic_version` distinta porque están en bases distintas.
+    #
+    # 🔑 `--prefijo libracargo` no es decorativo: sin él el comando toma
+    # `DATABASE_URL`, que adentro del contenedor apunta a la base del
+    # DOMINIO. Migraría la base equivocada **sin fallar** — crearía las 33
+    # tablas del core al lado de las 21 del dominio, chocando `usuarios` y
+    # `auth_log` con las de `libraauth`, y dejaría la base real sin tocar.
     #
     # ⚠️ Va en los DOS scripts a propósito: comparten el `_cfg` global y
     # `tests/test_provisioning.py` los compara campo por campo. Declararlo en
     # uno solo pone ese test en rojo, que es exactamente lo que tiene que pasar.
-    migraciones=(("alembic", "upgrade", "head"),),
+    migraciones=(
+        ("libracore-migrar", "upgrade", "--prefijo", "libracargo"),
+        ("alembic", "upgrade", "head"),
+    ),
     # `health_path` **no se pasa**: desde hoy este producto sirve `/health`
     # además de `/salud`, que es el default del motor y la ruta de los otros
     # seis. Ver el comentario en `app/routers/salud.py` — con la SPA horneada,

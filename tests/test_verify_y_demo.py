@@ -15,8 +15,6 @@ cookie de sesión es `Secure` y sobre `http://` httpx no la reenvía.
 
 from __future__ import annotations
 
-import os
-
 import pytest
 from fastapi.testclient import TestClient
 from libraauth.models import Base as AuthBase
@@ -24,6 +22,7 @@ from libraauth.models import Base as AuthBase
 from app.auth import COOKIE
 from app.config import Config
 from app.main import crear_app
+from tests.conftest import config_de_prueba
 
 USUARIO, CLAVE = "admin", "clave-de-prueba"
 SECRETO_DOCS = "no-es-el-secreto-real-de-ninguna-instancia"
@@ -31,7 +30,7 @@ USUARIO_DEMO = "visitante"
 
 
 def _cfg() -> Config:
-    return Config(database_url=os.environ["DATABASE_URL"], entorno="test", debug=False)
+    return config_de_prueba()
 
 
 @pytest.fixture
