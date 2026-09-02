@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import datetime
 import os
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 from fastapi.testclient import TestClient
 from libraauth.models import Base as AuthBase
+from libracore import config_manager
+from libracore.db import core as libracore_core
+from libracore.db.schema import init_core_schema
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
@@ -16,6 +24,105 @@ from app.models import Base
 URL = os.environ.get(
     "DATABASE_URL", "postgresql+psycopg://postgres@127.0.0.1:5433/libracargo_test"
 )
+
+#: La base de **LibraCore**, que es otra. No es una preferencia de la suite: el
+#: schema del motor declara `usuarios` y `auth_log`, y las dos ya existen del
+#: lado del dominio con la forma de `libraauth`. En una sola base el segundo
+#: `CREATE TABLE IF NOT EXISTS` no hace nada y el motor termina leyendo la tabla
+#: del otro — que es un verde que no dice nada.
+URL_CORE = os.environ.get(
+    "LIBRACARGO_LIBRACORE_DATABASE_URL",
+    "postgresql+psycopg://postgres@127.0.0.1:5433/libracargo_test_core",
+)
+
+
+def par_de_arca() -> tuple[bytes, bytes]:
+    """Un certificado y su clave, de verdad y hechos en el momento.
+
+    De verdad y no dos strings: el motor valida el par **antes** de escribirlo
+    —lee el X.509, lee la clave y compara las públicas— así que un par de
+    mentira no llega ni a guardarse, y el test mediría el 422 en vez de lo que
+    quería medir.
+
+    Se generan en cada llamada en vez de venir de un archivo del repo: uno
+    fijo vence, y el día que venza el rojo aparece lejos de la causa —en un
+    test de backup, por ejemplo— con un mensaje sobre fechas.
+    """
+    clave = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    nombre = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test")])
+    ahora = datetime.datetime.now(datetime.UTC)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(nombre).issuer_name(nombre)
+        .public_key(clave.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(ahora - datetime.timedelta(days=1))
+        .not_valid_after(ahora + datetime.timedelta(days=730))
+        .sign(clave, hashes.SHA256())
+    )
+    return (
+        cert.public_bytes(serialization.Encoding.PEM),
+        clave.private_bytes(serialization.Encoding.PEM,
+                            serialization.PrivateFormat.TraditionalOpenSSL,
+                            serialization.NoEncryption()),
+    )
+
+
+def config_de_prueba(**extra) -> Config:
+    """El `Config` de la suite, con las DOS bases.
+
+    Existe porque `database_url_core` no tiene default —a propósito: caer en la
+    base del dominio es justo el choque que la separación evita— y sin esto
+    cada archivo de test tendría que acordarse de la segunda URL. Catorce
+    copias de la misma línea es de donde salen las divergencias.
+    """
+    return Config(**{
+        "database_url": os.environ["DATABASE_URL"],
+        "database_url_core": URL_CORE,
+        "entorno": "test",
+        "debug": False,
+        **extra,
+    })
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _schema_de_libracore():
+    """Crea el schema del motor una vez para toda la suite.
+
+    En producción esto lo hace `libracore-migrar upgrade --prefijo libracargo`,
+    declarado en el deploy; acá se llama al DDL directo para no arrastrar
+    alembic a cada corrida. Es la baseline de esa misma cadena, así que crea lo
+    mismo.
+    """
+    libracore_core.configure(URL_CORE)
+    with libracore_core.get_connection() as conn:
+        init_core_schema(conn)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _arca_de_cero(tmp_path, monkeypatch):
+    """Cada test arranca sin fila de `arca_config` y con su propio `CERTS_DIR`.
+
+    🔴 **Los archivos importan tanto como la fila, y por una razón que no es
+    obvia:** `resolve_cert_paths` rescata un path obsoleto cayendo al **nombre
+    estándar** dentro de `CERTS_DIR`. Un certificado que quedó de otro test se
+    **revive** ahí, así que un test que cree estar arrancando sin credenciales
+    puede encontrarlas puestas — y el que mide "sin par no emite" pasaría a
+    verde por el motivo equivocado.
+
+    Se parcha `config_manager.CERTS_DIR` y no se exporta `DATA_DIR` antes de los
+    imports: el módulo lo resuelve **al importarse**, así que la variable de
+    entorno sólo funcionaría desde arriba de todo el archivo, empujando cada
+    import de la suite abajo de una asignación. El router lo lee en cada
+    request —`_certs_dir()` existe justamente para eso— así que el parche
+    alcanza, y de paso el aislamiento es por test y no por corrida.
+    """
+    monkeypatch.setattr(config_manager, "CERTS_DIR", str(tmp_path / "arca_certs"))
+    yield
+    libracore_core.configure(URL_CORE)
+    with libracore_core.get_connection() as conn:
+        conn.execute("DELETE FROM arca_config")
 
 
 #: Secreto de firma de sesión para la suite. Fijo y evidente: no es una clave,
@@ -135,13 +242,13 @@ USUARIO, CLAVE = "admin", "clave-de-prueba"
 
 
 @pytest.fixture
-def cliente(engine, sesion, monkeypatch):
+def cliente(engine, sesion, monkeypatch, _arca_de_cero):
     monkeypatch.setenv("ENV", "development")
     monkeypatch.setenv("LIBRACARGO_ADMIN_USERNAME", USUARIO)
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
     AuthBase.metadata.drop_all(engine)
     AuthBase.metadata.create_all(engine)
-    cfg = Config(database_url=os.environ["DATABASE_URL"], entorno="test", debug=False)
+    cfg = config_de_prueba()
     c = TestClient(crear_app(cfg), base_url="https://testserver")
     assert c.post("/auth/login", json={"username": USUARIO, "password": CLAVE}).status_code == 200
     yield c
