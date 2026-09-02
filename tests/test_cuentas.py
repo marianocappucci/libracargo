@@ -4,15 +4,14 @@ El criterio de F4 en el ROADMAP es que **el saldo de un tercero dé igual
 calculado por dos caminos distintos**, y eso es lo que más se prueba acá.
 """
 
-import os
 from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
 from libraauth.models import Base as AuthBase
 
-from app.config import Config
 from app.main import crear_app
+from tests.conftest import config_de_prueba
 
 USUARIO, CLAVE = "admin", "clave-de-prueba"
 
@@ -24,7 +23,7 @@ def cliente(engine, sesion, monkeypatch):
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
     AuthBase.metadata.drop_all(engine)
     AuthBase.metadata.create_all(engine)
-    cfg = Config(database_url=os.environ["DATABASE_URL"], entorno="test", debug=False)
+    cfg = config_de_prueba()
     c = TestClient(crear_app(cfg), base_url="https://testserver")
     assert c.post("/auth/login", json={"username": USUARIO, "password": CLAVE}).status_code == 200
     yield c
@@ -174,7 +173,7 @@ def test_sin_sesion_no_se_ven_las_cuentas(engine, monkeypatch):
     monkeypatch.setenv("ENV", "development")
     AuthBase.metadata.drop_all(engine)
     AuthBase.metadata.create_all(engine)
-    cfg = Config(database_url=os.environ["DATABASE_URL"], entorno="test", debug=False)
+    cfg = config_de_prueba()
     anonimo = TestClient(crear_app(cfg, sembrar_admin=False), base_url="https://testserver")
     try:
         assert anonimo.get("/api/cuentas/cliente/1").status_code == 401

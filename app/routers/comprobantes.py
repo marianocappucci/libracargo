@@ -194,7 +194,15 @@ async def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
         raise HTTPException(422, "las ordenes elegidas suman cero: no hay nada que facturar")
 
     # ── El número: de ARCA si emite, del payload si registra ───────────────
-    emite = emision_arca.emite_por_arca(sesion, datos.razon_social_id)
+    # 🔴 Envuelto porque `emite_por_arca` puede **negarse a decidir**: con dos
+    # configuraciones de ARCA activas no hay forma de saber con qué CUIT
+    # firmar, y elegir una es facturar por otro contribuyente sin fallar. Sin
+    # este `except` sale como un 500 sin texto, que manda a leer un traceback
+    # en vez de a arreglar la configuración.
+    try:
+        emite = emision_arca.emite_por_arca(sesion, datos.razon_social_id)
+    except emision_arca.ArcaAmbiguo as e:
+        raise HTTPException(409, str(e)) from None
     ta = cfg_arca = razon = None
     if emite:
         try:

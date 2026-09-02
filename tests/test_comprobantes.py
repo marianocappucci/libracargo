@@ -10,15 +10,14 @@ los encabezados de los comprobantes y por las órdenes que agrupan.
 > migración de F6— y verifican que ahí sí avisa.
 """
 
-import os
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
 from libraauth.models import Base as AuthBase
 from sqlalchemy import text
 
-from app.config import Config
 from app.main import crear_app
+from tests.conftest import config_de_prueba
 
 
 def orden(cliente, datos, tarifa, *, cliente_id=None, razon_social_id=None, fecha="2026-08-10"):
@@ -322,7 +321,7 @@ def test_sin_sesion_no_se_ven_los_comprobantes(engine, monkeypatch):
     monkeypatch.setenv("ENV", "development")
     AuthBase.metadata.drop_all(engine)
     AuthBase.metadata.create_all(engine)
-    cfg = Config(database_url=os.environ["DATABASE_URL"], entorno="test", debug=False)
+    cfg = config_de_prueba()
     anonimo = TestClient(crear_app(cfg, sembrar_admin=False), base_url="https://testserver")
     try:
         assert anonimo.get("/api/comprobantes").status_code == 401

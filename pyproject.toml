@@ -28,7 +28,12 @@ dependencies = [
     # `init_core_schema()` que no es componible por tabla, y el DDL que no es
     # el schema real—. `respaldo` no toca nada de eso: recibe una URL y
     # corre `pg_dump`. Por eso este adelanto no arrastra ninguna de las tres.
-    "libracore @ git+https://github.com/marianocappucci/libracore.git@v1.73.0",
+    # El extra `[migrations]` es el que trae **alembic**, que LibraCore no
+    # declara como dependencia propia. Sin él, `libracore-migrar` muere con
+    # `ModuleNotFoundError: No module named 'alembic'` en medio del deploy,
+    # que manda a buscar el problema en el lugar equivocado. Entra ahora
+    # porque este producto pasó a llevar el schema del motor (ARCA).
+    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.74.0",
 ]
 
 # Los motores de la familia entran en F1, desde repos privados por deploy key.

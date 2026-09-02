@@ -11,14 +11,13 @@ Estos tests llevan la marca `sin_aceptar_terminos`, que los deja afuera de la
 excepción autouse del `conftest`: son los únicos de la suite que ven el gate
 puesto de verdad.
 """
-import os
 
 import pytest
 from fastapi.testclient import TestClient
 from libraauth.models import Base as AuthBase
 
-from app.config import Config
 from app.main import crear_app
+from tests.conftest import config_de_prueba
 
 USUARIO, CLAVE = "admin", "clave-de-prueba"
 
@@ -36,7 +35,7 @@ def entorno(engine, monkeypatch):
 
 @pytest.fixture
 def logueado(entorno):
-    cfg = Config(database_url=os.environ["DATABASE_URL"], entorno="test", debug=False)
+    cfg = config_de_prueba()
     cliente = TestClient(crear_app(cfg), base_url="https://testserver")
     assert cliente.post(
         "/auth/login", json={"username": USUARIO, "password": CLAVE}

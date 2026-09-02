@@ -37,6 +37,9 @@ jobs:
         ports: ['5432:5432']
     env:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/libracargo_test
+      # La base de LibraCore. La suite la crea en el paso de abajo: el
+      # servicio de PostgreSQL sólo inicializa la de `POSTGRES_DB`.
+      LIBRACARGO_LIBRACORE_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/libracargo_test_core
       TZ: America/Argentina/Buenos_Aires
     steps:
       - uses: actions/checkout@v4
@@ -57,6 +60,12 @@ jobs:
           sudo apt-get install -y --no-install-recommends postgresql-client-16
           pg_restore --version
           pg_restore --version | grep -q ' 16\.'
+
+      # La segunda base, la de LibraCore. Va antes de instalar para que un
+      # fallo acá se lea como lo que es y no como un test roto.
+      - name: Base de LibraCore
+        run: |
+          PGPASSWORD=postgres createdb -h localhost -U postgres libracargo_test_core
 
       - run: pip install -e '.[dev]'
 

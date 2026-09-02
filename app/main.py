@@ -22,16 +22,24 @@ from libraauth.session_auth import (
 )
 from libraauth.smtp_settings import SmtpSettingsRepository, resolver_smtp_config
 from libraauth.terminos import TerminosRepository, build_terminos_router
+from libracore import config_manager
+from libracore.arca_router import build_arca_router
 from libracore.config_router import build_backup_router
+from libracore.db import core as libracore_core
 from libracore.geografia import build_geo_router
 from libracore.respaldo import Instancia
 from libracore.smtp_router import build_smtp_probe_router
 
 from app import db
-from app.auth import UserRepository, construir_session_auth, require_admin, require_staff
+from app.auth import (
+    UserRepository,
+    construir_session_auth,
+    get_current_user,
+    require_admin,
+    require_staff,
+)
 from app.config import Config
 from app.routers import (
-    arca,
     auditoria,
     comprobantes,
     configuracion,
@@ -47,23 +55,43 @@ from app.routers import auth as auth_router
 # Con alias: mas abajo hay una variable local llamada usuarios con el
 # repositorio, y sin el alias el import queda pisado.
 from app.routers import usuarios as usuarios_router
+from app.servicios import auditoria_arca
+from app.servicios.emision_arca import EMPRESA_ARCA
 
 
 def _instancia_a_respaldar(config: Config) -> Instancia:
-    """Qué se lleva el backup de esta instancia.
+    """Qué se lleva el backup de esta instancia: las DOS bases y los certificados.
 
-    LibraCargo es el caso **más simple de la familia**: una sola base y ningún
-    archivo en disco. Los otros productos tienen dos bases —`usuarios` vive
-    separada del dominio— y directorios de datos que hay que meter en el mismo
-    ZIP; acá `usuarios` está en la misma base, y el logo del membrete se guarda
-    como `LargeBinary` en la tabla de configuración, no como archivo.
+    Hasta el 2026-09-02 acá decía que LibraCargo era el caso más simple de la
+    familia —una sola base y ningún archivo en disco— y que `directorios=[]` no
+    era un pendiente. Las dos mitades dejaron de ser ciertas el día que la
+    configuración de ARCA pasó al motor:
 
-    Ese detalle, que en su momento fue una decisión de la pantalla de
-    configuración, es lo que hace que el backup sea **exactamente un dump**: no
-    hay forma de bajarse una copia a la que le falten los logos, porque los
-    logos están adentro del dump. `directorios=[]` no es un pendiente.
+    - **Son dos bases.** El schema de LibraCore no puede convivir con el del
+      dominio: los dos declaran `usuarios` y `auth_log`. Ver `Config`.
+    - **Y hay archivos en disco.** El certificado y la clave los escribe
+      `arca_router` en `CERTS_DIR`, no en una columna.
+
+    🔴 **Un backup que traiga una sola mitad no se puede restaurar**, y el modo
+    de fallar es el peor: restaurar deja una instancia que **no puede facturar y
+    no lo dice**. Es exactamente la propiedad que la tabla propia protegía
+    guardando el par adentro del dump, y la que se paga de vuelta acá.
+
+    `CERTS_DIR` sale de `config_manager` y no se arma con
+    `config.directorio_de_datos`: tiene que ser **el mismo valor** que el que
+    escribe el upload, o el backup respalda una carpeta vacía al lado de la que
+    tiene las credenciales.
     """
-    return Instancia(nombre="libracargo", postgres_url=config.database_url)
+    return Instancia(
+        # La principal es la del DOMINIO, no la del core: `dumps` nombra a la
+        # principal por `nombre` y a las extra por su base, así que invertirlas
+        # haría que las dos cayeran en `libracargo.dump` dentro del ZIP y la
+        # verificación pasaría igual, sobre un backup con una sola mitad.
+        nombre="libracargo",
+        postgres_url=config.database_url,
+        postgres_extra=[config.database_url_core],
+        directorios=[config_manager.CERTS_DIR],
+    )
 
 
 def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> FastAPI:
@@ -73,6 +101,17 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     config = config or Config.desde_entorno()
     db.inicializar(config)
     motor = db.engine()
+
+    # LibraCore habla con SU base, que no es la del dominio. Es una conexión
+    # aparte —`libracore.db` es SQL crudo, sin el engine de SQLAlchemy— igual
+    # que en Gestiolibra y MedLibra.
+    #
+    # 🔴 **Acá NO se llama a `init_core_schema()`**, a diferencia de esos dos.
+    # El schema lo crea `libracore-migrar upgrade`, declarado en el deploy y
+    # atado por `tests/test_provisioning.py`. Si la app se lo creara sola, un
+    # deploy que se olvide de ese paso quedaría invisible — que es exactamente
+    # el defecto que este producto pagó el 2026-08-24 con su propia cadena.
+    libracore_core.configure(config.database_url_core)
 
     # Las tablas del motor de auth las crea el motor, con el mismo engine que
     # el dominio: `usuarios` vive en la MISMA base, así que las FK de sus
@@ -207,9 +246,34 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     app.include_router(reportes.router)
     app.include_router(auditoria.router)
     app.include_router(configuracion.router)
-    # Configuración de ARCA: sube el certificado y la clave, y verifica que
-    # sean pareja. **No emite**: emitir es la fase siguiente.
-    app.include_router(arca.router)
+    # Configuración de ARCA: la pantalla compartida de la familia, con la
+    # dependencia de rol de este producto —el router del motor no trae
+    # ninguna, y acá se sube una clave privada—.
+    #
+    # El prefijo se mantiene en `/api/arca`, que es el que este producto ya
+    # publicó: `build_arca_router` lo toma por parámetro justamente porque
+    # cambiarlo rompe el frontend desplegado.
+    #
+    # 🔑 `empresa_por_defecto` sale de `EMPRESA_ARCA` y no de un literal. No
+    # es que la emisión lo lea —resuelve la fila activa, justamente para que
+    # un slug de más no pueda dejarla ciega—: es que un segundo literal haría
+    # que la pantalla y el alta creen **dos filas distintas**, y ahí sí no hay
+    # con qué elegir. Ver `EMPRESA_ARCA`.
+    #
+    # 🔴 **`al_cambiar` es lo que devuelve el registro que este producto
+    # tenía y perdió al normalizar.** El router propio anotaba cada alta,
+    # upload y borrado del par; el compartido no anotaba nada hasta LibraCore
+    # `v1.74.0`. Sin esta línea la pantalla funciona igual y la tabla de
+    # auditoría queda muda justo sobre la clave privada del cliente.
+    app.include_router(
+        build_arca_router(
+            prefix="/api/arca",
+            empresa_por_defecto=EMPRESA_ARCA,
+            usuario_actual=get_current_user,
+            al_cambiar=auditoria_arca.construir_hook(db.fabrica_de_sesiones()),
+        ),
+        dependencies=[Depends(require_admin)],
+    )
 
     # El catálogo de provincias y localidades: 24 y 4.027, de LibraCore. Es de
     # sólo lectura y no toca la base — el maestro editable de localidades, que

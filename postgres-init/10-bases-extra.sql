@@ -1,0 +1,15 @@
+-- Bases adicionales de esta instancia.
+--
+-- `libracargo_core` es la base de LibraCore. Es una base y no un schema
+-- de la del dominio porque las dos declaran `usuarios` y `auth_log`: en
+-- una sola, el segundo `CREATE TABLE IF NOT EXISTS` no hace nada y el
+-- motor termina leyendo la tabla de `libraauth`.
+--
+-- ⚠️ La imagen corre esto UNA sola vez, al INICIALIZAR el volumen. Sobre
+-- un volumen que ya existe no se ejecuta, y ahí el `CREATE DATABASE` va a
+-- mano antes de levantar la versión que lo necesita.
+--
+-- Es el mismo archivo que `libracore.provisioning` genera para las
+-- instancias de cliente; acá está a mano porque el compose de dev no pasa
+-- por el panel.
+CREATE DATABASE libracargo_core OWNER libracargo;
