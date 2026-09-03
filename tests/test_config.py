@@ -7,14 +7,23 @@ import pytest
 from app.config import Config
 
 
-def test_sin_database_url_no_arranca(monkeypatch):
+def test_sin_ninguna_url_de_base_no_arranca(monkeypatch):
+    """Fail-closed, y ahora son DOS los nombres que hay que sacar.
+
+    Desde que la app acepta también `LIBRACARGO_DATABASE_URL` —el nombre que el
+    generador le escribe a una instancia nueva— borrar sólo la genérica no deja
+    el entorno vacío: si la otra estuviera puesta, este test mediría un arranque
+    exitoso y lo llamaría "no arranca".
+    """
     monkeypatch.delenv("DATABASE_URL", raising=False)
-    with pytest.raises(RuntimeError, match="Falta DATABASE_URL"):
+    monkeypatch.delenv("LIBRACARGO_DATABASE_URL", raising=False)
+    with pytest.raises(RuntimeError, match="Falta la URL de la base"):
         Config.desde_entorno()
 
 
 def test_sqlite_es_rechazado(monkeypatch):
     """Una suite verde sobre SQLite no dice nada del motor real (regla 2026-08-12)."""
+    monkeypatch.delenv("LIBRACARGO_DATABASE_URL", raising=False)
     monkeypatch.setenv("DATABASE_URL", "sqlite:///libracargo.db")
     with pytest.raises(RuntimeError, match="PostgreSQL"):
         Config.desde_entorno()

@@ -47,13 +47,31 @@ class Config:
 
     @classmethod
     def desde_entorno(cls) -> Config:
-        url = os.environ.get("DATABASE_URL")
+        # 🔴 **Los DOS nombres, y por eso no alcanza con leer `DATABASE_URL`.**
+        # `libracore.provisioning.nuevo_cliente` escribe en el compose los
+        # nombres que dice `nombres_aceptados("libracargo")`, o sea **sólo**
+        # `LIBRACARGO_DATABASE_URL`. Leyendo la genérica a secas, una instancia
+        # recién creada moría al arrancar con "Falta DATABASE_URL" — y eso no se
+        # veía en ninguna de las tres instancias vivas, porque todas tienen el
+        # compose de cuando se crearon, con la genérica.
+        #
+        # ⚠️ **La genérica NO se puede meter en `_HISTORICOS` del motor**, que
+        # sería el lugar natural. Ahí la toma también `migrar.url_de_core`, que
+        # cae a la base del DOMINIO cuando no encuentra la del core: con
+        # `DATABASE_URL` aceptada, un `libracore-migrar --prefijo libracargo` sin
+        # la variable del core migraría el schema del motor **adentro de la base
+        # del dominio** y devolvería éxito. Es exactamente la colisión de
+        # `usuarios` y `auth_log` que la separación de bases evita. Hay un test
+        # del motor que lo fija, y fue el que frenó ese intento.
+        url = (url_de_instancia("libracargo")
+               or (os.environ.get("DATABASE_URL") or "").strip())
         if not url:
             raise RuntimeError(
-                "Falta DATABASE_URL. LibraCargo corre sobre PostgreSQL; "
-                "no hay default a SQLite a propósito."
+                "Falta la URL de la base: definí LIBRACARGO_DATABASE_URL "
+                "(el nombre vigente) o DATABASE_URL. LibraCargo corre sobre "
+                "PostgreSQL; no hay default a SQLite a propósito."
             )
-        _exigir_postgres(url, "la base del dominio", "DATABASE_URL")
+        _exigir_postgres(url, "la base del dominio", "LIBRACARGO_DATABASE_URL")
         # 🔴 **Fail-closed, y no un default a la base del dominio.** Caer ahí
         # sería exactamente el choque que esta segunda base existe para evitar,
         # y el modo de fallar es mudo: la app levanta, la pantalla de ARCA
