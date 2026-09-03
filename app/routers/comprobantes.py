@@ -10,6 +10,7 @@ fallaba, el primero ya estaba grabado. Acá el comprobante, el estado de las
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -124,6 +125,26 @@ def traer(id_: int, sesion: Session = Depends(obtener_sesion)):
     )
 
 
+#: Lo que devuelve un ensayo contra homologación. **No es un comprobante**: no
+#: tiene `id` porque no hay fila, y por eso tampoco puede ir por `ComprobanteOut`.
+#:
+#: 🔴 Sale con **200 y no 201**: no se creó nada. La pantalla se guía por
+#: `ensayo`, no por el código — pero el código tiene que decir la verdad igual,
+#: porque es lo que ve cualquier otro consumidor de la API.
+def _respuesta_de_ensayo(comprobante: Comprobante, cfg: dict) -> JSONResponse:
+    return JSONResponse(status_code=200, content={
+        "ensayo": True,
+        "ambiente": cfg["ambiente"],
+        "tipo": comprobante.tipo.value,
+        "punto_venta": comprobante.punto_venta,
+        "numero": comprobante.numero,
+        "total": str(comprobante.total),
+        "cae": comprobante.cae,
+        "cae_vencimiento": (comprobante.cae_vencimiento.isoformat()
+                            if comprobante.cae_vencimiento else None),
+    })
+
+
 @router.post("", response_model=ComprobanteOut, status_code=201)
 async def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
              actual: dict = Depends(get_current_user)):
@@ -194,7 +215,15 @@ async def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
         raise HTTPException(422, "las ordenes elegidas suman cero: no hay nada que facturar")
 
     # ── El número: de ARCA si emite, del payload si registra ───────────────
-    emite = emision_arca.emite_por_arca(sesion, datos.razon_social_id)
+    # 🔴 Envuelto porque `emite_por_arca` puede **negarse a decidir**: con dos
+    # configuraciones de ARCA activas no hay forma de saber con qué CUIT
+    # firmar, y elegir una es facturar por otro contribuyente sin fallar. Sin
+    # este `except` sale como un 500 sin texto, que manda a leer un traceback
+    # en vez de a arreglar la configuración.
+    try:
+        emite = emision_arca.emite_por_arca(sesion, datos.razon_social_id)
+    except emision_arca.ArcaAmbiguo as e:
+        raise HTTPException(409, str(e)) from None
     ta = cfg_arca = razon = None
     if emite:
         try:
@@ -259,6 +288,32 @@ async def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
             except emision_arca.ArcaRechazo as e:
                 sesion.rollback()
                 raise HTTPException(502, f"ARCA rechazo el comprobante: {e}") from None
+
+            # ── El ensayo: se corrió todo, y no se guarda nada ─────────────
+            #
+            # 🔑 Contra homologación el CAE y el número son del WSFE de prueba.
+            # En otro producto alcanzaría con marcar la fila y filtrarla; acá
+            # **el comprobante no es sólo un papel fiscal**: mueve la cuenta
+            # corriente del cliente y cierra las órdenes de carga, que después
+            # no se pueden volver a facturar. Filtrar eso es frágil —la cuenta
+            # corriente es un libro con saldos acumulados— y dejarlo entrar es
+            # peor.
+            #
+            # Se revierte **acá y no antes** a propósito: el valor del ensayo es
+            # justamente haber recorrido el camino entero contra ARCA —número
+            # correlativo, armado del pedido, CAE— y no una simulación local.
+            #
+            # La respuesta se arma ANTES del rollback: después, `comprobante`
+            # queda expirado y leerle un atributo dispararía un SELECT sobre una
+            # transacción que ya no existe.
+            if emision_arca.es_ensayo(cfg_arca):
+                respuesta = _respuesta_de_ensayo(comprobante, cfg_arca)
+                sesion.rollback()
+                return respuesta
+        # 🔑 El asiento de auditoría NO se escribe para un ensayo, y el `return`
+        # de arriba es lo que lo evita: registrar un alta que se revirtió sería
+        # un log que miente en la dirección más cara — dice que existe un
+        # comprobante que nadie va a encontrar.
         auditoria.registrar(sesion, actual, "comprobante", comprobante.id,
                             AccionAuditoria.ALTA, despues=comprobante)
         sesion.commit()

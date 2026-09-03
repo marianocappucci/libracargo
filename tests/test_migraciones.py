@@ -105,8 +105,11 @@ def test_upgrade_downgrade_upgrade(base_limpia):
         # y ese es el punto: el numero se toca a mano al agregarla, asi una
         # tabla que aparece sin querer --por un modelo importado de mas-- se ve.
         # Subio a 14 con la 0006 (`configuracion_arca`) y a 15 con la 0007
-        # (`gastos_de_proveedor`).
-        assert tablas == 15
+        # (`gastos_de_proveedor`), y **bajo a 14** con la 0011: la
+        # configuracion de ARCA paso a `arca_config` de LibraCore, que vive
+        # en otra base. Que el numero BAJE es el punto de tenerlo a mano:
+        # una tabla que se va sin querer se ve igual que una que aparece.
+        assert tablas == 14
         eng.dispose()
     finally:
         if original:
@@ -116,12 +119,17 @@ def test_upgrade_downgrade_upgrade(base_limpia):
 def test_la_cadena_escribe_su_version_en_una_tabla_PROPIA(base_limpia):
     """🔴 Dos cadenas en la misma base no pueden compartir `alembic_version`.
 
-    Este repo tiene **una sola base**: el esquema de LibraCore vive en la misma
-    que el dominio, sin `_core` aparte como en LibraClub, Gestiolibra y
-    MedLibra. Y LibraCore tiene su propia cadena de Alembic, que usa el nombre
-    por defecto. Si las dos escribieran en `alembic_version`, cada `upgrade`
-    pisaría la revisión de la otra y la siguiente correría sobre un esquema que
-    no es el que espera.
+    Desde el 2026-09-02 este repo tiene **dos** bases: el esquema de LibraCore
+    se mudó a `libracargo_core`, como en LibraClub, Gestiolibra y MedLibra,
+    porque no puede convivir con el del dominio —los dos declaran `usuarios` y
+    `auth_log`—. O sea que hoy las dos cadenas ya no comparten base y el nombre
+    propio dejó de ser lo único que las separa.
+
+    **Se mantiene igual**, y no es por costumbre: el nombre por defecto es lo
+    que haría que un `libracore-migrar` apuntado por error a la base del
+    dominio —un `--prefijo` olvidado, y `DATABASE_URL` está ahí mismo— pisara
+    la revisión de este repo en vez de fallar. Con un nombre propio, ese error
+    deja las dos versiones a la vista en vez de una sola equivocada.
 
     **No se aserta el valor de `VERSION_TABLE`.** Importar la constante y
     compararla contra el literal que uno escribió en `env.py` se cumple por
@@ -276,6 +284,92 @@ def test_la_0008_agrega_anulado_sobre_una_tabla_CON_filas(base_limpia):
         # así que nada de lo migrado estaba anulado.
         assert anulados == [False]
         eng.dispose()
+    finally:
+        if original:
+            os.environ["DATABASE_URL"] = original
+
+
+def _sembrar_arca(base_limpia, *, con_par: bool):
+    """Deja una fila en `configuracion_arca`, con o sin el par cargado."""
+    eng = create_engine(base_limpia)
+    with eng.begin() as con:
+        rs = con.execute(text(
+            "INSERT INTO razones_sociales (nombre, condicion_iva, punto_venta, activa) "
+            "VALUES ('Suitrans', 'responsable_inscripto', 1, true) RETURNING id"
+        )).scalar_one()
+        if con_par:
+            con.execute(text(
+                "INSERT INTO configuracion_arca "
+                "(razon_social_id, ambiente, certificado, clave, habilitado) "
+                "VALUES (:rs, 'homologacion', :c, :k, false)"),
+                {"rs": rs, "c": b"-----BEGIN CERTIFICATE-----",
+                 "k": b"-----BEGIN PRIVATE KEY-----"})
+        else:
+            # Tal cual la creaba el router viejo al abrir la pantalla: la fila
+            # existe y las dos columnas del par estan en NULL.
+            con.execute(text(
+                "INSERT INTO configuracion_arca "
+                "(razon_social_id, ambiente, habilitado) "
+                "VALUES (:rs, 'homologacion', false)"), {"rs": rs})
+    eng.dispose()
+
+
+def test_la_0011_NO_frena_por_una_fila_vacia(base_limpia):
+    """🔴 La primera version contaba filas, y freno el deploy de `dev`.
+
+    El router viejo creaba la fila **al abrir la pantalla** —"se crea al primer
+    uso y no en una migracion"— asi que cualquier instancia donde alguien entro
+    una vez a Configuracion → ARCA tiene una fila con el par en NULL. Contar
+    filas convertia ese estado, que es el normal, en un deploy abortado, con un
+    mensaje que hablaba de credenciales que no existian.
+
+    Lo que se protege son las credenciales, asi que eso es lo que se cuenta.
+    """
+    original = os.environ.get("DATABASE_URL")
+    try:
+        cfg = _alembic(base_limpia)
+        command.upgrade(cfg, "0010")
+        _sembrar_arca(base_limpia, con_par=False)
+
+        command.upgrade(cfg, "head")  # no tiene que levantar
+
+        eng = create_engine(base_limpia)
+        with eng.connect() as con:
+            quedan = con.execute(text(
+                "SELECT count(*) FROM information_schema.tables "
+                "WHERE table_name = 'configuracion_arca'")).scalar_one()
+        eng.dispose()
+        assert quedan == 0, "la tabla tenia que irse"
+    finally:
+        if original:
+            os.environ["DATABASE_URL"] = original
+
+
+def test_la_0011_SI_frena_por_una_fila_con_credenciales(base_limpia):
+    """La otra mitad, y la que hace que la de arriba signifique algo.
+
+    Sin este par de tests, aflojar la guarda hasta que no frene nunca pasaria
+    verde. Lo que se aserta no es que levante: es que **no borro nada** — la
+    tabla, la fila y la version siguen donde estaban.
+    """
+    original = os.environ.get("DATABASE_URL")
+    try:
+        cfg = _alembic(base_limpia)
+        command.upgrade(cfg, "0010")
+        _sembrar_arca(base_limpia, con_par=True)
+
+        with pytest.raises(RuntimeError, match="CON credenciales"):
+            command.upgrade(cfg, "head")
+
+        eng = create_engine(base_limpia)
+        with eng.connect() as con:
+            filas = con.execute(
+                text("SELECT count(*) FROM configuracion_arca")).scalar_one()
+            version = con.execute(text(
+                "SELECT version_num FROM alembic_version_libracargo")).scalar_one()
+        eng.dispose()
+        assert filas == 1, "borro la fila igual"
+        assert version == "0010", f"la version quedo en {version}"
     finally:
         if original:
             os.environ["DATABASE_URL"] = original

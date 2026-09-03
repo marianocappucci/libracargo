@@ -25,6 +25,9 @@ services:
       TZ: America/Argentina/Buenos_Aires
     volumes:
       - libracargo-postgres-data:/var/lib/postgresql/data
+      # Crea `libracargo_core` al inicializar el volumen. Ver el archivo:
+      # sobre un volumen que ya existe NO corre.
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U libracargo -d libracargo"]
       interval: 10s
@@ -76,7 +79,7 @@ services:
     # `exec` para que uvicorn quede como PID 1 y `docker stop` le llegue. Si la
     # migración falla el contenedor sale con error, que es mejor que servir
     # código nuevo sobre un esquema viejo.
-    command: sh -c "alembic upgrade head && exec uvicorn app.asgi:app --host 0.0.0.0 --port 8000 --reload"
+    command: sh -c "libracore-migrar upgrade --prefijo libracargo && alembic upgrade head && exec uvicorn app.asgi:app --host 0.0.0.0 --port 8000 --reload"
     environment:
       # Las tres sin default: la app tiene que fallar al arrancar si falta
       # alguna, no levantar con un secreto de juguete en un dominio público.
@@ -84,6 +87,15 @@ services:
       - LIBRACARGO_ADMIN_USERNAME=${LIBRACARGO_ADMIN_USERNAME:-admin}
       - LIBRACARGO_ADMIN_PASSWORD=${LIBRACARGO_ADMIN_PASSWORD:?hay que definirla en el .env}
       - DATABASE_URL=postgresql+psycopg://libracargo:${LIBRACARGO_POSTGRES_PASSWORD:?hay que definirla en el .env}@libracargo-postgres:5432/libracargo
+      # La base de LibraCore, que NO es la del dominio: el schema del motor
+      # declara `usuarios` y `auth_log` y las dos ya existen del otro lado
+      # con la forma de `libraauth`. Sin esta variable la app no arranca —
+      # a propósito: el default silencioso sería caer en la del dominio, que
+      # es justo el choque que esta separación evita.
+      #
+      # El nombre lo define `libracore.db.url_de_instancia`, que es también
+      # quien lo lee. No hay una segunda convención que pueda divergir.
+      - LIBRACARGO_LIBRACORE_DATABASE_URL=postgresql+psycopg://libracargo:${LIBRACARGO_POSTGRES_PASSWORD:?hay que definirla en el .env}@libracargo-postgres:5432/libracargo_core
       - ENTORNO=dev
       # Como el backoffice (`admin.libracargo.com.ar`) administra los usuarios
       # de esta instancia. **Con default vacio a proposito**, al reves que las
