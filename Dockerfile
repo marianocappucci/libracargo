@@ -8,7 +8,7 @@
 # el mount de la deploy key y el `insteadOf`, igual que LibraDesk:
 #   RUN --mount=type=ssh,id=libra-ui,target=/tmp/ssh.sock SSH_AUTH_SOCK=... \
 #       git config --global url."ssh://git@github.com/...".insteadOf "https://..."
-FROM node:20-slim AS frontend-build
+FROM node:22-slim AS frontend-build
 WORKDIR /frontend
 RUN apt-get update && apt-get install -y --no-install-recommends git \
  && rm -rf /var/lib/apt/lists/*
@@ -22,6 +22,17 @@ RUN npm run build
 RUN test -f dist/index.html || { echo "ERROR: el build del frontend no dejo dist/index.html"; exit 1; }
 
 FROM python:3.12-slim
+
+# F1 (2026-09-05): las dependencias de terceros salen de `uv.lock`, no de la
+# resolucion de pip del dia del build. Dos builds del mismo commit dan la misma
+# imagen. El binario viene de la imagen oficial, pineada por version; el venv
+# vive FUERA de /app porque el compose de dev monta ./:/app encima y lo taparia.
+COPY --from=ghcr.io/astral-sh/uv:0.12.10 /uv /uvx /bin/
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_NO_CACHE=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PATH="/opt/venv/bin:$PATH"
 
 # Huso horario del ecosistema: UTC-3 fijo, sin horario de verano.
 ENV TZ=America/Argentina/Buenos_Aires \
@@ -68,9 +79,10 @@ RUN pg_restore --version | grep -q ' 16\.' \
 
 WORKDIR /app
 
-COPY pyproject.toml ./
+# F1: uv sync --frozen necesita el lock (y .python-version) dentro de la imagen.
+COPY pyproject.toml uv.lock .python-version ./
 COPY app ./app
-RUN pip install --no-cache-dir .
+RUN uv sync --frozen --no-dev --no-editable
 
 COPY alembic.ini ./
 COPY migrations ./migrations
