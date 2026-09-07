@@ -28,6 +28,7 @@ from libracore.config_router import build_backup_router
 from libracore.db import core as libracore_core
 from libracore.geografia import build_geo_router
 from libracore.respaldo import Instancia
+from libracore.security_headers import CSP_SPA, SecurityHeadersMiddleware
 from libracore.smtp_router import build_smtp_probe_router
 
 from app import db
@@ -148,6 +149,14 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     # login devuelve 500 al primer request y no al arrancar.
     app.state.users = usuarios
     app.state.session_auth = construir_session_auth(usuarios)
+
+    # 🔴 Los headers de seguridad. Al final a proposito: en Starlette el ultimo
+    # middleware agregado es el mas externo, asi que envuelve tambien las
+    # respuestas de error.
+    #
+    # `CSP_SPA` y no la CSP por defecto: esa habilita `cdn.jsdelivr.net` para las
+    # apps Jinja2, y este producto no carga nada externo. Ver libracore.
+    app.add_middleware(SecurityHeadersMiddleware, csp=CSP_SPA)
 
     # 🔴 **Sin esta línea se apagan DOS cosas, y ninguna avisa.** El registro de
     # accesos —quién entró, quién salió, quién lo intentó sin lograrlo— y el
