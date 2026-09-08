@@ -12,7 +12,7 @@
  * > traerlos es el formulario de órdenes de F3**, que sí tiene reglas entre
  * > campos.
  */
-import type { ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef } from 'libra-ui/data-table'
 import { ApiError } from 'libra-ui/api-client'
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
 import { Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
