@@ -632,8 +632,8 @@ wheels = [
 
 [[package]]
 name = "libraauth"
-version = "0.37.0"
-source = { git = "https://github.com/marianocappucci/libraauth.git?rev=v0.37.0#4a8e73e74d57e5c8e7a6c8af183b168a3c320811" }
+version = "0.38.0"
+source = { git = "https://github.com/marianocappucci/libraauth.git?rev=v0.38.0#a8c17b5f65e9bcde97833077dde261e9f7e58219" }
 dependencies = [
     { name = "argon2-cffi" },
     { name = "cryptography" },
@@ -677,8 +677,8 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.14" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
-    { name = "libraauth", git = "https://github.com/marianocappucci/libraauth.git?rev=v0.37.0" },
-    { name = "libracore", extras = ["migrations"], git = "https://github.com/marianocappucci/libracore.git?rev=v1.89.0" },
+    { name = "libraauth", git = "https://github.com/marianocappucci/libraauth.git?rev=v0.38.0" },
+    { name = "libracore", extras = ["migrations"], git = "https://github.com/marianocappucci/libracore.git?rev=v1.92.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pymysql", marker = "extra == 'dev'", specifier = ">=1.1" },
@@ -694,8 +694,8 @@ provides-extras = ["motores", "migracion", "dev"]
 
 [[package]]
 name = "libracore"
-version = "1.89.0"
-source = { git = "https://github.com/marianocappucci/libracore.git?rev=v1.89.0#3d2e4b5008d3c7446fdbda2bf87ec57b9ec11571" }
+version = "1.92.0"
+source = { git = "https://github.com/marianocappucci/libracore.git?rev=v1.92.0#c1f04af41bf10ce5a3de4eb379b23d10aed49598" }
 dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
