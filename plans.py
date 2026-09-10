@@ -53,3 +53,21 @@ MODULO_LABELS = {
     "reportes":  "Reportes e impresión de listados",
     "auditoria": "Log de actividad",
 }
+
+# ── Add-ons ──────────────────────────────────────────────────────────────────
+#
+# Un add-on **no pertenece a ningún plan**: está disponible en cualquiera, viene
+# apagado y se prende por instancia desde el backoffice. Es el primero de
+# LibraCargo.
+#
+# El backoffice (`libracore.admin.services.set_addon`) valida el nombre contra
+# este conjunto y después lo escribe corriendo `app.database.set_addon` ADENTRO
+# del contenedor. Por eso no va en `MODULOS` ni en `MODULO_LABELS`, que listan
+# lo que reparten los planes, y por eso `libracore.db.modulos.apply_plan` saltea
+# estas claves: si cambiar de plan las tocara, subir o bajar de plan apagaría un
+# adicional en silencio.
+#
+# - `resguardo_externo`: la copia externa del backup en la nube del propio
+#   cliente (Google Drive o Dropbox), enlazada desde Configuración → Datos. El
+#   gate es `app.addons.require_addon`.
+ADDONS = {"resguardo_externo"}

@@ -27,11 +27,13 @@ from libracore.arca_router import build_arca_router
 from libracore.config_router import build_backup_router
 from libracore.db import core as libracore_core
 from libracore.geografia import build_geo_router
+from libracore.resguardo_enlace import build_resguardo_enlace_router
 from libracore.respaldo import Instancia
 from libracore.security_headers import CSP_SPA, SecurityHeadersMiddleware
 from libracore.smtp_router import build_smtp_probe_router
 
 from app import db
+from app.addons import require_addon
 from app.auth import (
     UserRepository,
     construir_session_auth,
@@ -300,13 +302,33 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     # el restore contesta `ok` y no tiene efecto hasta que alguien reinicie el
     # contenedor, porque el pool sigue con la conexión vieja. La pantalla diría
     # que salió bien y los datos serían los de antes.
+    carpeta_de_backups = os.path.join(config.directorio_de_datos, "backups")
     app.include_router(
         build_backup_router(
             _instancia_a_respaldar(config),
-            os.path.join(config.directorio_de_datos, "backups"),
+            carpeta_de_backups,
             cerrar_conexiones=motor.dispose,
             reabrir_conexiones=motor.dispose,
         ),
         dependencies=[Depends(require_admin)],
+    )
+
+    # La copia externa: el cliente enlaza su Google Drive o su Dropbox desde la
+    # misma pantalla de "Datos / Backup", y el host sube ahí los ZIP por cron.
+    #
+    # 🔴 **La MISMA carpeta que el router de backup, y no otra.** El enlace
+    # queda en `<carpeta>/.resguardo/`: ahí lo busca el subidor del host, y
+    # ahí es donde `respaldo.crear_backup` lo poda para que el token de la nube
+    # del cliente no viaje adentro de cada ZIP. En otra carpeta el enlace
+    # quedaría hecho y el host no lo encontraría — o, peor, entraría al backup.
+    #
+    # Dos gates: admin, porque se entrega un token de la cuenta del cliente, y
+    # el add-on, porque es un adicional que viene apagado. `require_addon` y no
+    # el `require_module` del motor: ver `app/addons.py`. El callback del OAuth
+    # queda detrás de los dos a propósito —la cookie es `SameSite=Lax` y viaja
+    # en la vuelta desde Google—; ver `libracore.resguardo_enlace`.
+    app.include_router(
+        build_resguardo_enlace_router(carpeta_de_backups, carpeta="Resguardo LibraCargo"),
+        dependencies=[Depends(require_admin), Depends(require_addon("resguardo_externo"))],
     )
     return app
