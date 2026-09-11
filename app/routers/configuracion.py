@@ -124,9 +124,13 @@ def logo(sesion: Session = Depends(obtener_sesion)):
 
 
 @router.post("/logo", response_model=ConfiguracionOut, dependencies=[Depends(require_admin)])
-async def subir_logo(archivo: UploadFile = File(...),
-                     sesion: Session = Depends(obtener_sesion),
-                     actual_usuario: dict = Depends(require_admin)):
+# 🔴 `def` y no `async def`: lee y escribe la base con la `Session`, que es
+# sincrónica, y con un solo proceso de uvicorn eso frenaba el loop entero
+# mientras duraba. Como `def` corre en el threadpool. El archivo se lee de su
+# `SpooledTemporaryFile` (`archivo.file.read()`), sin `await`.
+def subir_logo(archivo: UploadFile = File(...),
+               sesion: Session = Depends(obtener_sesion),
+               actual_usuario: dict = Depends(require_admin)):
     """Guarda el logo del membrete.
 
     🔴 **El tipo se acepta por lista blanca y el SVG queda afuera**: un SVG
@@ -136,7 +140,7 @@ async def subir_logo(archivo: UploadFile = File(...),
     if archivo.content_type not in TIPOS_DE_LOGO:
         raise HTTPException(
             422, f"formato no admitido: {archivo.content_type!r}. PNG, JPG o WebP")
-    contenido = await archivo.read()
+    contenido = archivo.file.read()
     if len(contenido) > LOGO_MAXIMO:
         raise HTTPException(422, f"el logo pesa {len(contenido) // 1024} KB y el máximo son 2048")
     if not contenido:
