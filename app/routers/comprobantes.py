@@ -7,6 +7,7 @@ fallaba, el primero ya estaba grabado. Acá el comprobante, el estado de las
 órdenes y el movimiento de la cuenta del cliente entran o no entran juntos.
 """
 
+import asyncio
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -146,7 +147,14 @@ def _respuesta_de_ensayo(comprobante: Comprobante, cfg: dict) -> JSONResponse:
 
 
 @router.post("", response_model=ComprobanteOut, status_code=201)
-async def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
+# 🔴 **`def` y no `async def`, a propósito.** Casi todo lo que hace esta ruta
+# es sincrónico —la `Session`, y adentro de la emisión `openssl` por
+# subproceso para firmar el TRA— y uvicorn corre con **un solo proceso**:
+# como `async def`, cada consulta frenaba el loop entero, y mientras se
+# facturaba la instancia no le contestaba a nadie, `/health` incluido. Como
+# `def`, FastAPI la corre en el threadpool. Lo único asincrónico de verdad
+# —WSAA y WSFE— va con `asyncio.run` en un loop propio de este hilo.
+def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
              actual: dict = Depends(get_current_user)):
     """Agrupa órdenes pendientes en un comprobante, en una sola transacción.
 
@@ -227,9 +235,14 @@ async def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
     ta = cfg_arca = razon = None
     if emite:
         try:
-            numero, ta, cfg_arca, razon = await emision_arca.numero_que_sigue(
+            # 🔑 `asyncio.run` en este hilo, y no un `await` en el loop de
+            # uvicorn: la corrutina es `async` sólo en los bordes —la red—, y
+            # entre medio lee la base y firma con `openssl`, todo sincrónico.
+            # Acá eso bloquea a este hilo y a nadie más. La firma de
+            # `emision_arca` no cambia: el arreglo va del lado de quien llama.
+            numero, ta, cfg_arca, razon = asyncio.run(emision_arca.numero_que_sigue(
                 sesion, datos.razon_social_id, datos.tipo,
-            )
+            ))
         except emision_arca.ArcaNoConfigurado as e:
             raise HTTPException(409, str(e)) from None
         except emision_arca.ArcaRechazo as e:
@@ -284,7 +297,10 @@ async def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
             # el resultado. Se deja igual porque hace explicita la intencion y
             # no depende de la semantica de `close()`.
             try:
-                await emision_arca.pedir_cae(sesion, comprobante, ta, cfg_arca, razon)
+                # Mismo criterio que el número: loop propio de este hilo. La
+                # transacción no se mueve —la `sesion` es la misma y el hilo
+                # también—, así que un rechazo sigue sin dejar comprobante.
+                asyncio.run(emision_arca.pedir_cae(sesion, comprobante, ta, cfg_arca, razon))
             except emision_arca.ArcaRechazo as e:
                 sesion.rollback()
                 raise HTTPException(502, f"ARCA rechazo el comprobante: {e}") from None
