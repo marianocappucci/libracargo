@@ -70,11 +70,43 @@ def hace(dias: int) -> str:
     return (date.today() - timedelta(days=dias)).isoformat()
 
 
+def entrar(usuario: str, clave: str) -> int:
+    """`POST /auth/login`, resolviendo antes el captcha ALTCHA si la instancia lo pide.
+
+    Desde libraauth v0.40.0 el login exige la solución de un desafío
+    (`captcha=True` en `app/routers/auth.py`); sin ella contesta 400. `altcha`
+    se importa acá adentro y sólo si hay desafío: llega con libraauth, así que
+    lo tiene el Python del producto y no necesariamente el del sistema.
+    """
+    cuerpo = {"username": usuario, "password": clave}
+    try:
+        codigo, desafio = pedir("GET", "/auth/captcha")
+    except ValueError:
+        # Una instancia sin captcha puede contestar la SPA (catch-all, 200 con
+        # HTML): no es un desafío, y el login va sin él.
+        codigo, desafio = None, None
+    if codigo == 200 and isinstance(desafio, dict) and "parameters" in desafio and "signature" in desafio:
+        try:
+            from altcha import Challenge, Payload, solve_challenge
+        except ImportError:
+            sys.exit(
+                "ERROR: la instancia pide captcha y este Python no tiene `altcha` "
+                "(llega con libraauth >= v0.40.0). Corré el seed con el Python del "
+                "producto: adentro del contenedor (`python3`, el de /opt/venv, como "
+                "hace scripts/reset_demo.sh) o con `.venv-scripts/bin/python` / el "
+                "`.venv` del checkout."
+            )
+        ch = Challenge.from_dict(desafio)
+        cuerpo["captcha"] = Payload(ch, solve_challenge(ch)).to_base64()
+    codigo, _ = pedir("POST", "/auth/login", cuerpo)
+    return codigo
+
+
 # ---- sesión ---------------------------------------------------------------
 # 🔴 Por `https://` y no por el puerto local: la cookie de sesión está marcada
 # `Secure`, así que sobre http el login devuelve 200 y **todo lo demás 401** —
 # se lee como "el login no anda" cuando lo que pasa es que la cookie no vuelve.
-codigo, _ = pedir("POST", "/auth/login", {"username": args.usuario, "password": args.password})
+codigo = entrar(args.usuario, args.password)
 if codigo != 200:
     print(f"login: {codigo}")
     sys.exit(1)

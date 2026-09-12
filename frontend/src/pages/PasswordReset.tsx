@@ -15,5 +15,8 @@ const branding = {
   logo: { src: LOGO, className: 'h-[72px] w-[72px]' },
 }
 
-export const ForgotPassword = createForgotPassword(branding)
+// El pedido de enlace lleva el mismo captcha que el login (sin él, el endpoint
+// manda correos a pedido de cualquiera). El cambio de contraseña no: ahí ya
+// hace falta el token que llegó por correo.
+export const ForgotPassword = createForgotPassword({ ...branding, captchaPath: '/auth/captcha' })
 export const ResetPassword = createResetPassword(branding)

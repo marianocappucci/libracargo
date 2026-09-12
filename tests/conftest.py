@@ -9,6 +9,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from fastapi.testclient import TestClient
+from libraauth import session_auth as _session_auth
+from libraauth.captcha import Captcha
 from libraauth.models import Base as AuthBase
 from libracore import config_manager
 from libracore.db import core as libracore_core
@@ -228,6 +230,57 @@ def _terminos_ya_aceptados(request):
     # VentaLibra, que era el unico de las seis suites que llama `undo()`.
     mp = pytest.MonkeyPatch()
     mp.setattr(TerminosRepository, "esta_aceptada", lambda self: True)
+    yield
+    mp.undo()
+
+
+# ── Captcha ALTCHA: aprobado para el resto de la suite ──────────────────────
+#
+# Desde libraauth v0.40.0 el router (`captcha=True` en `app/routers/auth.py`)
+# exige la solución de un desafío en el login y en forgot-password. La suite
+# postea al login en muchos lugares —cada fixture `cliente`, cada test que arma
+# su propia app— y el captcha no es lo que miden: lo prueba libraauth. Acá sólo
+# se cablea, y eso lo mide `test_captcha_login.py` con la función real puesta.
+
+#: La función real de libraauth, para que un test pueda volver a ponerla.
+CAPTCHA_DE_ORIGINAL = _session_auth._captcha_de
+
+
+class _CaptchaQueAprueba:
+    """Doble del `Captcha` de libraauth: aprueba cualquier payload.
+
+    `emitir()` delega en un `Captcha` real y barato, así `GET /auth/captcha`
+    sigue devolviendo un desafío con la forma de siempre.
+    """
+
+    def __init__(self):
+        self._real = Captcha("clave-de-prueba", costo=1, contador_min=1, contador_rango=5)
+
+    def emitir(self) -> dict:
+        return self._real.emitir()
+
+    def verificar(self, payload: str) -> bool:
+        return True
+
+
+_CAPTCHA_DE_PRUEBA = _CaptchaQueAprueba()
+
+
+@pytest.fixture(autouse=True)
+def _captcha_aprobado():
+    """Todo login y forgot-password de la suite pasa el captcha.
+
+    Se parchea la función de módulo `libraauth.session_auth._captcha_de` y no
+    `app.state.captcha`: el router la resuelve por nombre en cada request, y la
+    app se arma en muchos lugares (`crear_app(cfg)`, `crear_app(cfg,
+    sembrar_admin=False)`), así que un parche por app se olvidaría en alguno.
+
+    `MonkeyPatch()` propio y no el fixture `monkeypatch`, por la misma razón que
+    `_terminos_ya_aceptados`: un `monkeypatch.undo()` en el cuerpo de un test
+    desharía también este parche y el siguiente login daría 400.
+    """
+    mp = pytest.MonkeyPatch()
+    mp.setattr(_session_auth, "_captcha_de", lambda request: _CAPTCHA_DE_PRUEBA)
     yield
     mp.undo()
 

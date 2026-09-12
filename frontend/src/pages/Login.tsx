@@ -38,6 +38,10 @@ export const Login = createLogin<Usuario>({
   // pasó a las seis SPA de la familia el 2026-08-06 — el `POST /auth/demo` en
   // verde, y nadie podía entrar.
   demoPath: '/auth/demo',
+  // El recuadro «No soy un robot» (ALTCHA). Va con `captcha=True` en
+  // `app/routers/auth.py`: el kit sondea esta ruta y sólo lo pinta si contesta
+  // un desafío; mientras no se tilde, «Ingresar» queda deshabilitado.
+  captchaPath: '/auth/captcha',
   useAuth,
 })
 
