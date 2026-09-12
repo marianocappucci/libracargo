@@ -46,4 +46,9 @@ def construir_router() -> APIRouter:
         # versión de libraauth.
         incluir_password_reset=True,
         incluir_demo=True,
+        # `GET /auth/captcha` (desafío ALTCHA) y el campo `captcha` obligatorio
+        # en el login y en forgot-password. Va SIEMPRE, no recién después de N
+        # fallos: decisión del humano (2026-09-11, ADR-014 de libraauth). Un
+        # captcha que falta o no vale da 400 y no suma intento fallido.
+        captcha=True,
     )
