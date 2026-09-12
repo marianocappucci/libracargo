@@ -18,7 +18,12 @@ import { expect, test, type Page } from '@playwright/test'
 async function pasarElCaptcha(page: Page) {
   const ingresar = page.getByRole('button', { name: 'Ingresar' })
   await expect(ingresar).toBeDisabled()
-  await page.getByRole('checkbox', { name: /No soy un robot/ }).click()
+  await expect(page.getByRole('checkbox', { name: /No soy un robot/ })).toBeVisible()
+  // 🔴 Click en el LABEL y no en el `<input>`: altcha le superpone el `<svg>`
+  // del tilde, y Playwright se queda reintentando ("svg intercepts pointer
+  // events") hasta el timeout. El label es lo que clickea el humano y está
+  // asociado al checkbox, así que lo tilda igual.
+  await page.locator('altcha-widget').getByText('No soy un robot').click()
   await expect(ingresar).toBeEnabled({ timeout: 30_000 })
 }
 
