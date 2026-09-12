@@ -239,6 +239,13 @@ fi
 # Por la API y desde adentro del contenedor: la contrasena sale de su propio
 # entorno y nunca pasa por la linea de comandos del host, donde quedaria en el
 # `ps` y en el log del cron.
+#
+# 🔴 `python3` aca es el de la IMAGEN, no el del host: el Dockerfile pone
+# `/opt/venv/bin` primero en el PATH, y `docker exec` lo hereda. Importa desde
+# libraauth v0.40.0: el seed resuelve el captcha ALTCHA del login con `altcha`,
+# que llega con libraauth y esta en ese venv. Un Python del host (o un
+# `.venv-scripts` del checkout) no sirve aca adentro: esa ruta no existe en el
+# contenedor.
 docker cp "$SEED_LOCAL" "$CONTENEDOR:/tmp/seed.py"
 docker exec -i "$CONTENEDOR" sh -c "
   python3 /tmp/seed.py \

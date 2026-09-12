@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 // Lo único que un unitario no puede ver: que la SPA construida, servida por la
 // app real, deje entrar y muestre una pantalla de dominio. Si el bundle quedó
@@ -10,12 +10,30 @@ import { expect, test } from '@playwright/test'
 // botón «Mostrar contraseña», y el nombre del producto es un wordmark, no un
 // heading accesible. La primera pantalla se reconoce por el sidebar de libra-ui
 // (`data-sidebar="sidebar"`) y por su título.
+//
+// El captcha ALTCHA (2026-09-12, libraauth v0.40.0): «Ingresar» queda
+// deshabilitado hasta tildar «No soy un robot» y que el navegador termine la
+// prueba de trabajo. Se resuelve el desafío real que emite la app, como el
+// humano: es lo único que prueba que el worker del widget carga bajo la CSP.
+async function pasarElCaptcha(page: Page) {
+  const ingresar = page.getByRole('button', { name: 'Ingresar' })
+  await expect(ingresar).toBeDisabled()
+  await expect(page.getByRole('checkbox', { name: /No soy un robot/ })).toBeVisible()
+  // 🔴 Click en el LABEL y no en el `<input>`: altcha le superpone el `<svg>`
+  // del tilde, y Playwright se queda reintentando ("svg intercepts pointer
+  // events") hasta el timeout. El label es lo que clickea el humano y está
+  // asociado al checkbox, así que lo tilda igual.
+  await page.locator('altcha-widget').getByText('No soy un robot').click()
+  await expect(ingresar).toBeEnabled({ timeout: 30_000 })
+}
+
 test('entra por /login, acepta los Términos y ve la primera pantalla', async ({ page }) => {
   await page.goto('/login')
   await expect(page.getByRole('button', { name: 'Ingresar' })).toBeVisible()
 
   await page.locator('#username').fill(process.env.SMOKE_USER ?? 'admin')
   await page.locator('#password').fill(process.env.SMOKE_PASSWORD ?? '')
+  await pasarElCaptcha(page)
   await page.getByRole('button', { name: 'Ingresar' }).click()
   await expect(page).toHaveURL(/\/$/)
 
@@ -38,6 +56,8 @@ test('una credencial mala no entra (control)', async ({ page }) => {
   await page.goto('/login')
   await page.locator('#username').fill('admin')
   await page.locator('#password').fill('esta-no-es')
+  // Con el captcha resuelto: el rechazo tiene que ser por la clave, no por él.
+  await pasarElCaptcha(page)
   await page.getByRole('button', { name: 'Ingresar' }).click()
   await expect(page).toHaveURL(/\/login/)
   await expect(page.locator('p.text-destructive')).toBeVisible()
