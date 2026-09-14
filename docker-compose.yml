@@ -60,7 +60,7 @@ services:
     mem_reservation: 256m
     cpus: 1.0
     ports:
-      - "8097:8000"
+      - "127.0.0.1:8097:8000"
     # El bind mount es para el `--reload` del código Python. Taparía el build
     # del frontend si viviera dentro de /app: por eso el Dockerfile lo hornea
     # en /opt/frontend-dist, fuera del árbol montado, y `app/asgi.py` mira
