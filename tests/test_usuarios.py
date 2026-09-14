@@ -1,16 +1,29 @@
-"""El ABM de usuarios.
+"""El ABM de usuarios, ahora sobre `libraauth.usuarios.build_users_router()`
+(ADR-018, v0.43.0).
 
-El módulo lo pone `libra-ui`; lo que se prueba acá es el backend que consume, y
-sobre todo **las dos puertas que no se pueden cerrar desde adentro**: un admin no
-puede desactivarse ni borrarse a sí mismo. Con un solo administrador —el caso de
-una instancia recién entregada— eso dejaría el producto sin nadie que pueda
-administrar usuarios, y la única salida sería entrar a la base.
+El ciclo completo (listar → alta → editar → releer → borrar) lo prueba
+`verificar_contrato_de_usuarios`, compartido con el resto de la familia: si
+alguien le cambia un campo a los modelos públicos de `libraauth`, ese test
+cambia con él en el mismo commit, no acá dos semanas después.
+
+Lo que sigue siendo propio de este archivo son **las dos puertas que no se
+pueden cerrar desde adentro** (un admin no puede desactivarse ni borrarse a sí
+mismo) y las protecciones de router (sólo admin, ni un staff ni un anónimo).
+La protección del ÚLTIMO administrador activo -- nueva para este producto con
+esta adopción -- se prueba con mutación de estado en el propio `libraauth`
+(`tests/test_usuarios_router.py`), no acá: ver el docstring de
+`verificar_contrato_de_usuarios`.
+
+🔴 **La contraseña mínima subió de "no vacía" a 6 caracteres**, también en el
+alta (antes sólo Contalibra/Restolibra lo exigían ahí). Las contraseñas de
+prueba de este archivo tienen 6 caracteres o más a propósito.
 """
 
 
 import pytest
 from fastapi.testclient import TestClient
 from libraauth.models import Base as AuthBase
+from libraauth.testing import verificar_contrato_de_usuarios
 
 from app.main import crear_app
 from tests.conftest import config_de_prueba
@@ -35,6 +48,11 @@ def cliente(engine, sesion, monkeypatch):
 def id_de(cliente, username):
     return next(u["id"] for u in cliente.get("/api/usuarios").json()
                 if u["username"] == username)
+
+
+def test_contrato_de_usuarios(cliente):
+    """El ciclo que ejerce el backoffice de la suite, con la sesión de admin."""
+    verificar_contrato_de_usuarios(cliente, "/api/usuarios", role="staff")
 
 
 def test_el_admin_sembrado_aparece_en_la_lista(cliente):
@@ -70,7 +88,7 @@ def test_alta_edicion_y_baja_de_un_usuario(cliente):
 
 
 def test_el_nombre_de_usuario_repetido_se_rechaza(cliente):
-    cuerpo = {"username": "marta", "name": "Marta", "password": "x", "role": "staff"}
+    cuerpo = {"username": "marta", "name": "Marta", "password": "clave1", "role": "staff"}
     assert cliente.post("/api/usuarios", json=cuerpo).status_code == 201
     repetido = cliente.post("/api/usuarios", json=cuerpo)
     assert repetido.status_code == 409
@@ -90,7 +108,7 @@ def test_un_admin_no_se_puede_desactivar_ni_degradar_a_si_mismo(cliente):
 
     # Control: sobre otro usuario, las tres operaciones se permiten.
     otro = cliente.post("/api/usuarios", json={
-        "username": "pedro", "name": "Pedro", "password": "x", "role": "admin"}).json()
+        "username": "pedro", "name": "Pedro", "password": "clave1", "role": "admin"}).json()
     assert cliente.put(f"/api/usuarios/{otro['id']}",
                        json={"name": "Pedro", "role": "staff", "active": False}).status_code == 200
     assert cliente.delete(f"/api/usuarios/{otro['id']}").status_code == 204
@@ -111,6 +129,20 @@ def test_la_clave_vacia_no_se_acepta(cliente):
                      json={"username": "marta", "password": "otra-clave"}).status_code == 200
 
 
+def test_la_clave_corta_no_se_acepta_ni_en_el_alta_ni_en_el_reset(cliente):
+    """🔑 Nuevo con esta adopción: antes el alta de este producto no exigía
+    largo mínimo (sólo Contalibra/Restolibra lo hacían). Ahora sí, en los ocho."""
+    corta = cliente.post("/api/usuarios", json={
+        "username": "cortita", "name": "Cortita", "password": "abc12", "role": "staff"})
+    assert corta.status_code == 422, corta.text
+
+    creado = cliente.post("/api/usuarios", json={
+        "username": "normal", "name": "Normal", "password": "una-clave", "role": "staff"}).json()
+    reset_corto = cliente.put(f"/api/usuarios/{creado['id']}/password",
+                              json={"password": "abc12"})
+    assert reset_corto.status_code == 422, reset_corto.text
+
+
 def test_un_usuario_staff_no_administra_usuarios(cliente):
     """El router entero exige admin: un operador no ve ni toca esta pantalla."""
     cliente.post("/api/usuarios", json={
@@ -120,7 +152,7 @@ def test_un_usuario_staff_no_administra_usuarios(cliente):
                       json={"username": "marta", "password": "una-clave"}).status_code == 200
     assert staff.get("/api/usuarios").status_code == 403
     assert staff.post("/api/usuarios", json={
-        "username": "otro", "name": "Otro", "password": "x", "role": "admin"}).status_code == 403
+        "username": "otro", "name": "Otro", "password": "clave1", "role": "admin"}).status_code == 403
     # Control: el mismo pedido con la sesión de admin pasa.
     assert cliente.get("/api/usuarios").status_code == 200
 
