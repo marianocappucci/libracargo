@@ -46,6 +46,19 @@ PLAN_MODULOS = {
     "premium":  sorted(_PREMIUM),
 }
 
+
+def modulos_de_plan(plan: str) -> set[str]:
+    """Los módulos habilitados para un plan (vacío si el plan es desconocido).
+
+    🔴 La llama `libracore.admin.services.planes_info()`, que es `GET
+    /api/planes` del backoffice. Sin ella esa ruta da 500, y como la pantalla
+    de una instancia pide planes junto con la instancia, **«Administrar» queda
+    en blanco** — medido en LibraClub el 2026-09-15, con este mismo hueco acá.
+    Mismo contrato que en el resto de la familia.
+    """
+    return set(PLAN_MODULOS.get(plan, ()))
+
+
 #: Todos los módulos gateables, para que el backoffice pueda listarlos.
 MODULOS = sorted(_PREMIUM)
 
