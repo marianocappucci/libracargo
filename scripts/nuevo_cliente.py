@@ -103,8 +103,6 @@ configure(
     # uno solo pone ese test en rojo, que es exactamente lo que tiene que pasar.
     migraciones=(
         ("libracore-migrar", "upgrade", "--prefijo", "libracargo"),
-        # libraauth: sus seis tablas viven en la base del dominio (medido 2026-09-16), por eso --base dominio.
-        ("libraauth-migrar", "upgrade", "--prefijo", "libracargo", "--base", "dominio"),
         ("alembic", "upgrade", "head"),
     ),
     # `health_path` **no se pasa**: desde hoy este producto sirve `/health`
