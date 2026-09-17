@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import datetime
 import os
+from pathlib import Path
 
 import pytest
+from alembic import command
+from alembic.config import Config as AlembicConfig
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -23,6 +26,8 @@ from app import db
 from app.config import Config
 from app.main import crear_app
 from app.models import Base
+
+RAIZ = Path(__file__).resolve().parent.parent
 
 URL = os.environ.get(
     "DATABASE_URL", "postgresql+psycopg://postgres@127.0.0.1:5433/libracargo_test"
@@ -179,8 +184,25 @@ def engine():
     eng = create_engine(URL)
     with eng.connect() as con:
         assert con.dialect.name == "postgresql", "la suite exige PostgreSQL"
-    Base.metadata.drop_all(eng)
-    Base.metadata.create_all(eng)
+    # 🔴 La base sale de la cadena de Alembic, no de `create_all`. Con
+    # `create_all` las tablas quedaban sin `alembic_version_libracargo`, y una base así,
+    # respaldada y restaurada, vuelve a correr la baseline encima de sus propias
+    # tablas: `alembic upgrade head` muere con `DuplicateObject` sobre el primer
+    # ENUM (`accion_auditoria`). Es la forma que tiene en producción.
+    with eng.begin() as con:
+        con.execute(text("DROP SCHEMA public CASCADE"))
+        con.execute(text("CREATE SCHEMA public"))
+    previo = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = URL
+    try:
+        cfg = AlembicConfig(str(RAIZ / "alembic.ini"))
+        cfg.set_main_option("script_location", str(RAIZ / "migrations"))
+        command.upgrade(cfg, "head")
+    finally:
+        if previo is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = previo
     yield eng
     eng.dispose()
 
