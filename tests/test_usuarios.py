@@ -23,7 +23,7 @@ prueba de este archivo tienen 6 caracteres o más a propósito.
 import pytest
 from fastapi.testclient import TestClient
 from libraauth.models import Base as AuthBase
-from libraauth.testing import verificar_contrato_de_usuarios
+from libraauth.testing import crear_schema_de_auth, verificar_contrato_de_usuarios
 
 from app.main import crear_app
 from tests.conftest import config_de_prueba
@@ -37,7 +37,7 @@ def cliente(engine, sesion, monkeypatch):
     monkeypatch.setenv("LIBRACARGO_ADMIN_USERNAME", ADMIN)
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
     AuthBase.metadata.drop_all(engine)
-    AuthBase.metadata.create_all(engine)
+    crear_schema_de_auth(engine)
     cfg = config_de_prueba()
     c = TestClient(crear_app(cfg), base_url="https://testserver")
     assert c.post("/auth/login", json={"username": ADMIN, "password": CLAVE}).status_code == 200
@@ -160,7 +160,7 @@ def test_un_usuario_staff_no_administra_usuarios(cliente):
 def test_sin_sesion_no_se_ven_los_usuarios(engine, monkeypatch):
     monkeypatch.setenv("ENV", "development")
     AuthBase.metadata.drop_all(engine)
-    AuthBase.metadata.create_all(engine)
+    crear_schema_de_auth(engine)
     cfg = config_de_prueba()
     anonimo = TestClient(crear_app(cfg, sembrar_admin=False), base_url="https://testserver")
     try:

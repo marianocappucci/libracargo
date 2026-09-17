@@ -22,6 +22,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 from libraauth.models import Base as AuthBase
+from libraauth.testing import crear_schema_de_auth
 from libracore import config_manager
 
 from app.main import crear_app
@@ -55,7 +56,7 @@ def test_sin_sesion_no_se_toca_la_configuracion_de_arca(engine, monkeypatch):
     """
     monkeypatch.setenv("ENV", "development")
     AuthBase.metadata.drop_all(engine)
-    AuthBase.metadata.create_all(engine)
+    crear_schema_de_auth(engine)
     anonimo = TestClient(crear_app(config_de_prueba(), sembrar_admin=False),
                          base_url="https://testserver")
     try:
