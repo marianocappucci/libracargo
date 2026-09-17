@@ -153,8 +153,58 @@ docker exec "$SIDECAR" sh -c '
 ' >/dev/null || { log "ABORTA: no se pudo recrear el schema."; docker start "$CONTENEDOR" >/dev/null; exit 10; }
 log "schema recreado, vacio"
 
-docker start "$CONTENEDOR" >/dev/null
+# --- 3. Las migraciones, con la app parada --------------------------------
+# 🔴 [LIBRACARGO] **El arranque NO las corre.** Hasta el 2026-09-17 este paso
+# arrancaba la app sobre la base vacia (el `create_all` de auth creaba esas
+# tablas) y despues corria SOLO `alembic upgrade head` adentro: la cadena de
+# LibraCore y la de LibraAuth no corrian nunca en el reset.
+# Las migraciones que corresponden a ESTA demo: las que declara
+# `scripts/panel_admin.py` **en el commit de la imagen que corre** (label
+# `org.libra.commit`), leídas con `libracore.provisioning.migraciones_de_la_imagen`
+# (libracore v1.105.0). No las del checkout: el checkout está en `develop` y la
+# demo corre la imagen de `main` -- es el defecto que se cerró en `actualizar`
+# el 2026-09-16. Corren con la app PARADA y en un contenedor efímero, igual que
+# el deploy. Desde el 2026-09-17 el arranque ya no crea las tablas de auth
+# (`exigir_schema_al_dia`): sin este paso la demo no levantaría.
+IMAGEN=$(docker inspect --format '{{.Config.Image}}' "$CONTENEDOR")
+CADENAS=$("$CHECKOUT/.venv-scripts/bin/python" - "$CHECKOUT" "$IMAGEN" <<'PY' || true
+import sys
+from pathlib import Path
+from libracore.provisioning import SCRIPT_DEL_PANEL, migraciones_de_la_imagen
+migraciones, commit = migraciones_de_la_imagen(Path(sys.argv[1]), sys.argv[2], script=SCRIPT_DEL_PANEL)
+print("\n".join(" ".join(c) for c in migraciones))
+PY
+)
+if [ -z "${CADENAS:-}" ]; then
+  log "ABORTA: no se pudieron leer las migraciones de la imagen $IMAGEN."
+  docker start "$CONTENEDOR" >/dev/null
+  exit 12
+fi
+COMPOSE="$CHECKOUT/clientes/demo/docker-compose.yml"
+[ -f "$COMPOSE" ] || { log "ABORTA: no encontre $COMPOSE."; docker start "$CONTENEDOR" >/dev/null; exit 12; }
+while IFS= read -r cmd; do
+  [ -z "$cmd" ] && continue
+  log "migraciones: $cmd"
+  # `-T` y `</dev/null`: sin ellos `compose run` abre una TTY y se come el resto
+  # del heredoc que alimenta este `while` (medido en el reset de Contalibra).
+  # shellcheck disable=SC2086 -- $cmd se splitea en argumentos a proposito.
+  docker compose -p "$CONTENEDOR" -f "$COMPOSE" run --rm -T "$CONTENEDOR" $cmd >/dev/null 2>&1 </dev/null \
+    || { log "ABORTA: fallo \`$cmd\`."; docker start "$CONTENEDOR" >/dev/null; exit 12; }
+done <<CADENAS_EOF
+$CADENAS
+CADENAS_EOF
+TABLAS=$(docker exec "$SIDECAR" sh -c '
+  psql -tA -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+    -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '"'"'public'"'"'"' 2>/dev/null || echo 0)
+log "migraciones aplicadas: $TABLAS tablas"
+if [ "${TABLAS:-0}" -lt 10 ]; then
+  log "ABORTA: quedaron $TABLAS tablas, esperaba al menos 10."
+  exit 12
+fi
 
+# El usuario del visitante y el admin los siembra la app AL ARRANCAR, y este
+# es el primer arranque despues de migrar: por eso la app arranca recien aca.
+docker start "$CONTENEDOR" >/dev/null
 for _ in $(seq 1 40); do
   estado=$(docker inspect -f '{{.State.Health.Status}}' "$CONTENEDOR" 2>/dev/null || echo starting)
   [ "$estado" = "healthy" ] && break
@@ -166,35 +216,6 @@ if [ "$estado" != "healthy" ]; then
   log "ABORTA: no levanto sano; no se siembra sobre una instancia rota."
   exit 4
 fi
-
-# --- 3. Las migraciones ---------------------------------------------------
-# 🔴 [LIBRACARGO] **El arranque NO las corre**, a diferencia de otros productos
-# de la familia que reconstruyen el esquema solos. Y el healthcheck es
-# `/salud`, que consulta la base pero no mira si hay tablas: el contenedor se
-# reporta **healthy con la base vacia**. Sin este paso, el seed de abajo
-# fallaria contra un esquema inexistente y la demo quedaria en blanco todas las
-# noches, con el chequeo de salud en verde.
-docker exec "$CONTENEDOR" alembic upgrade head >/dev/null 2>&1 \
-  || { log "ABORTA: fallaron las migraciones."; exit 12; }
-TABLAS=$(docker exec "$SIDECAR" sh -c '
-  psql -tA -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-    -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '"'"'public'"'"'"' 2>/dev/null || echo 0)
-log "migraciones aplicadas: $TABLAS tablas"
-if [ "${TABLAS:-0}" -lt 10 ]; then
-  log "ABORTA: quedaron $TABLAS tablas, esperaba al menos 10."
-  exit 12
-fi
-
-# El usuario del visitante lo siembra `ensure_demo_user` AL ARRANCAR, y este
-# arranque fue contra la base vacia. Sin este reinicio, `POST /auth/demo`
-# contesta 503 "demo user not provisioned" hasta que alguien lo note.
-docker restart "$CONTENEDOR" >/dev/null
-for _ in $(seq 1 40); do
-  estado=$(docker inspect -f '{{.State.Health.Status}}' "$CONTENEDOR" 2>/dev/null || echo starting)
-  [ "$estado" = "healthy" ] && break
-  sleep 3
-done
-log "reiniciado para sembrar admin y visitante: $estado"
 
 # --- 4. Que de verdad haya reseteado --------------------------------------
 # La post-condicion. Sin esto el script dice "listo" igual cuando no borro nada,
