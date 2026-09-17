@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from libraauth.testing import crear_schema_de_auth
 
 REPO = Path(__file__).resolve().parent.parent
 ASSET = "index-DELTEST123.js"
@@ -66,6 +67,10 @@ def cliente():
     os.environ["LIBRACARGO_ADMIN_USERNAME"] = "admin"
     os.environ["LIBRACARGO_ADMIN_PASSWORD"] = "clave-de-prueba"
     os.environ["SECRET_KEY"] = "libracargo-suite-no-es-un-secreto-real"
+
+    # El arranque exige la cadena de auth (libraauth v0.45) y no crea las tablas:
+    # otro módulo de la suite pudo haberlas borrado con `AuthBase.metadata.drop_all`.
+    crear_schema_de_auth(os.environ["DATABASE_URL"])
 
     sys.modules.pop("app.asgi", None)
     asgi = importlib.import_module("app.asgi")

@@ -28,6 +28,7 @@ Lo que fijan estos tests, en orden de lo que se rompe sin que se note:
 import pytest
 from fastapi.testclient import TestClient
 from libraauth.models import Base as AuthBase
+from libraauth.testing import crear_schema_de_auth
 
 from app.main import crear_app
 from tests.conftest import config_de_prueba
@@ -40,7 +41,7 @@ def _app(engine, monkeypatch):
     monkeypatch.setenv("LIBRACARGO_ADMIN_USERNAME", ADMIN)
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
     AuthBase.metadata.drop_all(engine)
-    AuthBase.metadata.create_all(engine)
+    crear_schema_de_auth(engine)
     cfg = config_de_prueba()
     return TestClient(crear_app(cfg), base_url="https://testserver")
 

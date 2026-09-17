@@ -13,7 +13,7 @@ from fastapi import Depends, FastAPI
 from libraauth.auth_events import AuthEventRepository
 from libraauth.bootstrap import ensure_default_admin, ensure_demo_user
 from libraauth.demo_codigos import DemoCodigoRepository
-from libraauth.models import Base as AuthBase
+from libraauth.migrar import exigir_schema_al_dia
 from libraauth.password_reset import PasswordResetService
 from libraauth.session_auth import (
     build_demo_codigos_router,
@@ -121,7 +121,13 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     # tablas satélite resuelven. Las tablas propias van por Alembic; las de
     # `libraauth` no, porque su schema lo versiona él y no nosotros. Es el
     # mismo reparto que hace LibraDesk.
-    AuthBase.metadata.create_all(motor)
+    # 🔴 Las tablas de auth las crea la cadena de LibraAuth (`libraauth-migrar
+    # upgrade --prefijo libracargo --base dominio`, declarada en `scripts/panel_admin.py`),
+    # no el arranque. Desde libraauth v0.45 (2026-09-17) el arranque la EXIGE: si no
+    # corrió, la app no levanta y el error dice el comando. Hasta ese día acá había
+    # un `AuthBase.metadata.create_all(motor)` que tapaba cualquier camino que se
+    # olvidara de migrar.
+    exigir_schema_al_dia(motor, prefijo="libracargo", base="dominio")
 
     usuarios = UserRepository(db.fabrica_de_sesiones())
     if sembrar_admin:
