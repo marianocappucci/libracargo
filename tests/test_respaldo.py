@@ -23,6 +23,7 @@ import zipfile
 import pytest
 from fastapi.testclient import TestClient
 from libraauth.models import Base as AuthBase
+from libraauth.testing import crear_schema_de_auth
 
 from app.main import crear_app
 from tests.conftest import URL_CORE, config_de_prueba, par_de_arca
@@ -43,7 +44,7 @@ def cliente(engine, sesion, tmp_path, monkeypatch):
     monkeypatch.setenv("LIBRACARGO_ADMIN_USERNAME", ADMIN)
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
     AuthBase.metadata.drop_all(engine)
-    AuthBase.metadata.create_all(engine)
+    crear_schema_de_auth(engine)
     cfg = config_de_prueba(directorio_de_datos=str(tmp_path))
     c = TestClient(crear_app(cfg), base_url="https://testserver")
     assert c.post("/auth/login", json={"username": ADMIN, "password": CLAVE}).status_code == 200

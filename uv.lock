@@ -641,8 +641,8 @@ wheels = [
 
 [[package]]
 name = "libraauth"
-version = "0.44.0"
-source = { git = "https://github.com/marianocappucci/libraauth.git?rev=v0.44.0#853b90729f9d987bb7574394cd4e931654758408" }
+version = "0.45.1"
+source = { git = "https://github.com/marianocappucci/libraauth.git?rev=v0.45.1#c03fc7815a0ffcc03fd5e3b42c90d877b3e0c7f8" }
 dependencies = [
     { name = "altcha" },
     { name = "argon2-cffi" },
@@ -692,7 +692,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.14" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
-    { name = "libraauth", extras = ["migrations"], git = "https://github.com/marianocappucci/libraauth.git?rev=v0.44.0" },
+    { name = "libraauth", extras = ["migrations"], git = "https://github.com/marianocappucci/libraauth.git?rev=v0.45.1" },
     { name = "libracore", extras = ["migrations"], git = "https://github.com/marianocappucci/libracore.git?rev=v1.105.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.9" },

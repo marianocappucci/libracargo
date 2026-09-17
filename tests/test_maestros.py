@@ -10,6 +10,7 @@ teniendo la validación rota.
 import pytest
 from fastapi.testclient import TestClient
 from libraauth.models import Base as AuthBase
+from libraauth.testing import crear_schema_de_auth
 
 from app.main import crear_app
 from tests.conftest import config_de_prueba
@@ -45,7 +46,7 @@ def cliente(engine, sesion, monkeypatch):
     monkeypatch.setenv("LIBRACARGO_ADMIN_USERNAME", USUARIO)
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
     AuthBase.metadata.drop_all(engine)
-    AuthBase.metadata.create_all(engine)
+    crear_schema_de_auth(engine)
     cfg = config_de_prueba()
     c = TestClient(crear_app(cfg), base_url="https://testserver")
     r = c.post("/auth/login", json={"username": USUARIO, "password": CLAVE})
@@ -63,7 +64,7 @@ def test_sin_sesion_no_se_entra(recurso, engine, monkeypatch):
     """
     monkeypatch.setenv("ENV", "development")
     AuthBase.metadata.drop_all(engine)
-    AuthBase.metadata.create_all(engine)
+    crear_schema_de_auth(engine)
     cfg = config_de_prueba()
     anonimo = TestClient(crear_app(cfg, sembrar_admin=False), base_url="https://testserver")
     try:
