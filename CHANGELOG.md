@@ -4,6 +4,18 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ## [Unreleased]
 
+### Cambiado
+
+- **libracore `v1.109.0` y libra-ui `v0.73.2`** (2026-09-17). La copia externa
+  del backup sale cifrada con `rclone crypt`, o no sale —eso corre en el host y
+  ya está desplegado ahí—. Lo que llega con este pin: la pantalla *Datos /
+  Backup* nombra la **clave privada de ARCA** y dice que la copia externa va
+  cifrada; el estado deja de dar "al día" una copia que subió sin cifrar; y el
+  botón de backup arma el mismo ZIP que el cron (todas las carpetas de `data/`,
+  `arca_certs/` incluida). Como el pin de `libra-ui` venía de `v0.72.1`, trae
+  además lo de `0.73.0` y `0.73.1`: el aviso en un modal cuando el ticket no se
+  puede imprimir, y las fechas `dd-mm-aaaa` en los listados de comercio.
+
 ### Agregado
 
 - **Emitir por ARCA y traer el CAE.** La razón social que tiene ARCA habilitado
