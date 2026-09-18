@@ -7,6 +7,7 @@ el primer import y un test que quiera otra base ya llega tarde.
 
 from __future__ import annotations
 
+import logging
 import os
 
 from fastapi import Depends, FastAPI
@@ -15,6 +16,7 @@ from libraauth.bootstrap import ensure_default_admin, ensure_demo_user
 from libraauth.demo_codigos import DemoCodigoRepository
 from libraauth.migrar import exigir_schema_al_dia
 from libraauth.password_reset import PasswordResetService
+from libraauth.secretos import SecretosRepository
 from libraauth.session_auth import (
     build_demo_codigos_router,
     build_smtp_settings_router,
@@ -60,6 +62,39 @@ from app.routers import auth as auth_router
 from app.routers import usuarios as usuarios_router
 from app.servicios import auditoria_arca
 from app.servicios.emision_arca import EMPRESA_ARCA
+
+_log = logging.getLogger(__name__)
+
+
+def migrar_secretos(secretos: SecretosRepository) -> dict:
+    """Saca de `config.json` los secretos que quedaron en claro. Idempotente.
+
+    Corre en cada arranque, asi la migracion de una instancia viva **es su
+    deploy**. Loguea NOMBRES de claves, nunca valores: un log con el secreto lo
+    muda del archivo a una superficie peor, porque los logs se copian y se
+    mandan.
+
+    Si cifrar falla, el `config.json` **no se toca** —la instancia sigue
+    cobrando con la credencial que tiene— y se loguea como error, que es lo
+    que despues ve la sonda `auditar_secretos.py`.
+    """
+    informe = config_manager.migrar_secretos_al_almacen()
+    if informe["migradas"]:
+        _log.warning(
+            "secretos movidos de config.json al almacen cifrado: %s",
+            ", ".join(informe["migradas"]),
+        )
+    if informe["ya_estaban"]:
+        _log.warning(
+            "config.json tenia una copia vieja de %s; se vacio (el almacen manda)",
+            ", ".join(informe["ya_estaban"]),
+        )
+    if informe["fallaron"]:
+        _log.error(
+            "no se pudieron cifrar y QUEDAN EN CLARO en config.json: %s",
+            ", ".join(f"{k} ({v})" for k, v in informe["fallaron"].items()),
+        )
+    return informe
 
 
 def _instancia_a_respaldar(config: Config) -> Instancia:
@@ -130,6 +165,31 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     exigir_schema_al_dia(motor, prefijo="libracargo", base="dominio")
 
     usuarios = UserRepository(db.fabrica_de_sesiones())
+
+    # 🔴 Los secretos de terceros de `config.json` —el access token y la firma
+    # de webhook de MercadoPago, y la contrasena SMTP— dejan de vivir en texto
+    # plano (libracore v1.108.0 + libraauth v0.46.0, 2026-09-17). Se enchufa
+    # ACA porque es donde nace `db.fabrica_de_sesiones()`, que apunta a la base
+    # donde viven las tablas de libraauth (la del DOMINIO: `usuarios` vive en
+    # la misma base que el resto de LibraCargo, no en la de LibraCore — ver
+    # `Config.database_url_core`). La tabla `secretos_instancia` la crea la
+    # revision `0002` de la cadena de libraauth, y `exigir_schema_al_dia()` de
+    # arriba ya garantizo que esa cadena esta al dia antes de esta linea.
+    #
+    # LibraCore no importa libraauth: recibe el almacen. Por eso el enganche es
+    # del producto, que es el unico que tiene los dos paquetes.
+    #
+    # Desde aca, `config_manager.load()` sigue devolviendo el secreto en claro,
+    # pero lo trae de la base cifrada y no del archivo. La migracion de lo que
+    # ya estaba en el JSON corre a continuacion: `migrar_secretos()`.
+    secretos = SecretosRepository(db.fabrica_de_sesiones())
+    config_manager.usar_almacen_de_secretos(secretos)
+    # Va DESPUES de `exigir_schema_al_dia`, arriba: la tabla `secretos_instancia`
+    # es de la revision `0002` de libraauth, y escribir antes de saber que
+    # existe convertiria un schema viejo en un 500. Idempotente: la segunda vez
+    # no hace nada.
+    migrar_secretos(secretos)
+
     if sembrar_admin:
         # Variante **fail-closed**: sin `LIBRACARGO_ADMIN_PASSWORD` la app no
         # levanta, salvo `ENV=development`. Es la que usan los productos
