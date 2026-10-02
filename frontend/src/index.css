@@ -27,6 +27,10 @@
    familia sale sin estilos. Mismo patrón que el resto de los productos. */
 @source "../node_modules/libra-ui";
 
+/* El tema de la suite (libra-ui, ADR-007): las variables de color que el backoffice puede cambiar y la regla del ítem activo del menú
+   lateral (fondo #ECFDF5, borde #5EE9B5). Va después de Tailwind y antes de las variables del producto. */
+@import "libra-ui/tema.css";
+
 @custom-variant dark (&:is(.dark *));
 
 /* 🔴 **Sin este bloque no hay colores.** En Tailwind v4 una utilidad como
