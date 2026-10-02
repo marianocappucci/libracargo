@@ -378,16 +378,23 @@ def anular(id_: int, sesion: Session = Depends(obtener_sesion),
     comprobante = _traer(sesion, id_)
     if comprobante.anulado:
         raise HTTPException(409, f"el comprobante {id_} ya esta anulado")
-    if comprobante.tipo in TIPOS_FCE and comprobante.cae:
-        # 🔴 Anular acá NO llega a ARCA: la FCE seguiría vigente allá —y el comprador
-        # puede aceptarla— mientras las órdenes vuelven a pendientes y se pueden
-        # facturar de nuevo: dos facturas por lo mismo. Revertirla pide una nota de
-        # crédito de FCE, que este producto todavía no emite (ADR-025).
+    if comprobante.cae:
+        # 🔴 **Un comprobante con CAE no se anula desde acá, sea cual sea su tipo.** Anular
+        # NO llega a ARCA: el comprobante seguiría vigente allá mientras las órdenes
+        # vuelven a pendientes y se pueden facturar de nuevo —dos facturas por lo
+        # mismo—, y la cuenta corriente quedaría revertida contra un comprobante que ARCA
+        # y el cliente siguen teniendo. Revertirlo pide una nota de crédito **emitida por
+        # ARCA**, que este producto todavía no emite (ADR-026).
+        #
+        # `cae IS NULL` es el estado de todo lo registrado a mano y de lo migrado del
+        # legado: eso se sigue anulando como siempre.
         raise HTTPException(
             409,
-            "una factura de credito electronica emitida no se puede anular desde aca: "
-            "ARCA la tiene registrada y el comprador puede aceptarla. Hace falta una "
-            "nota de credito de FCE, que este producto todavia no emite",
+            "un comprobante emitido por ARCA (tiene CAE) no se puede anular desde aca: ARCA "
+            "lo tiene registrado y sigue vigente alla"
+            + (", y el comprador puede aceptarlo" if comprobante.tipo in TIPOS_FCE else "")
+            + ". Hace falta una nota de credito emitida por ARCA, que este producto todavia "
+            "no emite",
         )
 
     antes = auditoria.instantanea(comprobante)

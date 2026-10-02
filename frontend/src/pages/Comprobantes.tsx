@@ -295,7 +295,15 @@ export default function Comprobantes() {
             </div>
           )}
           <DialogFooter>
-            {detalle && !detalle.comprobante.anulado && (
+            {detalle && !detalle.comprobante.anulado && detalle.comprobante.cae && (
+              // 🔴 Con CAE no se ofrece el botón: anular acá no llega a ARCA, y el comprobante
+              // seguiría vigente allá mientras sus órdenes se podrían facturar de nuevo.
+              <span className="mr-auto self-center text-sm" role="note">
+                Lo emitió ARCA (CAE {detalle.comprobante.cae}): no se anula desde acá.
+                Hace falta una nota de crédito emitida por ARCA.
+              </span>
+            )}
+            {detalle && !detalle.comprobante.anulado && !detalle.comprobante.cae && (
               confirmando ? (
                 <>
                   <span className="mr-auto self-center text-sm">
