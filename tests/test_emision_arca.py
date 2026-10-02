@@ -546,3 +546,77 @@ def test_la_factura_a_manda_el_iva_aparte(cliente, datos, razon_con_arca, monkey
     assert enviado["iva_amount"] > 0
     assert enviado["iva_amount"] == float(Decimal(comp["iva"]))
     assert enviado["subtotal"] == float(Decimal(comp["neto"]))
+
+
+# ── La condición de IVA del receptor (RG 5616) ──────────────────────────────
+
+@pytest.mark.parametrize("condicion, codigo", [
+    ("responsable_inscripto", 1),
+    ("monotributo", 6),
+    ("exento", 4),
+    ("consumidor_final", 5),
+    # «No sé»: el motor decide o falla con un mensaje; acá no se inventa.
+    ("no_categorizado", 0),
+])
+def test_el_pedido_de_cae_lleva_la_condicion_de_iva_del_cliente(
+        cliente, datos, razon_con_arca, monkeypatch, condicion, codigo):
+    """ARCA rechaza el comprobante sin la condición del receptor. LibraCargo se
+    la pasa al motor con el código de la familia (`cliente_iva_cond`)."""
+    r = cliente.put(f"/api/terceros/{datos['cliente']}", json={
+        "razon_social": "Agro Norte", "es_cliente": True, "condicion_iva": condicion,
+    })
+    assert r.status_code == 200, r.text
+    pedidos = _arca_responde(monkeypatch, ultimo=41)
+    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+
+    r = facturar(cliente, datos, [a], razon=razon_con_arca)
+    assert r.status_code == 201, r.text
+    (factura,) = [p[1] for p in pedidos if p[0] == "cae"]
+    assert factura["cliente_iva_cond"] == codigo
+
+
+def test_todas_las_condiciones_del_dominio_tienen_codigo():
+    """Una condición nueva en el enum sin mapear tiene que romper acá."""
+    from app.models.enums import CondicionIVA
+
+    assert set(emision_arca.CODIGO_IVA_DE_LA_FAMILIA) == set(CondicionIVA)
+
+
+def test_el_sobre_que_sale_hacia_arca_lleva_la_condicion_de_iva_del_receptor(
+        cliente, datos, razon_con_arca, monkeypatch):
+    """**El test que no mockea `solicitar_cae`**: corre el del motor y mira el
+    SOAP que sale. Los de arriba prueban que LibraCargo pasa el dato; éste prueba
+    que **llega a ARCA**, que es lo que la RG 5616 exige.
+
+    Falla con un `libracore` que ignore `cliente_iva_cond` (como el v1.118.0,
+    donde el WSFE nunca lo leyó): ahí el pedido sale sin la condición y ARCA lo
+    rechaza con el error 10246. Que este test esté en rojo es el aviso de que
+    falta el bump.
+    """
+    import xml.etree.ElementTree as ET
+
+    cliente.put(f"/api/terceros/{datos['cliente']}", json={
+        "razon_social": "Agro Norte", "es_cliente": True,
+        "condicion_iva": "responsable_inscripto",
+    })
+    enviados = []
+
+    async def autenticar(cert, key, ambiente, servicio="wsfe"):
+        return {"token": "TKN", "sign": "SGN"}
+
+    async def soap(url, accion, cuerpo):
+        enviados.append((accion, cuerpo))
+        if accion == "FECompUltimoAutorizado":
+            return ET.fromstring("<r><CbteNro>41</CbteNro></r>")
+        return ET.fromstring(
+            "<r><FECAEDetResponse><Resultado>A</Resultado><CAE>75123456789012</CAE>"
+            "<CAEFchVto>20261231</CAEFchVto></FECAEDetResponse></r>")
+
+    monkeypatch.setattr(emision_arca.arca_wsaa, "autenticar", autenticar)
+    monkeypatch.setattr(emision_arca.arca_wsfe, "_soap", soap)
+    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+
+    r = facturar(cliente, datos, [a], razon=razon_con_arca)
+    assert r.status_code == 201, r.text
+    (pedido,) = [c for acc, c in enviados if acc == "FECAESolicitar"]
+    assert "<CondicionIVAReceptorId>1</CondicionIVAReceptorId>" in pedido
