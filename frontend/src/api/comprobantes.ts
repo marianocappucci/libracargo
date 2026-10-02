@@ -5,6 +5,9 @@ import type { Orden } from '@/api/ordenes'
 export type TipoComprobante =
   | 'factura_a' | 'factura_b' | 'factura_c'
   | 'nota_credito_a' | 'nota_credito_b' | 'nota_credito_c'
+  // Factura de Crédito Electrónica MiPyME. Sólo facturas: las notas no tienen
+  // camino de emisión todavía.
+  | 'fce_a' | 'fce_b' | 'fce_c'
 
 /** Lo que devuelve facturar cuando el ambiente de ARCA es homologación.
  *
@@ -43,6 +46,10 @@ export type Comprobante = {
   total: string
   anulado: boolean
   origen_legado: string | null
+  // Sólo una FCE los tiene; en todo lo demás vienen `null`.
+  fch_vto_pago?: string | null
+  fce_cbu?: string | null
+  fce_transmision?: string | null
 }
 
 export type SumaDeOrdenes = { cantidad: number; neto: string; iva: string; total: string }
@@ -96,6 +103,8 @@ export const NOMBRE_DE_TIPO: Record<TipoComprobante, string> = {
   factura_a: 'Factura A', factura_b: 'Factura B', factura_c: 'Factura C',
   nota_credito_a: 'Nota de crédito A', nota_credito_b: 'Nota de crédito B',
   nota_credito_c: 'Nota de crédito C',
+  fce_a: 'Factura de crédito electrónica A', fce_b: 'Factura de crédito electrónica B',
+  fce_c: 'Factura de crédito electrónica C',
 }
 
 export function numeroDe(c: Comprobante): string {

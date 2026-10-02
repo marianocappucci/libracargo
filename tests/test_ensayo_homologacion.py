@@ -37,7 +37,7 @@ contra homologación en el motor, por su camino de facturas.
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -45,7 +45,7 @@ import pytest
 from libracore import arca_credenciales, arca_wsaa
 
 from app.servicios import emision_arca
-from tests.test_comprobantes import facturar, orden
+from tests.test_comprobantes import orden
 
 CERT = os.environ.get("ARCA_HOMO_CERT")
 CLAVE = os.environ.get("ARCA_HOMO_KEY")
@@ -69,6 +69,9 @@ def _cargar_par_real(cliente):
     r = cliente.put("/api/arca", json={
         "empresa": emision_arca.EMPRESA_ARCA, "cuit": CUIT,
         "punto_venta": PUNTO_VENTA, "ambiente": "homologacion", "alias": "",
+        # Para la FCE: el CBU y la modalidad viajan en la misma configuración. Homologación
+        # acepta un CBU de prueba de 22 dígitos.
+        "fce_cbu": os.environ.get("ARCA_HOMO_FCE_CBU", "0" * 22), "fce_transmision": "SCA",
     })
     assert r.status_code == 200, r.text
     for tramo, ruta in (("certificado", CERT), ("clave", CLAVE)):
@@ -119,9 +122,11 @@ def _hoy() -> str:
     return datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).date().isoformat()
 
 
-def _ensayar(cliente, datos, instancia, tipo):
+def _ensayar(cliente, datos, instancia, tipo, **extra):
     a = orden(cliente, datos, "1000.00", razon_social_id=instancia, fecha=_hoy())
-    r = facturar(cliente, datos, [a], razon=instancia, tipo=tipo, numero=None, fecha=_hoy())
+    r = cliente.post("/api/comprobantes", json={
+        "fecha": _hoy(), "razon_social_id": instancia, "cliente_id": datos["cliente"],
+        "tipo": tipo, "punto_venta": PUNTO_VENTA, "orden_ids": [a["id"]], **extra})
     if r.status_code == 502 and "alreadyAuthenticated" in r.text:
         pytest.skip("ARCA ya tiene un ticket vigente de este certificado: "
                     "pasá ARCA_HOMO_TICKET con ese ticket y reintentá")
@@ -206,4 +211,24 @@ def test_un_cliente_con_cuit_y_sin_condicion_no_obtiene_cae_y_dice_que_cargar(
 
     assert r.status_code == 502, r.text
     assert "condición de IVA del cliente" in r.text, r.text
+    assert cliente.get(f"/api/ordenes/{a['id']}").json()["estado"] == "pendiente"
+
+
+def test_una_fce_a_un_responsable_inscripto_obtiene_cae_y_no_deja_nada(cliente, datos, instancia):
+    """La Factura de Crédito Electrónica MiPyME contra ARCA de verdad (tipo 201).
+
+    Lleva lo que ARCA exige: el vencimiento de pago, el CBU del emisor y la modalidad de
+    transmisión (los dos últimos salen de la configuración), y el receptor con CUIT.
+    """
+    _receptor(cliente, datos, condicion_iva="responsable_inscripto", cuit=CUIT_DEL_RECEPTOR)
+    vencimiento = (datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")) + timedelta(days=15)
+                   ).date().isoformat()
+
+    a, r = _ensayar(cliente, datos, instancia, "fce_a", fecha_vencimiento_pago=vencimiento)
+
+    assert r.status_code == 200, r.text
+    cuerpo = r.json()
+    assert cuerpo["ensayo"] is True and cuerpo["tipo"] == "fce_a"
+    assert re.fullmatch(r"\d{14}", cuerpo["cae"]), cuerpo
+    assert cliente.get("/api/comprobantes").json() == []
     assert cliente.get(f"/api/ordenes/{a['id']}").json()["estado"] == "pendiente"

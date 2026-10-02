@@ -634,3 +634,38 @@ esté entre ellas.
   QR de ARCA. Los tres quedan para cuando haya un certificado real cargado — hoy
   la emisión está construida y verificada **contra mocks y homologación**, no
   contra ARCA de verdad.
+
+## ADR-025 — La FCE MiPyME se emite sólo por ARCA, sólo como factura, con lo normalizado de la suite
+
+**Estado:** aceptada (2026-10-02). **Contexto:** Suitrans les factura a empresas grandes y necesita la Factura de
+Crédito Electrónica MiPyME. `libracore` v1.119.0 ya resuelve del lado de ARCA los códigos, el vencimiento de pago, el
+CBU y la modalidad. El humano pidió no armar pantallas nuevas ni cosas paralelas: lo normalizado primero, y lo extra
+como arista.
+
+- Decisión 1 — **sólo las facturas** (`fce_a`, `fce_b`, `fce_c`), no las notas de crédito ni de débito. Este producto
+  todavía no emite notas contra ARCA (anular no habla con ARCA, ADR-024), así que una nota de FCE no tendría camino. Se
+  agregan junto con las notas comunes, con su comprobante asociado.
+- Decisión 2 — **una FCE sin CAE no existe.** No hay camino de «registrar con el número que tengo»: es el documento que
+  ARCA registra y que el comprador acepta o rechaza. Sin ARCA habilitado para la razón social, `422`. (Contraste con
+  ADR-024, donde el alta manual sigue siendo el camino de la razón social que todavía no tiene ARCA.)
+- Decisión 3 — **receptor con CUIT de 11 dígitos**, validado **antes** de ir a ARCA. Medido en homologación: con consumidor final
+  contesta `10015`. El mensaje dice que se cargue en la ficha del cliente.
+  El CUIT **viaja a ARCA sólo en dígitos**: el motor limpia guiones y espacios y nada más, y uno cargado con puntos
+  llegaba como «no es un CUIT». El **vencimiento de pago** tiene que ser **igual o posterior** a la fecha del comprobante
+  **y a hoy**: medido en homologación el 2026-10-02, el mismo día se autoriza y uno anterior se rechaza (`10164`); se
+  valida en el backend antes de pedir el número.
+- Decisión 4 — **el CBU y la modalidad no se piden en la pantalla de facturar**: salen de la configuración de ARCA, que
+  ya los acepta (`fce_cbu`, `fce_transmision`). **Se guardan en el comprobante**, no se leen después de la
+  configuración, para que diga con qué CBU salió aunque cambie. El **vencimiento de pago** sí es del comprobante: lo
+  exige ARCA en toda FCE, aun con concepto «Productos» (`10163`), y la pantalla lo propone a 30 días.
+- Decisión 5 — **un `CHECK` en la base**: una FCE sin `fch_vto_pago` no entra. Escrito con `tipo::text` y no con el
+  literal del `ENUM`, para no depender de que el valor ya exista en la misma transacción de la migración.
+- Decisión 6 — **una FCE emitida no se anula desde acá** (`409`). `anular` no habla con ARCA (ADR-024): la FCE seguiría
+  vigente allá, el comprador podría aceptarla, y las órdenes volverían a pendientes para facturarse de nuevo. Revertirla
+  pide una nota de crédito de FCE. 🔸 **El mismo hueco existe para cualquier comprobante con CAE** (A, B y C): no se
+  tocó porque cambia el comportamiento de lo ya existente y hoy ninguno tiene CAE en producción; queda para decidir.
+- Consecuencias: migración `0012`, que **no baja los valores del `ENUM`** (PostgreSQL no permite sacar un valor); queda
+  sin usar y volver a subir es inofensivo. No toca ni una fila. En el formulario, una FCE **reemplaza el campo del
+  número por el del vencimiento**: el número lo da ARCA.
+- 🔸 **Arista pendiente:** el CBU y la modalidad se cargan por la API. La tarjeta de ARCA del kit (`libra-ui`) no tiene
+  esos campos; agregarlos —opcionales, sin pantalla nueva— es trabajo del kit y de todos los productos que lo usan.
