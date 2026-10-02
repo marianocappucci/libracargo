@@ -20,4 +20,4 @@ export const LOGO = logoProducto
  * `text-[#2d2d2d]` es un color literal y no un token del tema a proposito: es
  * el color de la marca, no el del texto de la interfaz.
  */
-export const WORDMARK = 'font-montserrat font-bold text-[#2d2d2d]'
+export const WORDMARK = 'font-montserrat font-bold text-[#2d2d2d] dark:text-neutral-100'
