@@ -580,3 +580,43 @@ def test_todas_las_condiciones_del_dominio_tienen_codigo():
     from app.models.enums import CondicionIVA
 
     assert set(emision_arca.CODIGO_IVA_DE_LA_FAMILIA) == set(CondicionIVA)
+
+
+def test_el_sobre_que_sale_hacia_arca_lleva_la_condicion_de_iva_del_receptor(
+        cliente, datos, razon_con_arca, monkeypatch):
+    """**El test que no mockea `solicitar_cae`**: corre el del motor y mira el
+    SOAP que sale. Los de arriba prueban que LibraCargo pasa el dato; éste prueba
+    que **llega a ARCA**, que es lo que la RG 5616 exige.
+
+    Falla con un `libracore` que ignore `cliente_iva_cond` (como el v1.118.0,
+    donde el WSFE nunca lo leyó): ahí el pedido sale sin la condición y ARCA lo
+    rechaza con el error 10246. Que este test esté en rojo es el aviso de que
+    falta el bump.
+    """
+    import xml.etree.ElementTree as ET
+
+    cliente.put(f"/api/terceros/{datos['cliente']}", json={
+        "razon_social": "Agro Norte", "es_cliente": True,
+        "condicion_iva": "responsable_inscripto",
+    })
+    enviados = []
+
+    async def autenticar(cert, key, ambiente, servicio="wsfe"):
+        return {"token": "TKN", "sign": "SGN"}
+
+    async def soap(url, accion, cuerpo):
+        enviados.append((accion, cuerpo))
+        if accion == "FECompUltimoAutorizado":
+            return ET.fromstring("<r><CbteNro>41</CbteNro></r>")
+        return ET.fromstring(
+            "<r><FECAEDetResponse><Resultado>A</Resultado><CAE>75123456789012</CAE>"
+            "<CAEFchVto>20261231</CAEFchVto></FECAEDetResponse></r>")
+
+    monkeypatch.setattr(emision_arca.arca_wsaa, "autenticar", autenticar)
+    monkeypatch.setattr(emision_arca.arca_wsfe, "_soap", soap)
+    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+
+    r = facturar(cliente, datos, [a], razon=razon_con_arca)
+    assert r.status_code == 201, r.text
+    (pedido,) = [c for acc, c in enviados if acc == "FECAESolicitar"]
+    assert "<CondicionIVAReceptorId>1</CondicionIVAReceptorId>" in pedido
