@@ -33,6 +33,7 @@ from libracore.resguardo_enlace import build_resguardo_enlace_router
 from libracore.respaldo import Instancia
 from libracore.security_headers import CSP_SPA, SecurityHeadersMiddleware
 from libracore.smtp_router import build_smtp_probe_router
+from libracore.tema_router import build_tema_admin_router, build_tema_router
 
 from app import db
 from app.addons import require_addon
@@ -41,6 +42,7 @@ from app.auth import (
     construir_session_auth,
     get_current_user,
     require_admin,
+    require_admin_o_servicio,
     require_staff,
 )
 from app.config import Config
@@ -323,6 +325,13 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     app.include_router(reportes.router)
     app.include_router(auditoria.router)
     app.include_router(configuracion.router)
+    # El tema de la suite (libracore ADR-012, libra-ui ADR-007/008): los colores que el backoffice de
+    # la suite empuja a esta instancia. La lectura es PÚBLICA a propósito (el login también va con los
+    # colores de la suite y no expone nada sensible). La escritura es del admin O del token de servicio
+    # del backoffice: 🔴 con `require_admin` a secas el backoffice NO entraría (esa guarda no conoce
+    # el token).
+    app.include_router(build_tema_router())
+    app.include_router(build_tema_admin_router(), dependencies=[Depends(require_admin_o_servicio)])
     # Configuración de ARCA: la pantalla compartida de la familia, con la
     # dependencia de rol de este producto —el router del motor no trae
     # ninguna, y acá se sube una clave privada—.

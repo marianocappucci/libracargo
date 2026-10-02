@@ -4,6 +4,11 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
 import { AuthProvider } from './context/AuthContext.tsx'
+import { cargarTema } from 'libra-ui/tema'
+
+// El tema de la suite (libra-ui ADR-007/008): aplica lo último guardado de inmediato y pide los colores a esta misma instancia. No espera
+// ni puede fallar: sin red o con un error, la app arranca con los colores de siempre.
+void cargarTema()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
