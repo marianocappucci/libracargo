@@ -18,6 +18,18 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Agregado
 
+- **Factura de Crédito Electrónica MiPyME (FCE).** Tres tipos nuevos de comprobante
+  —`fce_a`, `fce_b` y `fce_c`, los códigos 201, 206 y 211 de ARCA— que se emiten
+  desde *Facturar pendientes* con lo normalizado de la suite: el CBU del emisor y
+  la modalidad (`SCA` o `ADC`) salen de la configuración de ARCA que ya existe
+  (`fce_cbu` y `fce_transmision` de `PUT /api/arca`), y el vencimiento de pago se
+  elige en la pantalla (a 30 días por defecto). Una FCE se emite **sólo por ARCA**
+  y **a un receptor con CUIT**; sin eso se dice qué cargar antes de ir a ARCA. La
+  migración `0012` suma los tres valores al `ENUM` y las columnas `fch_vto_pago`,
+  `fce_cbu` y `fce_transmision` (nullable: no toca ni una fila). Probada contra
+  ARCA de homologación (CAE para una FCE A). **Falta** cargar el CBU y la
+  modalidad **desde la pantalla de ARCA**: hoy se hace por la API, y el kit
+  compartido todavía no tiene esos campos. Ver ADR-025.
 - **Emitir por ARCA y traer el CAE.** La razón social que tiene ARCA habilitado
   ya no registra el comprobante con un número tipeado a mano: el número lo pide
   ARCA (`FECompUltimoAutorizado + 1`), el punto de venta sale de la razón social

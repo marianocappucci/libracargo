@@ -16,18 +16,26 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.enums import TipoComprobante
 from app.schemas.ordenes import OrdenOut
 
 #: Los tipos que se registran sobre órdenes pendientes. Una nota de crédito no
 #: agrupa órdenes: revierte un comprobante, y ese camino es `DELETE`.
+#: La Factura de Crédito Electrónica MiPyME. Va aparte porque lleva reglas propias:
+#: fecha de vencimiento de pago, receptor con CUIT y emisión sólo por ARCA.
+TIPOS_FCE = frozenset({
+    TipoComprobante.FCE_A,
+    TipoComprobante.FCE_B,
+    TipoComprobante.FCE_C,
+})
+
 TIPOS_FACTURA = frozenset({
     TipoComprobante.FACTURA_A,
     TipoComprobante.FACTURA_B,
     TipoComprobante.FACTURA_C,
-})
+}) | TIPOS_FCE
 
 #: Cómo se lee cada tipo en el concepto de la cuenta corriente.
 NOMBRES_DE_TIPO = {
@@ -37,6 +45,9 @@ NOMBRES_DE_TIPO = {
     TipoComprobante.NOTA_CREDITO_A: "Nota de credito A",
     TipoComprobante.NOTA_CREDITO_B: "Nota de credito B",
     TipoComprobante.NOTA_CREDITO_C: "Nota de credito C",
+    TipoComprobante.FCE_A: "Factura de credito electronica A",
+    TipoComprobante.FCE_B: "Factura de credito electronica B",
+    TipoComprobante.FCE_C: "Factura de credito electronica C",
 }
 
 
@@ -56,6 +67,22 @@ class FacturarIn(BaseModel):
     #: mano sigue siendo obligatorio, y lo exige el endpoint.
     numero: int | None = Field(default=None, ge=1)
     orden_ids: list[int] = Field(min_length=1)
+    #: **Sólo la FCE** lo lleva, y toda FCE lo exige: ARCA la rechaza sin él (10163).
+    fecha_vencimiento_pago: date | None = None
+
+    @model_validator(mode="after")
+    def _vencimiento_de_pago(self):
+        if self.tipo in TIPOS_FCE:
+            if self.fecha_vencimiento_pago is None:
+                raise ValueError(
+                    "la factura de credito electronica exige la fecha de vencimiento de pago")
+            if self.fecha_vencimiento_pago < self.fecha:
+                raise ValueError(
+                    "el vencimiento de pago no puede ser anterior a la fecha del comprobante")
+        elif self.fecha_vencimiento_pago is not None:
+            raise ValueError(
+                "solo la factura de credito electronica lleva fecha de vencimiento de pago")
+        return self
 
     @field_validator("orden_ids")
     @classmethod
@@ -93,6 +120,11 @@ class ComprobanteOut(BaseModel):
     cae: str | None = None
     cae_vencimiento: date | None = None
     cae_solicitado_en: datetime | None = None
+
+    #: Sólo una FCE los tiene; en todo lo demás son `None`.
+    fch_vto_pago: date | None = None
+    fce_cbu: str | None = None
+    fce_transmision: str | None = None
 
 
 class SumaDeOrdenes(BaseModel):

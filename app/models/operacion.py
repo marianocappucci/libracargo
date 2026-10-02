@@ -72,6 +72,15 @@ class Comprobante(Base, Auditable):
         DateTime(timezone=True), nullable=True
     )
 
+    #: FCE MiPyME. El vencimiento de pago lo exige ARCA en toda FCE; el CBU y la
+    #: modalidad (`SCA` o `ADC`) son **con los que salió**: se guardan en el
+    #: comprobante y no se leen de la configuración, para que un comprobante diga
+    #: con qué CBU se emitió aunque la configuración cambie después. `NULL` en
+    #: todo lo que no es FCE, que es casi todo.
+    fch_vto_pago: Mapped[date | None] = mapped_column(Date, nullable=True)
+    fce_cbu: Mapped[str | None] = mapped_column(String(22), nullable=True)
+    fce_transmision: Mapped[str | None] = mapped_column(String(3), nullable=True)
+
     __table_args__ = (
         UniqueConstraint(
             "razon_social_id",
@@ -81,6 +90,13 @@ class Comprobante(Base, Auditable):
             name="uq_comprobantes_numeracion",
         ),
         CheckConstraint("neto >= 0 AND iva >= 0 AND total >= 0", name="ck_comprobantes_signos"),
+        # Una FCE sin fecha de vencimiento de pago no existe: ARCA la rechaza (10163).
+        # `::text` y no el literal del `ENUM`: no depende de que el valor ya esté
+        # creado en la misma transacción de la migración.
+        CheckConstraint(
+            "tipo::text NOT IN ('fce_a', 'fce_b', 'fce_c') OR fch_vto_pago IS NOT NULL",
+            name="ck_comprobantes_fce_vencimiento",
+        ),
         Index("ix_comprobantes_fecha", "fecha"),
         Index("ix_comprobantes_cliente_fecha", "cliente_id", "fecha"),
         Index("ix_comprobantes_origen_legado", "origen_legado", unique=True),

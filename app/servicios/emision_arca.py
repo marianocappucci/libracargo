@@ -71,11 +71,19 @@ CODIGO_ARCA = {
     TipoComprobante.NOTA_CREDITO_A: 3,
     TipoComprobante.NOTA_CREDITO_B: 8,
     TipoComprobante.NOTA_CREDITO_C: 13,
+    # Factura de Crédito Electrónica MiPyME (FCE): 201, 206 y 211.
+    TipoComprobante.FCE_A: 201,
+    TipoComprobante.FCE_B: 206,
+    TipoComprobante.FCE_C: 211,
 }
 
 #: Los tipos C no llevan IVA discriminado: todo el importe va como neto y el
 #: bloque de alícuotas **no se manda**. Lo exige ARCA, no es una simplificación.
-TIPOS_C = {TipoComprobante.FACTURA_C, TipoComprobante.NOTA_CREDITO_C}
+TIPOS_C = {TipoComprobante.FACTURA_C, TipoComprobante.NOTA_CREDITO_C, TipoComprobante.FCE_C}
+
+#: La FCE lleva además el vencimiento de pago, el CBU del emisor y la modalidad de
+#: transmisión. Los dos últimos salen de la configuración de ARCA de la instancia.
+TIPOS_FCE = {TipoComprobante.FCE_A, TipoComprobante.FCE_B, TipoComprobante.FCE_C}
 
 
 #: La condición de IVA del cliente, con el **código con que la familia la guarda**
@@ -291,6 +299,16 @@ async def pedir_cae(
         "iva_amount": 0.0 if es_c else float(iva),
         "total": float(comprobante.total),
     }
+    es_fce = comprobante.tipo in TIPOS_FCE
+    if es_fce:
+        # Del motor: el vencimiento viaja en el comprobante y el CBU y la modalidad
+        # en la configuración. Si falta alguno, `arca_wsfe` falla con un mensaje que
+        # dice qué cargar, y llega a la pantalla tal cual.
+        factura.update({
+            "fch_vto_pago": comprobante.fch_vto_pago.isoformat(),
+            "fce_cbu": cfg.get("fce_cbu") or "",
+            "fce_transmision": cfg.get("fce_transmision") or "",
+        })
     try:
         datos = await arca_wsfe.solicitar_cae(
             factura, razon.cuit, ta["token"], ta["sign"], cfg["ambiente"],
@@ -301,6 +319,10 @@ async def pedir_cae(
     comprobante.cae = datos["cae"]
     comprobante.cae_vencimiento = _fecha_de(datos.get("cae_vto"))
     comprobante.cae_solicitado_en = datetime.now(UTC)
+    if es_fce:
+        # Con qué salió, no lo que diga la configuración mañana.
+        comprobante.fce_cbu = cfg.get("fce_cbu") or None
+        comprobante.fce_transmision = (cfg.get("fce_transmision") or "").upper() or None
     sesion.flush()
     return comprobante
 

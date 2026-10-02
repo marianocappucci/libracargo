@@ -34,13 +34,26 @@ type Borrador = {
   tipo: string
   punto_venta: string
   numero: string
+  /** Sólo la FCE lo lleva, y ARCA la rechaza sin él. */
+  vencimiento: string
 }
+
+/** Una fecha `AAAA-MM-DD` más `dias`, por componentes: ni zona horaria ni `toISOString`. */
+function masDias(iso: string, dias: number): string {
+  const [a, m, d] = iso.split('-').map(Number)
+  const f = new Date(Date.UTC(a, m - 1, d + dias))
+  const dos = (n: number) => String(n).padStart(2, '0')
+  return `${f.getUTCFullYear()}-${dos(f.getUTCMonth() + 1)}-${dos(f.getUTCDate())}`
+}
+
+/** La Factura de Crédito Electrónica MiPyME: no se tipea número (lo da ARCA) y exige vencimiento. */
+const esFce = (tipo: string) => tipo.startsWith('fce_')
 
 // La fecha por defecto sale de la de Argentina y no de `toISOString`: un
 // comprobante cargado de noche nacía con la fecha de mañana.
 const VACIO: Borrador = {
   fecha: hoyEnArgentina(), razon_social_id: '',
-  tipo: 'factura_a', punto_venta: '1', numero: '',
+  tipo: 'factura_a', punto_venta: '1', numero: '', vencimiento: '',
 }
 
 function Campo({ id, etiqueta, valor, alCambiar, tipo = 'text' }: {
@@ -123,6 +136,7 @@ export default function FacturarPendientes() {
   const todasElegidas = visibles.length > 0 && aFacturar.length === visibles.length
 
   const set = (c: Partial<Borrador>) => setBorrador((b) => ({ ...b, ...c }))
+  const fce = esFce(borrador.tipo)
 
   const alternar = (id: number) => setElegidas((previas) => (
     previas.includes(id) ? previas.filter((i) => i !== id) : [...previas, id]
@@ -171,7 +185,10 @@ export default function FacturarPendientes() {
         razon_social_id: Number(borrador.razon_social_id),
         tipo: borrador.tipo,
         punto_venta: Number(borrador.punto_venta),
-        numero: Number(borrador.numero),
+        // Una FCE no lleva número (lo da ARCA) y sí el vencimiento de pago; las
+        // demás, al revés. `undefined` no viaja en el JSON.
+        numero: fce ? undefined : Number(borrador.numero),
+        fecha_vencimiento_pago: fce ? borrador.vencimiento : undefined,
         orden_ids: aFacturar.map((o) => o.id),
       })
       // 🔴 **Un ensayo NO se navega.** Con el selector de ARCA en
@@ -195,7 +212,8 @@ export default function FacturarPendientes() {
 
   const faltan = !clienteId ? 'Elegí el cliente.'
     : !borrador.razon_social_id ? 'Elegí la razón social.'
-    : !borrador.numero ? 'Falta el número del comprobante.'
+    : fce && !borrador.vencimiento ? 'Falta el vencimiento de pago.'
+    : !fce && !borrador.numero ? 'Falta el número del comprobante.'
     : aFacturar.length === 0 ? 'No elegiste ninguna orden.'
     : null
 
@@ -260,15 +278,29 @@ export default function FacturarPendientes() {
             ))}
           </Eleccion>
           <Eleccion id="n-tipo" etiqueta="Tipo" valor={borrador.tipo}
-                    alCambiar={(v) => set({ tipo: v })}>
+                    alCambiar={(v) => set({
+                      tipo: v,
+                      // Al pasar a FCE se propone 30 días: se puede cambiar.
+                      ...(esFce(v) && !borrador.vencimiento
+                        ? { vencimiento: masDias(borrador.fecha, 30) } : {}),
+                    })}>
             <option value="factura_a">Factura A</option>
             <option value="factura_b">Factura B</option>
             <option value="factura_c">Factura C</option>
+            <option value="fce_a">Factura de crédito electrónica A</option>
+            <option value="fce_b">Factura de crédito electrónica B</option>
+            <option value="fce_c">Factura de crédito electrónica C</option>
           </Eleccion>
           <Campo id="n-pv" etiqueta="Punto de venta" valor={borrador.punto_venta}
                  alCambiar={(v) => set({ punto_venta: v })} />
-          <Campo id="n-numero" etiqueta="Número" valor={borrador.numero}
-                 alCambiar={(v) => set({ numero: v })} />
+          {fce ? (
+            <Campo id="n-vencimiento" etiqueta="Vencimiento de pago" tipo="date"
+                   valor={borrador.vencimiento}
+                   alCambiar={(v) => set({ vencimiento: v })} />
+          ) : (
+            <Campo id="n-numero" etiqueta="Número" valor={borrador.numero}
+                   alCambiar={(v) => set({ numero: v })} />
+          )}
         </div>
       </section>
 

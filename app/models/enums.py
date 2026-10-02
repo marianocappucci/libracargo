@@ -38,6 +38,13 @@ class TipoComprobante(enum.Enum):
     NOTA_CREDITO_A = "nota_credito_a"
     NOTA_CREDITO_B = "nota_credito_b"
     NOTA_CREDITO_C = "nota_credito_c"
+    #: Factura de Crédito Electrónica MiPyME (FCE): los códigos 201, 206 y 211 de
+    #: ARCA. **Sólo las facturas**: este producto todavía no emite notas contra ARCA
+    #: (anular no habla con ARCA), así que las notas de FCE no tienen camino y no
+    #: se agregan hasta que lo tengan.
+    FCE_A = "fce_a"
+    FCE_B = "fce_b"
+    FCE_C = "fce_c"
 
 
 class CondicionIVA(enum.Enum):
