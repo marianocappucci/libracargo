@@ -171,11 +171,13 @@ def test_una_factura_comun_no_lleva_vencimiento_de_pago(cliente, datos, razon_co
     assert r.status_code == 422, r.text
 
 
-def test_una_fce_a_un_cliente_sin_cuit_se_rechaza_antes_de_ir_a_arca(
-        cliente, datos, razon_con_fce, monkeypatch):
-    """ARCA contestaría 10015; acá se dice qué cargar y no se le pregunta nada."""
+@pytest.mark.parametrize("cuit", ["", "1", "30-7093328"])
+def test_una_fce_a_un_cliente_sin_un_cuit_valido_se_rechaza_antes_de_ir_a_arca(
+        cliente, datos, razon_con_fce, monkeypatch, cuit):
+    """ARCA contestaría 10015, o un 502 por un CUIT a medio cargar: acá se dice qué cargar
+    y no se le pregunta nada. «Algún dígito» no alcanza: tienen que ser los 11."""
     cliente.put(f"/api/terceros/{datos['cliente']}", json={
-        "razon_social": "Agro Norte", "es_cliente": True, "cuit": "",
+        "razon_social": "Agro Norte", "es_cliente": True, "cuit": cuit,
     })
     pedidos = _arca_responde(monkeypatch)
     a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
@@ -183,7 +185,7 @@ def test_una_fce_a_un_cliente_sin_cuit_se_rechaza_antes_de_ir_a_arca(
     r = _facturar(cliente, datos, [a], razon_con_fce)
 
     assert r.status_code == 422, r.text
-    assert "CUIT" in r.text and "ficha del cliente" in r.text
+    assert "CUIT de 11 digitos" in r.text and "ficha del cliente" in r.text
     assert pedidos == [], "no tenía que ir a ARCA"
 
 

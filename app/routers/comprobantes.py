@@ -191,13 +191,14 @@ def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
     if cliente is None:
         raise HTTPException(404, f"no existe el tercero {datos.cliente_id}")
     es_fce = datos.tipo in TIPOS_FCE
-    if es_fce and not "".join(c for c in (cliente.cuit or "") if c.isdigit()):
+    if es_fce and len("".join(c for c in (cliente.cuit or "") if c.isdigit())) != 11:
         # Una FCE se emite a una empresa, y ARCA rechaza el receptor sin CUIT (10015).
-        # Se dice acá, antes de ir a ARCA, y dice qué hacer.
+        # Se exigen los 11 dígitos y no «algún dígito»: un CUIT a medio cargar llegaría
+        # a ARCA y volvería como un 502. Se dice acá, y dice qué hacer.
         raise HTTPException(
             422,
-            "la factura de credito electronica se emite a un receptor con CUIT: "
-            "cargalo en la ficha del cliente",
+            "la factura de credito electronica se emite a un receptor con CUIT de 11 "
+            "digitos: cargalo en la ficha del cliente",
         )
 
     ordenes = list(sesion.scalars(
