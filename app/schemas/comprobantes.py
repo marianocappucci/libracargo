@@ -15,6 +15,7 @@
 
 from datetime import date, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -51,6 +52,11 @@ NOMBRES_DE_TIPO = {
 }
 
 
+def _hoy() -> date:
+    """La fecha de hoy en Argentina, que es la que compara ARCA."""
+    return datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).date()
+
+
 class FacturarIn(BaseModel):
     """"Facturar pendientes": las órdenes elegidas pasan a un comprobante."""
 
@@ -79,6 +85,12 @@ class FacturarIn(BaseModel):
             if self.fecha_vencimiento_pago < self.fecha:
                 raise ValueError(
                     "el vencimiento de pago no puede ser anterior a la fecha del comprobante")
+            # ARCA lo compara además contra **hoy** (10164, «posterior o igual a la fecha de
+            # emisión o a la fecha de presentación, la que sea posterior»): una FCE con
+            # fecha atrasada y un vencimiento ya vencido llegaría hasta ARCA y volvería
+            # como un 502 después de pedir el número.
+            if self.fecha_vencimiento_pago < _hoy():
+                raise ValueError("el vencimiento de pago no puede ser anterior a hoy")
         elif self.fecha_vencimiento_pago is not None:
             raise ValueError(
                 "solo la factura de credito electronica lleva fecha de vencimiento de pago")

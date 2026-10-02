@@ -650,8 +650,10 @@ como arista.
   ADR-024, donde el alta manual sigue siendo el camino de la razón social que todavía no tiene ARCA.)
 - Decisión 3 — **receptor con CUIT de 11 dígitos**, validado **antes** de ir a ARCA. Medido en homologación: con consumidor final
   contesta `10015`. El mensaje dice que se cargue en la ficha del cliente.
-  El **vencimiento de pago** tiene que ser **igual o posterior** a la fecha del comprobante: medido en homologación el
-  2026-10-02, el mismo día se autoriza y uno anterior se rechaza (`10164`). ARCA lo compara además contra **hoy**.
+  El CUIT **viaja a ARCA sólo en dígitos**: el motor limpia guiones y espacios y nada más, y uno cargado con puntos
+  llegaba como «no es un CUIT». El **vencimiento de pago** tiene que ser **igual o posterior** a la fecha del comprobante
+  **y a hoy**: medido en homologación el 2026-10-02, el mismo día se autoriza y uno anterior se rechaza (`10164`); se
+  valida en el backend antes de pedir el número.
 - Decisión 4 — **el CBU y la modalidad no se piden en la pantalla de facturar**: salen de la configuración de ARCA, que
   ya los acepta (`fce_cbu`, `fce_transmision`). **Se guardan en el comprobante**, no se leen después de la
   configuración, para que diga con qué CBU salió aunque cambie. El **vencimiento de pago** sí es del comprobante: lo

@@ -6,8 +6,9 @@ manual del WSFE y de lo **medido en homologación el 2026-10-02**: no de este c�
 """
 
 import xml.etree.ElementTree as ET
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -21,8 +22,11 @@ from tests.test_emision_arca import CUIT, _arca_responde, _configurar_arca
 
 CBU = "0123456789012345678901"          # 22 dígitos
 CUIT_DEL_RECEPTOR = "30-70933285-2"
-FECHA = "2026-08-15"
-VENCIMIENTO = "2026-09-14"
+# Fechas **relativas a hoy**: ARCA compara el vencimiento de pago contra hoy, y el
+# backend también, así que con fechas fijas estos tests se romperían con el tiempo.
+HOY = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).date()
+FECHA = HOY.isoformat()
+VENCIMIENTO = (HOY + timedelta(days=30)).isoformat()
 
 
 def _facturar(cliente, datos, ordenes, razon, *, tipo="fce_a", vencimiento=VENCIMIENTO):
@@ -83,7 +87,7 @@ def test_una_fce_viaja_a_arca_con_su_codigo_y_lo_que_exige(cliente, datos, razon
     assert factura["fch_vto_pago"] == VENCIMIENTO
     assert factura["fce_cbu"] == CBU
     assert factura["fce_transmision"] == "SCA"
-    assert factura["cliente_cuit"] == CUIT_DEL_RECEPTOR
+    assert factura["cliente_cuit"] == "30709332852"
 
 
 def test_la_fce_guarda_con_que_salio(cliente, datos, razon_con_fce, monkeypatch):
@@ -143,6 +147,23 @@ def test_la_fce_entra_en_los_totales_y_en_la_cuenta_corriente(cliente, datos, ra
     assert concepto == "Factura de credito electronica A 0005-00000042", concepto
 
 
+@pytest.mark.parametrize("cuit", ["30-70933285-2", "30.70933285.2", "30 70933285 2", "30709332852"])
+def test_el_cuit_viaja_a_arca_en_digitos_sea_cual_sea_como_se_cargo(
+        cliente, datos, razon_con_fce, monkeypatch, cuit):
+    """El motor limpia guiones y espacios y nada más: con puntos, el CUIT llegaba como «no es
+    un CUIT». Se normaliza acá a dígitos."""
+    cliente.put(f"/api/terceros/{datos['cliente']}", json={
+        "razon_social": "Agro Norte", "es_cliente": True,
+        "condicion_iva": "responsable_inscripto", "cuit": cuit,
+    })
+    pedidos = _arca_responde(monkeypatch, ultimo=41)
+    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+
+    assert _facturar(cliente, datos, [a], razon_con_fce).status_code == 201
+    (factura,) = [p[1] for p in pedidos if p[0] == "cae"]
+    assert factura["cliente_cuit"] == "30709332852"
+
+
 # ── Lo que se rechaza, y dónde ──────────────────────────────────────────────
 
 def test_una_fce_sin_vencimiento_de_pago_se_rechaza(cliente, datos, razon_con_fce):
@@ -157,10 +178,40 @@ def test_una_fce_sin_vencimiento_de_pago_se_rechaza(cliente, datos, razon_con_fc
 def test_el_vencimiento_no_puede_ser_anterior_a_la_fecha(cliente, datos, razon_con_fce):
     a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
 
-    r = _facturar(cliente, datos, [a], razon_con_fce, vencimiento="2026-08-01")
+    ayer = (HOY - timedelta(days=1)).isoformat()
+    r = _facturar(cliente, datos, [a], razon_con_fce, vencimiento=ayer)
 
     assert r.status_code == 422, r.text
     assert "anterior a la fecha" in r.text
+
+
+def test_el_vencimiento_no_puede_estar_ya_vencido_aunque_la_fecha_sea_atrasada(
+        cliente, datos, razon_con_fce, monkeypatch):
+    """ARCA compara el vencimiento contra hoy (10164): una FCE con fecha de hace 3 días y un
+    vencimiento de ayer es posterior a la fecha y aun así se rechaza. Se dice antes de pedir
+    el número, no como un 502."""
+    pedidos = _arca_responde(monkeypatch)
+    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+    cuerpo = {
+        "fecha": (HOY - timedelta(days=3)).isoformat(), "razon_social_id": razon_con_fce,
+        "cliente_id": datos["cliente"], "tipo": "fce_a", "punto_venta": 5,
+        "orden_ids": [a["id"]],
+        "fecha_vencimiento_pago": (HOY - timedelta(days=1)).isoformat(),
+    }
+
+    r = cliente.post("/api/comprobantes", json=cuerpo)
+
+    assert r.status_code == 422, r.text
+    assert "anterior a hoy" in r.text
+    assert pedidos == [], "no tenía que ir a ARCA"
+
+
+def test_el_vencimiento_igual_a_hoy_es_valido(cliente, datos, razon_con_fce, monkeypatch):
+    """Medido en homologación el 2026-10-02: el mismo día se autoriza; sólo uno anterior se rechaza."""
+    _arca_responde(monkeypatch, ultimo=41)
+    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+
+    assert _facturar(cliente, datos, [a], razon_con_fce, vencimiento=FECHA).status_code == 201
 
 
 def test_una_factura_comun_no_lleva_vencimiento_de_pago(cliente, datos, razon_con_fce):
@@ -171,7 +222,7 @@ def test_una_factura_comun_no_lleva_vencimiento_de_pago(cliente, datos, razon_co
     assert r.status_code == 422, r.text
 
 
-@pytest.mark.parametrize("cuit", ["", "1", "30-7093328"])
+@pytest.mark.parametrize("cuit", ["", "1", "30-7093328", "30.7093328.2"])
 def test_una_fce_a_un_cliente_sin_un_cuit_valido_se_rechaza_antes_de_ir_a_arca(
         cliente, datos, razon_con_fce, monkeypatch, cuit):
     """ARCA contestaría 10015, o un 502 por un CUIT a medio cargar: acá se dice qué cargar
@@ -249,7 +300,7 @@ def test_el_sobre_de_una_fce_lleva_vencimiento_cbu_y_transmision(
     assert r.status_code == 201, r.text
     (pedido,) = [c for acc, c in enviados if acc == "FECAESolicitar"]
     assert "<CbteTipo>201</CbteTipo>" in pedido
-    assert "<FchVtoPago>20260914</FchVtoPago>" in pedido
+    assert f"<FchVtoPago>{VENCIMIENTO.replace('-', '')}</FchVtoPago>" in pedido
     assert f"<Opcional><Id>2101</Id><Valor>{CBU}</Valor></Opcional>" in pedido
     assert "<Opcional><Id>27</Id><Valor>SCA</Valor></Opcional>" in pedido
     assert "<DocTipo>80</DocTipo>" in pedido, "una FCE se emite a un receptor con CUIT"

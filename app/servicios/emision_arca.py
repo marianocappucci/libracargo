@@ -334,7 +334,10 @@ def _cuit_del_cliente(sesion: Session, cliente_id: int) -> str:
     una factura B o C. Lo que no sería legítimo es inventarlo.
     """
     tercero = sesion.get(Tercero, cliente_id)
-    return (tercero.cuit or "") if tercero else ""
+    # **Sólo dígitos.** El motor limpia guiones y espacios y nada más: un CUIT cargado
+    # con puntos (`30.70933285.2`) llegaba como «no es un CUIT» y se emitía a consumidor
+    # final —o, en una FCE, fallaba en ARCA—. Es lo mismo que mira `facturar`.
+    return "".join(c for c in (tercero.cuit or "") if c.isdigit()) if tercero else ""
 
 
 def _iva_cond_del_cliente(sesion: Session, cliente_id: int) -> int:
