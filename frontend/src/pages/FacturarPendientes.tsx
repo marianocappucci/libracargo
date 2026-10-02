@@ -213,6 +213,10 @@ export default function FacturarPendientes() {
   const faltan = !clienteId ? 'Elegí el cliente.'
     : !borrador.razon_social_id ? 'Elegí la razón social.'
     : fce && !borrador.vencimiento ? 'Falta el vencimiento de pago.'
+    // `AAAA-MM-DD` ordena como texto. Se mira acá y no sólo en el backend porque la
+    // fecha puede cambiar **después** de que se propuso el vencimiento a 30 días.
+    : fce && borrador.vencimiento < borrador.fecha
+      ? 'El vencimiento de pago no puede ser anterior a la fecha del comprobante.'
     : !fce && !borrador.numero ? 'Falta el número del comprobante.'
     : aFacturar.length === 0 ? 'No elegiste ninguna orden.'
     : null

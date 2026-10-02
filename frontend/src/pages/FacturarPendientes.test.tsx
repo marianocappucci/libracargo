@@ -220,6 +220,18 @@ describe('Facturar pendientes', () => {
     expect(screen.getByText('Falta el vencimiento de pago.')).toBeInTheDocument()
   })
 
+  it('si la fecha pasa del vencimiento propuesto, la FCE no se puede facturar', async () => {
+    // La fecha se puede cambiar DESPUÉS de elegir FCE: el vencimiento propuesto a 30
+    // días queda atrás y el backend la rechazaría con un 422.
+    await elegirFce('2026-08-15')
+    fireEvent.change(screen.getByLabelText('Fecha', { selector: '#n-fecha' }),
+                     { target: { value: '2026-12-01' } })
+
+    expect(screen.getByText('Facturar')).toBeDisabled()
+    expect(screen.getByText('El vencimiento de pago no puede ser anterior a la fecha del comprobante.'))
+      .toBeInTheDocument()
+  })
+
   it('una factura común no manda vencimiento, y al volver a ella vuelve el número', async () => {
     await elegirFce()
     fireEvent.change(screen.getByLabelText('Tipo', { selector: '#n-tipo' }),

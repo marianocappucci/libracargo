@@ -656,6 +656,10 @@ como arista.
   exige ARCA en toda FCE, aun con concepto «Productos» (`10163`), y la pantalla lo propone a 30 días.
 - Decisión 5 — **un `CHECK` en la base**: una FCE sin `fch_vto_pago` no entra. Escrito con `tipo::text` y no con el
   literal del `ENUM`, para no depender de que el valor ya exista en la misma transacción de la migración.
+- Decisión 6 — **una FCE emitida no se anula desde acá** (`409`). `anular` no habla con ARCA (ADR-024): la FCE seguiría
+  vigente allá, el comprador podría aceptarla, y las órdenes volverían a pendientes para facturarse de nuevo. Revertirla
+  pide una nota de crédito de FCE. 🔸 **El mismo hueco existe para cualquier comprobante con CAE** (A, B y C): no se
+  tocó porque cambia el comportamiento de lo ya existente y hoy ninguno tiene CAE en producción; queda para decidir.
 - Consecuencias: migración `0012`, que **no baja los valores del `ENUM`** (PostgreSQL no permite sacar un valor); queda
   sin usar y volver a subir es inofensivo. No toca ni una fila. En el formulario, una FCE **reemplaza el campo del
   número por el del vencimiento**: el número lo da ARCA.

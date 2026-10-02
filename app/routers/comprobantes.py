@@ -377,6 +377,17 @@ def anular(id_: int, sesion: Session = Depends(obtener_sesion),
     comprobante = _traer(sesion, id_)
     if comprobante.anulado:
         raise HTTPException(409, f"el comprobante {id_} ya esta anulado")
+    if comprobante.tipo in TIPOS_FCE and comprobante.cae:
+        # 🔴 Anular acá NO llega a ARCA: la FCE seguiría vigente allá —y el comprador
+        # puede aceptarla— mientras las órdenes vuelven a pendientes y se pueden
+        # facturar de nuevo: dos facturas por lo mismo. Revertirla pide una nota de
+        # crédito de FCE, que este producto todavía no emite (ADR-025).
+        raise HTTPException(
+            409,
+            "una factura de credito electronica emitida no se puede anular desde aca: "
+            "ARCA la tiene registrada y el comprador puede aceptarla. Hace falta una "
+            "nota de credito de FCE, que este producto todavia no emite",
+        )
 
     antes = auditoria.instantanea(comprobante)
     ordenes = _ordenes_de(sesion, id_)

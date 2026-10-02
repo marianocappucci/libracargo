@@ -298,3 +298,34 @@ def test_la_base_admite_una_fce_con_vencimiento_y_una_factura_comun_sin_el(sesio
         numero=2, fecha=date(2026, 8, 15), cliente_id=fce.cliente_id,
         neto=Decimal("1"), iva=Decimal("0.21"), total=Decimal("1.21")))
     sesion.commit()
+
+
+# ── Anular ──────────────────────────────────────────────────────────────────
+
+def test_una_fce_emitida_no_se_anula_desde_aca(cliente, datos, razon_con_fce, monkeypatch):
+    """🔴 Anular localmente no llega a ARCA: la FCE seguiría vigente allá mientras las
+    órdenes vuelven a pendientes y se pueden facturar otra vez."""
+    _arca_responde(monkeypatch, ultimo=41)
+    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+    comp = _facturar(cliente, datos, [a], razon_con_fce).json()
+
+    r = cliente.delete(f"/api/comprobantes/{comp['id']}")
+
+    assert r.status_code == 409, r.text
+    assert "nota de credito" in r.text
+    quedo = cliente.get(f"/api/comprobantes/{comp['id']}").json()
+    assert quedo["comprobante"]["anulado"] is False
+    assert cliente.get(f"/api/ordenes/{a['id']}").json()["estado"] == "facturada", \
+        "las órdenes no tienen que reabrirse"
+
+
+def test_una_factura_comun_con_cae_se_sigue_anulando_como_antes(
+        cliente, datos, razon_con_fce, monkeypatch):
+    """El control de lo de arriba: la guarda es de la FCE y no cambia el resto."""
+    _arca_responde(monkeypatch, ultimo=41)
+    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+    cuerpo = {"fecha": FECHA, "razon_social_id": razon_con_fce, "cliente_id": datos["cliente"],
+              "tipo": "factura_a", "punto_venta": 5, "orden_ids": [a["id"]]}
+    comp = cliente.post("/api/comprobantes", json=cuerpo).json()
+
+    assert cliente.delete(f"/api/comprobantes/{comp['id']}").status_code == 200
