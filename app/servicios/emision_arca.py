@@ -43,7 +43,7 @@ from libracore import arca_credenciales, arca_wsaa, arca_wsfe
 from libracore.db import arca_config as db_arca_config
 from sqlalchemy.orm import Session
 
-from app.models.enums import TipoComprobante
+from app.models.enums import CondicionIVA, TipoComprobante
 from app.models.maestros import RazonSocial, Tercero
 from app.models.operacion import Comprobante
 
@@ -76,6 +76,25 @@ CODIGO_ARCA = {
 #: Los tipos C no llevan IVA discriminado: todo el importe va como neto y el
 #: bloque de alícuotas **no se manda**. Lo exige ARCA, no es una simplificación.
 TIPOS_C = {TipoComprobante.FACTURA_C, TipoComprobante.NOTA_CREDITO_C}
+
+
+#: La condición de IVA del cliente, con el **código con que la familia la guarda**
+#: en `cliente_iva_cond` (el `IVA_CODES` de `libracore`: 1 inscripto, 6
+#: monotributista, 4 exento, 5 consumidor final). Desde la RG 5616 ARCA rechaza el
+#: comprobante sin la condición del receptor, y es `libracore.arca_wsfe` quien la
+#: traduce al id de ARCA a partir de este código.
+#:
+#: 🔑 **`0` es «no sé», y es a propósito.** Los clientes migrados de Suitrans traen
+#: todos la misma condición (ver `migracion/transformar.py`) y los que no la
+#: tenían quedaron como `no_categorizado`. Mandar `0` deja que el motor decida —o
+#: falle con un mensaje que dice qué cargar— en lugar de inventar un dato fiscal.
+CODIGO_IVA_DE_LA_FAMILIA = {
+    CondicionIVA.RESPONSABLE_INSCRIPTO: 1,
+    CondicionIVA.MONOTRIBUTO: 6,
+    CondicionIVA.EXENTO: 4,
+    CondicionIVA.CONSUMIDOR_FINAL: 5,
+    CondicionIVA.NO_CATEGORIZADO: 0,
+}
 
 
 class ArcaNoConfigurado(RuntimeError):
@@ -267,6 +286,7 @@ async def pedir_cae(
         # un `relationship` --- este modelo evita las relaciones cargadas para
         # que un listado no dispare un N+1 sin que nadie lo pida.
         "cliente_cuit": _cuit_del_cliente(sesion, comprobante.cliente_id),
+        "cliente_iva_cond": _iva_cond_del_cliente(sesion, comprobante.cliente_id),
         "subtotal": float(neto + iva) if es_c else float(neto),
         "iva_amount": 0.0 if es_c else float(iva),
         "total": float(comprobante.total),
@@ -293,6 +313,14 @@ def _cuit_del_cliente(sesion: Session, cliente_id: int) -> str:
     """
     tercero = sesion.get(Tercero, cliente_id)
     return (tercero.cuit or "") if tercero else ""
+
+
+def _iva_cond_del_cliente(sesion: Session, cliente_id: int) -> int:
+    """El código de la condición de IVA del receptor, o `0` si no se sabe."""
+    tercero = sesion.get(Tercero, cliente_id)
+    if tercero is None:
+        return 0
+    return CODIGO_IVA_DE_LA_FAMILIA.get(tercero.condicion_iva, 0)
 
 
 def _fecha_de(crudo: str | None) -> date | None:
