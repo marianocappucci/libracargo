@@ -10,9 +10,13 @@ y el comprobante nace con CAE.
 > choca contra la unicidad de la base sin que nadie entienda por qué.
 """
 
+import os
+import stat
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
+from libracore import arca_credenciales, config_manager
 from libracore.db import arca_config as db_arca_config
 
 from app.servicios import emision_arca
@@ -655,3 +659,34 @@ def test_lo_registrado_a_mano_sin_cae_se_sigue_anulando(cliente, datos):
 
     assert cliente.delete(f"/api/comprobantes/{comp['id']}").status_code == 200
     assert cliente.get(f"/api/ordenes/{a['id']}").json()["estado"] == "pendiente"
+
+
+# ── La clave privada de ARCA, en disco ──────────────────────────────────────
+
+def _modo(ruta) -> int:
+    return stat.S_IMODE(os.stat(ruta).st_mode)
+
+
+def _claves_subidas() -> list[Path]:
+    return sorted(Path(config_manager.CERTS_DIR).glob("*.key"))
+
+
+def test_la_clave_privada_que_sube_la_pantalla_queda_cerrada(cliente, datos):
+    """🔴 Con `libracore` v1.119.0 la clave quedaba en 644: legible por cualquiera dentro del
+    contenedor. Desde v1.121.0 se escribe en 0600, sin pasar por un instante abierta."""
+    _configurar_arca(cliente)
+
+    (clave,) = _claves_subidas()
+    assert _modo(clave) & 0o077 == 0, f"la clave quedó en {oct(_modo(clave))}"
+
+
+def test_una_clave_ya_guardada_abierta_se_cierra_al_resolver_las_credenciales(cliente, datos):
+    """Las instancias vivas tienen la clave en 644: se corrigen solas al actualizar el motor,
+    porque toda emisión pasa por `paths_en_disco`."""
+    _configurar_arca(cliente)
+    (clave,) = _claves_subidas()
+    os.chmod(clave, 0o644)        # como la dejaba el motor anterior
+
+    arca_credenciales.paths_en_disco(emision_arca.configuracion_de_la_instancia())
+
+    assert _modo(clave) & 0o077 == 0, f"la clave siguió en {oct(_modo(clave))}"

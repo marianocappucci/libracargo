@@ -6,6 +6,14 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Cambiado
 
+- **libracore `v1.121.0`** (2026-10-02; antes `v1.119.0`). Dos cosas que llegan a este producto:
+  la **clave privada de ARCA se guarda con permisos `0600`** (con el motor anterior quedaba en
+  `644`, legible dentro del contenedor, y las instancias vivas la tienen así: se cierran solas
+  la primera vez que se emite, porque toda emisión pasa por `paths_en_disco`), y la migración
+  `0015` del motor (`facturas.cae_error`, aditiva: la tabla de facturas del motor, que este
+  producto no usa). El `v1.120.0` es el que trae el motivo del rechazo de ARCA en las facturas
+  del motor, que tampoco usa. Dos tests nuevos prueban lo primero **dentro de LibraCargo**:
+  fallan con `v1.119.0` y pasan con este pin.
 - **Un comprobante con CAE ya no se anula desde acá** (`409`, y la pantalla no ofrece el
   botón: dice que lo emitió ARCA y que hace falta una nota de crédito). Anular no llega a
   ARCA: el comprobante seguía vigente allá mientras sus órdenes volvían a pendientes y se
