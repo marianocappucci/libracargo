@@ -660,7 +660,7 @@ como arista.
   exige ARCA en toda FCE, aun con concepto «Productos» (`10163`), y la pantalla lo propone a 30 días.
 - Decisión 5 — **un `CHECK` en la base**: una FCE sin `fch_vto_pago` no entra. Escrito con `tipo::text` y no con el
   literal del `ENUM`, para no depender de que el valor ya exista en la misma transacción de la migración.
-- Decisión 6 — **una FCE emitida no se anula desde acá** (`409`). `anular` no habla con ARCA (ADR-024): la FCE seguiría
+- Decisión 6 — **una FCE emitida no se anula desde acá** (`409`). *(Generalizada a todo comprobante con CAE en el ADR-026.)* `anular` no habla con ARCA (ADR-024): la FCE seguiría
   vigente allá, el comprador podría aceptarla, y las órdenes volverían a pendientes para facturarse de nuevo. Revertirla
   pide una nota de crédito de FCE. 🔸 **El mismo hueco existe para cualquier comprobante con CAE** (A, B y C): no se
   tocó porque cambia el comportamiento de lo ya existente y hoy ninguno tiene CAE en producción; queda para decidir.
@@ -669,3 +669,23 @@ como arista.
   número por el del vencimiento**: el número lo da ARCA.
 - 🔸 **Arista pendiente:** el CBU y la modalidad se cargan por la API. La tarjeta de ARCA del kit (`libra-ui`) no tiene
   esos campos; agregarlos —opcionales, sin pantalla nueva— es trabajo del kit y de todos los productos que lo usan.
+
+## ADR-026 — Un comprobante con CAE no se anula desde acá
+
+**Estado:** aceptada (2026-10-02). **Contexto:** `anular` revierte el comprobante **sólo de este lado**: las órdenes vuelven a
+pendientes y la cuenta corriente se revierte, pero no habla con ARCA (ADR-024). Con la emisión por ARCA eso es un hueco: el
+comprobante sigue vigente allá —y el cliente lo tiene—, y las mismas órdenes se pueden facturar de nuevo. Lo marcó la revisión de
+Codex sobre la FCE; el ADR-025 lo cerró sólo para ese tipo y dejó abierto el caso general. El humano pidió cerrarlo.
+
+- Decisión 1 — **un comprobante con CAE responde `409` a `DELETE /api/comprobantes/{id}`**, sea cual sea su tipo (A, B, C y FCE).
+  El mensaje dice que lo tiene ARCA y que hace falta una nota de crédito **emitida por ARCA**; en una FCE agrega que el comprador puede
+  aceptarla.
+- Decisión 2 — **la pantalla no ofrece el botón** cuando hay CAE: en su lugar dice que lo emitió ARCA (con el CAE) y que no se anula
+  desde acá. Un `409` detrás de un diálogo se pierde.
+- Decisión 3 — **`cae IS NULL` se anula como siempre.** Es lo registrado a mano y lo migrado del legado (741 comprobantes de
+  Suitrans); no cambia nada de lo existente. Y hoy **ningún comprobante de producción tiene CAE**: la guarda se pone **antes** de que
+  la emisión por ARCA se use de verdad, que es cuando importa.
+- Lo que **no** resuelve: cómo revertir de verdad un comprobante con CAE. Eso es la **nota de crédito contra ARCA** con su comprobante
+  asociado (`CbtesAsoc`), que sigue pendiente (ADR-024). Cuando exista, `anular` pasa a emitirla y esta guarda se reemplaza.
+- Consecuencias: ningún cambio de esquema ni de datos. Un comprobante emitido por error contra ARCA de **homologación** no es un caso: el
+  ensayo no guarda nada (ADR-024).

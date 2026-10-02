@@ -46,6 +46,8 @@ export type Comprobante = {
   total: string
   anulado: boolean
   origen_legado: string | null
+  // El CAE que dio ARCA. `null` en lo registrado a mano y en lo migrado del legado.
+  cae?: string | null
   // Sólo una FCE los tiene; en todo lo demás vienen `null`.
   fch_vto_pago?: string | null
   fce_cbu?: string | null

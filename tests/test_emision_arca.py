@@ -620,3 +620,38 @@ def test_el_sobre_que_sale_hacia_arca_lleva_la_condicion_de_iva_del_receptor(
     assert r.status_code == 201, r.text
     (pedido,) = [c for acc, c in enviados if acc == "FECAESolicitar"]
     assert "<CondicionIVAReceptorId>1</CondicionIVAReceptorId>" in pedido
+
+
+# ── Anular ──────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("tipo", ["factura_a", "factura_b", "factura_c"])
+def test_un_comprobante_con_cae_no_se_anula_desde_aca(cliente, datos, razon_con_arca,
+                                                      monkeypatch, tipo):
+    """🔴 Anular acá no llega a ARCA: el comprobante seguiría vigente allá mientras las órdenes
+    vuelven a pendientes y se pueden facturar otra vez —dos facturas por lo mismo—, y la cuenta
+    corriente quedaría revertida contra algo que ARCA y el cliente siguen teniendo."""
+    _arca_responde(monkeypatch, ultimo=41)
+    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+    comp = facturar(cliente, datos, [a], razon=razon_con_arca, numero=None, tipo=tipo).json()
+    assert comp["cae"], "el punto de partida: un comprobante con CAE"
+
+    r = cliente.delete(f"/api/comprobantes/{comp['id']}")
+
+    assert r.status_code == 409, r.text
+    assert "tiene CAE" in r.text and "nota de credito" in r.text
+    assert cliente.get(f"/api/comprobantes/{comp['id']}").json()["comprobante"]["anulado"] is False
+    assert cliente.get(f"/api/ordenes/{a['id']}").json()["estado"] == "facturada", \
+        "las órdenes no tienen que reabrirse"
+    cuenta = cliente.get(f"/api/cuentas/cliente/{datos['cliente']}").json()
+    assert len(cuenta["movimientos"]) == 1, "no tiene que haber una reversión en la cuenta"
+
+
+def test_lo_registrado_a_mano_sin_cae_se_sigue_anulando(cliente, datos):
+    """El control de lo de arriba: `cae IS NULL` es lo registrado a mano y lo migrado del legado,
+    y eso se anula como siempre."""
+    a = orden(cliente, datos, "1000.00")
+    comp = facturar(cliente, datos, [a], numero=7).json()
+    assert comp["cae"] is None
+
+    assert cliente.delete(f"/api/comprobantes/{comp['id']}").status_code == 200
+    assert cliente.get(f"/api/ordenes/{a['id']}").json()["estado"] == "pendiente"

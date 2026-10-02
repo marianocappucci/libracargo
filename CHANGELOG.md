@@ -6,6 +6,14 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Cambiado
 
+- **Un comprobante con CAE ya no se anula desde acá** (`409`, y la pantalla no ofrece el
+  botón: dice que lo emitió ARCA y que hace falta una nota de crédito). Anular no llega a
+  ARCA: el comprobante seguía vigente allá mientras sus órdenes volvían a pendientes y se
+  podían facturar de nuevo, y la cuenta corriente quedaba revertida contra algo que ARCA y el
+  cliente siguen teniendo. Lo registrado a mano y lo migrado del legado (`cae IS NULL`) se
+  sigue anulando como siempre; hoy ningún comprobante de producción tiene CAE, así que **no
+  cambia nada de lo existente**. Generaliza lo que el ADR-025 había cerrado sólo para la
+  FCE. Ver ADR-026.
 - **libracore `v1.109.0` y libra-ui `v0.73.2`** (2026-09-17). La copia externa
   del backup sale cifrada con `rclone crypt`, o no sale —eso corre en el host y
   ya está desplegado ahí—. Lo que llega con este pin: la pantalla *Datos /
