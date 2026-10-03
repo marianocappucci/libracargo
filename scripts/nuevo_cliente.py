@@ -9,7 +9,7 @@ la misma que la de los otros seis.
 """
 from pathlib import Path
 
-from libracore.provisioning import configure
+from libracore.provisioning import configure, get_config
 from libracore.provisioning.nuevo_cliente import (
     ClienteError,
     ask,
@@ -117,8 +117,10 @@ configure(
     base_port=8099,
 )
 
-# Re-exportado por compatibilidad con cualquier uso directo de este módulo.
-CLIENTES_DIR = REPO_ROOT / "clientes"
+# Re-exportado por compatibilidad con cualquier uso directo de este módulo. Sale del motor (precedencia
+# `configure(clientes_dir=)` > env `LIBRA_CLIENTES_DIR` > `repo_root/"clientes"`): una sola fuente de verdad,
+# y va DESPUÉS de `configure()` para que `get_config()` ya vea la config del producto.
+CLIENTES_DIR = get_config().clientes_dir
 
 if __name__ == "__main__":
     main()
