@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from libraauth.models import Base as AuthBase
+from libraauth.testing import crear_schema_de_auth
 from sqlalchemy.exc import OperationalError
 
 from app.db import obtener_sesion
@@ -25,7 +27,22 @@ def _app():
 
 
 @pytest.fixture
-def cliente(sesion):
+def _cadena_de_auth(engine):
+    """La cadena de `libraauth` en la base, que `crear_app()` EXIGE al arrancar.
+
+    🔴 Estos tests no la armaban: andaban porque un test anterior de la suite dejaba
+    `alembic_version_libraauth` en la base (el `drop_all` de los demas borra las
+    tablas, no la version), asi que corridos solos —o en un worker de xdist que no
+    paso antes por ninguno— morian con `SchemaDesactualizado`. Es el mismo arreglo
+    que el resto de la suite: la arma cada test que levanta la app.
+    """
+    crear_schema_de_auth(engine)
+    yield
+    AuthBase.metadata.drop_all(engine)
+
+
+@pytest.fixture
+def cliente(sesion, _cadena_de_auth):
     app = _app()
     app.dependency_overrides[obtener_sesion] = lambda: sesion
     return TestClient(app, raise_server_exceptions=False)
@@ -63,6 +80,7 @@ def test_health_es_la_misma_sonda_que_salud(cliente):
         "las dos rutas tienen que dar la misma forma: son el mismo handler")
 
 
+@pytest.mark.usefixtures("_cadena_de_auth")
 def test_health_tambien_falla_cerrado():
     """El control de la de arriba, por la ruta nueva.
 
@@ -83,6 +101,7 @@ def test_health_tambien_falla_cerrado():
     assert "ok" not in r.text
 
 
+@pytest.mark.usefixtures("_cadena_de_auth")
 def test_falla_cerrado_si_la_base_no_responde():
     """El control negativo del caso de arriba."""
 
