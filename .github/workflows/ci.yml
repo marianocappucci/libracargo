@@ -180,7 +180,12 @@ jobs:
         # La opcion -rs lista los tests SALTEADOS con su motivo. Sin eso, un modulo que
         # se saltea entero --por una dependencia que falta en el runner-- deja
         # el job igual de verde que uno que corrio todo.
-        run: pytest -q -rs --cov=app --cov-report=term-missing
+        #
+        # `-n 4` (pytest-xdist, 4 = vCPU del runner): una base de PostgreSQL por worker, dos por
+        # worker en realidad (tests/conftest.py, libracore.testing.pg_por_worker; reglas/ci.md
+        # del wiki). `--cov` y su piso (`fail_under`) no se tocan: coverage combina los
+        # workers solo.
+        run: pytest -q -rs -n 4 --cov=app --cov-report=term-missing
 
   frontend:
     runs-on: ubuntu-latest

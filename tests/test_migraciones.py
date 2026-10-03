@@ -18,7 +18,10 @@ from sqlalchemy.exc import IntegrityError
 BASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql+psycopg://postgres@127.0.0.1:5433/libracargo_test"
 )
-BASE_SCRATCH = "libracargo_migtest"
+# 🔴 Una descartable POR WORKER de xdist: con el nombre fijo, dos workers corriendo a
+# la vez se borraban la base el uno al otro (`_soltar` la tira con las sesiones del
+# otro adentro). Sin xdist el worker es `main`.
+BASE_SCRATCH = f"libracargo_migtest_{os.environ.get('PYTEST_XDIST_WORKER', 'main')}"
 
 
 def _url_con_base(url: str, base: str) -> str:
