@@ -6,6 +6,22 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Cambiado
 
+- **libracore `v1.121.0`** (2026-10-02; antes `v1.119.0`). Dos cosas que llegan a este producto:
+  la **clave privada de ARCA se guarda con permisos `0600`** (con el motor anterior quedaba en
+  `644`, legible dentro del contenedor, y las instancias vivas la tienen así: se cierran solas
+  la primera vez que se emite, porque toda emisión pasa por `paths_en_disco`), y la migración
+  `0015` del motor (`facturas.cae_error`, aditiva: la tabla de facturas del motor, que este
+  producto no usa). El `v1.120.0` es el que trae el motivo del rechazo de ARCA en las facturas
+  del motor, que tampoco usa. Dos tests nuevos prueban lo primero **dentro de LibraCargo**:
+  fallan con `v1.119.0` y pasan con este pin.
+- **Un comprobante con CAE ya no se anula desde acá** (`409`, y la pantalla no ofrece el
+  botón: dice que lo emitió ARCA y que hace falta una nota de crédito). Anular no llega a
+  ARCA: el comprobante seguía vigente allá mientras sus órdenes volvían a pendientes y se
+  podían facturar de nuevo, y la cuenta corriente quedaba revertida contra algo que ARCA y el
+  cliente siguen teniendo. Lo registrado a mano y lo migrado del legado (`cae IS NULL`) se
+  sigue anulando como siempre; hoy ningún comprobante de producción tiene CAE, así que **no
+  cambia nada de lo existente**. Generaliza lo que el ADR-025 había cerrado sólo para la
+  FCE. Ver ADR-026.
 - **libracore `v1.109.0` y libra-ui `v0.73.2`** (2026-09-17). La copia externa
   del backup sale cifrada con `rclone crypt`, o no sale —eso corre en el host y
   ya está desplegado ahí—. Lo que llega con este pin: la pantalla *Datos /
@@ -18,6 +34,18 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Agregado
 
+- **Factura de Crédito Electrónica MiPyME (FCE).** Tres tipos nuevos de comprobante
+  —`fce_a`, `fce_b` y `fce_c`, los códigos 201, 206 y 211 de ARCA— que se emiten
+  desde *Facturar pendientes* con lo normalizado de la suite: el CBU del emisor y
+  la modalidad (`SCA` o `ADC`) salen de la configuración de ARCA que ya existe
+  (`fce_cbu` y `fce_transmision` de `PUT /api/arca`), y el vencimiento de pago se
+  elige en la pantalla (a 30 días por defecto). Una FCE se emite **sólo por ARCA**
+  y **a un receptor con CUIT**; sin eso se dice qué cargar antes de ir a ARCA. La
+  migración `0012` suma los tres valores al `ENUM` y las columnas `fch_vto_pago`,
+  `fce_cbu` y `fce_transmision` (nullable: no toca ni una fila). Probada contra
+  ARCA de homologación (CAE para una FCE A). **Falta** cargar el CBU y la
+  modalidad **desde la pantalla de ARCA**: hoy se hace por la API, y el kit
+  compartido todavía no tiene esos campos. Ver ADR-025.
 - **Emitir por ARCA y traer el CAE.** La razón social que tiene ARCA habilitado
   ya no registra el comprobante con un número tipeado a mano: el número lo pide
   ARCA (`FECompUltimoAutorizado + 1`), el punto de venta sale de la razón social

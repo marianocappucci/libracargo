@@ -53,6 +53,28 @@ function total(extra: Record<string, unknown> = {}) {
   }
 }
 
+/** El detalle de un comprobante, como lo devuelve `GET /api/comprobantes/9`. */
+function detalleDe(cae: string | null) {
+  return {
+    comprobante: {
+      id: 9, razon_social_id: 5, tipo: 'factura_a', punto_venta: 5, numero: 42,
+      fecha: '2026-08-15', cliente_id: 1, neto: '1000.00', iva: '210.00', total: '1210.00',
+      anulado: false, origen_legado: null, cae,
+    },
+    ordenes: [],
+    suma_de_ordenes: { cantidad: 0, neto: '0.00', iva: '0.00', total: '0.00' },
+    coinciden: true,
+  }
+}
+
+function abrirDetalle(cae: string | null) {
+  responder({})
+  const base = get.getMockImplementation()!
+  get.mockImplementation((ruta?: string) =>
+    ruta === '/api/comprobantes/9' ? Promise.resolve(detalleDe(cae)) : base(ruta))
+  render(<MemoryRouter initialEntries={['/comprobantes?ver=9']}><Comprobantes /></MemoryRouter>)
+}
+
 describe('Comprobantes', () => {
   beforeEach(() => { get.mockReset(); post.mockReset() })
 
@@ -81,6 +103,24 @@ describe('Comprobantes', () => {
 
   // Los tests de facturar viven en `FacturarPendientes.test.tsx`: el flujo
   // dejo de ser un modal de esta pantalla y paso a ser una pantalla propia.
+  // 🔴 Un comprobante con CAE no se anula desde acá: anular no llega a ARCA y el
+  // comprobante seguiría vigente allá mientras sus órdenes se podrían facturar de nuevo.
+  it('un comprobante con CAE no ofrece anular y dice por qué', async () => {
+    abrirDetalle('75123456789012')
+
+    const nota = await screen.findByRole('note')
+    expect(nota).toHaveTextContent('75123456789012')
+    expect(nota).toHaveTextContent('no se anula desde acá')
+    expect(screen.queryByText('Anular comprobante')).toBeNull()
+  })
+
+  it('el comprobante sin CAE (registrado a mano o migrado) se sigue pudiendo anular', async () => {
+    abrirDetalle(null)
+
+    expect(await screen.findByText('Anular comprobante')).toBeInTheDocument()
+    expect(screen.queryByRole('note')).toBeNull()
+  })
+
   it('el boton de facturar lleva a la pantalla, no abre un modal', async () => {
     responder({})
     render(<MemoryRouter><Comprobantes /></MemoryRouter>)

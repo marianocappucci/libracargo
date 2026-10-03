@@ -19,6 +19,7 @@ from libraauth.testing import crear_schema_de_auth
 from libracore import config_manager
 from libracore.db import core as libracore_core
 from libracore.db.schema import init_core_schema
+from libracore.testing.pg_por_worker import base_por_worker
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
@@ -29,19 +30,65 @@ from app.models import Base
 
 RAIZ = Path(__file__).resolve().parent.parent
 
-URL = os.environ.get(
-    "DATABASE_URL", "postgresql+psycopg://postgres@127.0.0.1:5433/libracargo_test"
+# --- Una base por worker de xdist ------------------------------------------
+# La suite corre con `pytest -n 4` (reglas/ci.md del wiki) y los workers no pueden
+# compartir base: cada test vacia y rearma tablas (`engine`, `sesion`, `cliente`),
+# asi que dos procesos se pisarian el schema. El mecanismo vive en
+# `libracore.testing.pg_por_worker` (libracore >= v1.122.0): crea `<base>_gwN` y la
+# borra al salir.
+#
+# Son DOS bases, como siempre (ver `URL_CORE`), asi que son dos `base_por_worker`:
+# `libracargo_test_gwN` y `libracargo_test_core_gwN`. Cada una pide que exista la
+# ORIGINAL (`libracargo_test` la crea el servicio de PostgreSQL del CI;
+# `libracargo_test_core`, el paso "Base de LibraCore" del job: lo mismo que ya
+# hacia falta antes, cuando la suite iba directo a ella).
+#
+# 🔴 **SIN plantillas (`restaurar()`), a proposito.** A diferencia de VentaLibra o
+# LibraCommerce, esta suite NO rearma la base en cada test: arma el schema UNA vez
+# por sesion (`engine`, la cadena de Alembic; `_schema_de_libracore`) y entre tests
+# solo trunca (`sesion`) y dropea las tablas de auth (`cliente`). Medido sobre
+# PostgreSQL 16 (test_cuentas + test_fce + test_ordenes, 55 tests, una sola corrida):
+#
+#     limpieza actual (14 TRUNCATE ... RESTART IDENTITY CASCADE)   ~0,11 s/test con fsync=off
+#                                                                  ~0,9  s/test con fsync (disco de WSL)
+#     restaurar la plantilla `migrada` (DROP DATABASE FORCE + CREATE ... TEMPLATE)
+#                                                                  ~0,22 s/test con fsync=off
+#                                                                  ~0,12 s/test con fsync
+#
+# O sea que la plantilla solo gana donde el disco serializa los fsync (WSL), y el
+# runner de GitHub no es ese caso (ver reglas/ci.md: el piloto de `fsync = off` no
+# midio ganancia). Y la plantilla "armada" con la cadena de auth ahorraria ~0,17 s
+# en los tests con `cliente`, a costa de tocar los ~14 fixtures que la crean y de
+# cambiar el estado de partida de los tests de arranque. No paga: lo que da el
+# tiempo aca es xdist.
+#
+# 🔴 Se pisan las dos variables de entorno con la URL del worker ANTES de que
+# nadie las lea: `Config.desde_entorno()`, `migrations/env.py` y varios tests
+# toman `DATABASE_URL` / `LIBRACARGO_LIBRACORE_DATABASE_URL` del entorno. El proceso
+# que lanza a xdist tambien importa este archivo y sus workers heredan su entorno;
+# `base_por_worker` ya lo maneja (guarda la URL original aparte).
+_PG = base_por_worker(
+    "libracargo",
+    os.environ.get("DATABASE_URL", "postgresql+psycopg://postgres@127.0.0.1:5433/libracargo_test"),
 )
+_PG_CORE = base_por_worker(
+    "libracargo_core",
+    os.environ.get(
+        "LIBRACARGO_LIBRACORE_DATABASE_URL",
+        "postgresql+psycopg://postgres@127.0.0.1:5433/libracargo_test_core",
+    ),
+)
+
+URL = _PG.url
+os.environ["DATABASE_URL"] = URL
 
 #: La base de **LibraCore**, que es otra. No es una preferencia de la suite: el
 #: schema del motor declara `usuarios` y `auth_log`, y las dos ya existen del
 #: lado del dominio con la forma de `libraauth`. En una sola base el segundo
 #: `CREATE TABLE IF NOT EXISTS` no hace nada y el motor termina leyendo la tabla
 #: del otro — que es un verde que no dice nada.
-URL_CORE = os.environ.get(
-    "LIBRACARGO_LIBRACORE_DATABASE_URL",
-    "postgresql+psycopg://postgres@127.0.0.1:5433/libracargo_test_core",
-)
+URL_CORE = _PG_CORE.url
+os.environ["LIBRACARGO_LIBRACORE_DATABASE_URL"] = URL_CORE
 
 
 def par_de_arca() -> tuple[bytes, bytes]:

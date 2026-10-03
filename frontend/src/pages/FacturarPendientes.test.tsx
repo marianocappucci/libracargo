@@ -172,6 +172,79 @@ describe('Facturar pendientes', () => {
     })
   })
 
+  // ── La Factura de Crédito Electrónica MiPyME ─────────────────────────────
+  //
+  // Se emite sólo por ARCA, que da el número: no se tipea. En cambio exige el
+  // vencimiento de pago, y sin él ARCA la rechaza. La pantalla es la misma: el
+  // selector tiene tres opciones más y el campo del número se cambia por el
+  // vencimiento.
+
+  async function elegirFce(fecha = '2026-08-15') {
+    responder([orden(1)])
+    post.mockResolvedValue({ id: 9 })
+    await abrir()
+    await waitFor(() => expect(casilla(1)).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('Fecha', { selector: '#n-fecha' }),
+                     { target: { value: fecha } })
+    fireEvent.change(screen.getByLabelText('Tipo', { selector: '#n-tipo' }),
+                     { target: { value: 'fce_a' } })
+    fireEvent.click(casilla(1))
+  }
+
+  it('una FCE pide el vencimiento de pago, a 30 días, y ya no el número', async () => {
+    await elegirFce('2026-08-15')
+
+    expect(screen.getByLabelText('Vencimiento de pago')).toHaveValue('2026-09-14')
+    expect(screen.queryByLabelText('Número')).not.toBeInTheDocument()
+  })
+
+  it('una FCE viaja con el vencimiento y sin número', async () => {
+    await elegirFce('2026-08-15')
+    fireEvent.change(screen.getByLabelText('Vencimiento de pago'),
+                     { target: { value: '2026-10-01' } })
+    fireEvent.click(screen.getByText('Facturar'))
+
+    await waitFor(() => expect(post).toHaveBeenCalled())
+    const cuerpo = post.mock.calls[0][1]
+    expect(cuerpo).toMatchObject({
+      tipo: 'fce_a', fecha_vencimiento_pago: '2026-10-01', orden_ids: [1],
+    })
+    expect(cuerpo.numero).toBeUndefined()
+  })
+
+  it('sin vencimiento de pago una FCE no se puede facturar', async () => {
+    await elegirFce()
+    fireEvent.change(screen.getByLabelText('Vencimiento de pago'), { target: { value: '' } })
+
+    expect(screen.getByText('Facturar')).toBeDisabled()
+    expect(screen.getByText('Falta el vencimiento de pago.')).toBeInTheDocument()
+  })
+
+  it('si la fecha pasa del vencimiento propuesto, la FCE no se puede facturar', async () => {
+    // La fecha se puede cambiar DESPUÉS de elegir FCE: el vencimiento propuesto a 30
+    // días queda atrás y el backend la rechazaría con un 422.
+    await elegirFce('2026-08-15')
+    fireEvent.change(screen.getByLabelText('Fecha', { selector: '#n-fecha' }),
+                     { target: { value: '2026-12-01' } })
+
+    expect(screen.getByText('Facturar')).toBeDisabled()
+    expect(screen.getByText('El vencimiento de pago no puede ser anterior a la fecha del comprobante.'))
+      .toBeInTheDocument()
+  })
+
+  it('una factura común no manda vencimiento, y al volver a ella vuelve el número', async () => {
+    await elegirFce()
+    fireEvent.change(screen.getByLabelText('Tipo', { selector: '#n-tipo' }),
+                     { target: { value: 'factura_a' } })
+    fireEvent.change(screen.getByLabelText('Número'), { target: { value: '7' } })
+    fireEvent.click(screen.getByText('Facturar'))
+
+    await waitFor(() => expect(post).toHaveBeenCalled())
+    const cuerpo = post.mock.calls[0][1]
+    expect(cuerpo).toMatchObject({ tipo: 'factura_a', numero: 7 })
+    expect(cuerpo.fecha_vencimiento_pago).toBeUndefined()
+  })
+
   // ── El ensayo contra homologación ────────────────────────────────────────
   //
   // Con el ambiente de ARCA en homologación el backend corre el alta entera y

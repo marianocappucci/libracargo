@@ -20,10 +20,12 @@ sola:
 
 from __future__ import annotations
 
+import fcntl
 import importlib
 import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -35,7 +37,26 @@ ASSET = "index-DELTEST123.js"
 
 
 @pytest.fixture(scope="module")
-def cliente():
+def _dist_para_mi_solo():
+    """Un solo worker de xdist a la vez usa (y borra) `frontend/dist`.
+
+    🔴 Ese directorio es del ARBOL DE TRABAJO y no de un worker: con `-n 4` los
+    tests de este archivo caen en workers distintos, y el primero que termina
+    el modulo hace `rmtree` del `dist` que el otro todavia esta sirviendo (los
+    `/assets` pasan a 404 a mitad de test). El candado es de archivo y vale por
+    proceso, asi que sin xdist no frena a nadie; el worker que llega segundo
+    espera a que el primero suelte el modulo.
+    """
+    with open(Path(tempfile.gettempdir()) / "libracargo-test-cache-del-spa.lock", "w") as candado:
+        fcntl.flock(candado, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(candado, fcntl.LOCK_UN)
+
+
+@pytest.fixture(scope="module")
+def cliente(_dist_para_mi_solo):
     """La app ASGI de verdad, con un `dist` presente.
 
     El `dist` no es decorado: el mount de `/assets` y el catch-all **se arman en

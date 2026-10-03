@@ -30,6 +30,7 @@ from app.models.operacion import Comprobante, OrdenCarga
 from app.routers.maestros import traducir_integridad
 from app.schemas.comprobantes import (
     TIPOS_FACTURA,
+    TIPOS_FCE,
     ComprobanteConOrdenes,
     ComprobanteOut,
     FacturarIn,
@@ -189,6 +190,16 @@ def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
     cliente = sesion.get(Tercero, datos.cliente_id)
     if cliente is None:
         raise HTTPException(404, f"no existe el tercero {datos.cliente_id}")
+    es_fce = datos.tipo in TIPOS_FCE
+    if es_fce and len("".join(c for c in (cliente.cuit or "") if c.isdigit())) != 11:
+        # Una FCE se emite a una empresa, y ARCA rechaza el receptor sin CUIT (10015).
+        # Se exigen los 11 dígitos y no «algún dígito»: un CUIT a medio cargar llegaría
+        # a ARCA y volvería como un 502. Se dice acá, y dice qué hacer.
+        raise HTTPException(
+            422,
+            "la factura de credito electronica se emite a un receptor con CUIT de 11 "
+            "digitos: cargalo en la ficha del cliente",
+        )
 
     ordenes = list(sesion.scalars(
         select(OrdenCarga).where(OrdenCarga.id.in_(datos.orden_ids))
@@ -232,6 +243,15 @@ def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
         emite = emision_arca.emite_por_arca(sesion, datos.razon_social_id)
     except emision_arca.ArcaAmbiguo as e:
         raise HTTPException(409, str(e)) from None
+    if es_fce and not emite:
+        # Una FCE sin CAE no tiene sentido: es el documento que ARCA registra y que
+        # el comprador acepta o rechaza. No hay camino de «registrar a mano».
+        raise HTTPException(
+            422,
+            "la factura de credito electronica solo se emite por ARCA: esta razon "
+            "social no lo tiene habilitado (cargá el certificado y la clave en "
+            "Configuracion, con el CUIT de esta razon social)",
+        )
     ta = cfg_arca = razon = None
     if emite:
         try:
@@ -262,6 +282,7 @@ def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
         punto_venta=punto_venta, numero=numero, fecha=datos.fecha,
         cliente_id=datos.cliente_id,
         neto=suma.neto, iva=suma.iva, total=suma.total,
+        fch_vto_pago=datos.fecha_vencimiento_pago,
     )
     sesion.add(comprobante)
     try:
@@ -357,6 +378,24 @@ def anular(id_: int, sesion: Session = Depends(obtener_sesion),
     comprobante = _traer(sesion, id_)
     if comprobante.anulado:
         raise HTTPException(409, f"el comprobante {id_} ya esta anulado")
+    if comprobante.cae:
+        # 🔴 **Un comprobante con CAE no se anula desde acá, sea cual sea su tipo.** Anular
+        # NO llega a ARCA: el comprobante seguiría vigente allá mientras las órdenes
+        # vuelven a pendientes y se pueden facturar de nuevo —dos facturas por lo
+        # mismo—, y la cuenta corriente quedaría revertida contra un comprobante que ARCA
+        # y el cliente siguen teniendo. Revertirlo pide una nota de crédito **emitida por
+        # ARCA**, que este producto todavía no emite (ADR-026).
+        #
+        # `cae IS NULL` es el estado de todo lo registrado a mano y de lo migrado del
+        # legado: eso se sigue anulando como siempre.
+        raise HTTPException(
+            409,
+            "un comprobante emitido por ARCA (tiene CAE) no se puede anular desde aca: ARCA "
+            "lo tiene registrado y sigue vigente alla"
+            + (", y el comprador puede aceptarlo" if comprobante.tipo in TIPOS_FCE else "")
+            + ". Hace falta una nota de credito emitida por ARCA, que este producto todavia "
+            "no emite",
+        )
 
     antes = auditoria.instantanea(comprobante)
     ordenes = _ordenes_de(sesion, id_)

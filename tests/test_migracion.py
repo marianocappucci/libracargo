@@ -58,7 +58,11 @@ def _url_psycopg() -> str:
 @pytest.fixture(scope="module")
 def dump(tmp_path_factory) -> Path:
     """Un `mysqldump` real del esquema real con los datos sintéticos adentro."""
-    contenedor, _ = cargar.levantar_mariadb(nombre="libracargo-legado-sintetico")
+    # 🔴 Un contenedor POR WORKER de xdist: `levantar_mariadb` empieza con `docker rm -f
+    # <nombre>`, asi que con un nombre fijo un worker le mataba el MariaDB al otro
+    # a mitad de armar el dump.
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+    contenedor, _ = cargar.levantar_mariadb(nombre=f"libracargo-legado-sintetico-{worker}")
     try:
         for archivo in (SCHEMA_LEGADO, DATOS_SINTETICOS):
             r = subprocess.run(
@@ -82,7 +86,22 @@ def dump(tmp_path_factory) -> Path:
 @pytest.fixture(scope="module")
 def staging(dump):
     """El dump cargado al staging, una sola vez para todo el módulo."""
-    codigo = cargar.main(["--dump", str(dump), "--destino", _url_psycopg()])
+    # 🔴 `cargar.main()` levanta SU PROPIO MariaDB con el nombre fijo `libracargo-legado`
+    # (y `levantar_mariadb` empieza con `docker rm -f <nombre>`): con xdist, dos workers
+    # se mataban el contenedor. Se le da un nombre por worker sin tocar la herramienta,
+    # que no es de la app.
+    original = cargar.levantar_mariadb
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+
+    def levantar_con_nombre_del_worker(imagen=cargar.IMAGEN_POR_DEFECTO, nombre=None):
+        return original(imagen, nombre=nombre or f"libracargo-legado-{worker}")
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(cargar, "levantar_mariadb", levantar_con_nombre_del_worker)
+    try:
+        codigo = cargar.main(["--dump", str(dump), "--destino", _url_psycopg()])
+    finally:
+        mp.undo()
     assert codigo == 0, "la carga tiene que terminar limpia"
     with psycopg.connect(_url_psycopg()) as con:
         yield con

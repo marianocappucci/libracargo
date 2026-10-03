@@ -43,7 +43,7 @@ from libracore import arca_credenciales, arca_wsaa, arca_wsfe
 from libracore.db import arca_config as db_arca_config
 from sqlalchemy.orm import Session
 
-from app.models.enums import TipoComprobante
+from app.models.enums import CondicionIVA, TipoComprobante
 from app.models.maestros import RazonSocial, Tercero
 from app.models.operacion import Comprobante
 
@@ -71,11 +71,38 @@ CODIGO_ARCA = {
     TipoComprobante.NOTA_CREDITO_A: 3,
     TipoComprobante.NOTA_CREDITO_B: 8,
     TipoComprobante.NOTA_CREDITO_C: 13,
+    # Factura de Crédito Electrónica MiPyME (FCE): 201, 206 y 211.
+    TipoComprobante.FCE_A: 201,
+    TipoComprobante.FCE_B: 206,
+    TipoComprobante.FCE_C: 211,
 }
 
 #: Los tipos C no llevan IVA discriminado: todo el importe va como neto y el
 #: bloque de alícuotas **no se manda**. Lo exige ARCA, no es una simplificación.
-TIPOS_C = {TipoComprobante.FACTURA_C, TipoComprobante.NOTA_CREDITO_C}
+TIPOS_C = {TipoComprobante.FACTURA_C, TipoComprobante.NOTA_CREDITO_C, TipoComprobante.FCE_C}
+
+#: La FCE lleva además el vencimiento de pago, el CBU del emisor y la modalidad de
+#: transmisión. Los dos últimos salen de la configuración de ARCA de la instancia.
+TIPOS_FCE = {TipoComprobante.FCE_A, TipoComprobante.FCE_B, TipoComprobante.FCE_C}
+
+
+#: La condición de IVA del cliente, con el **código con que la familia la guarda**
+#: en `cliente_iva_cond` (el `IVA_CODES` de `libracore`: 1 inscripto, 6
+#: monotributista, 4 exento, 5 consumidor final). Desde la RG 5616 ARCA rechaza el
+#: comprobante sin la condición del receptor, y es `libracore.arca_wsfe` quien la
+#: traduce al id de ARCA a partir de este código.
+#:
+#: 🔑 **`0` es «no sé», y es a propósito.** Los clientes migrados de Suitrans traen
+#: todos la misma condición (ver `migracion/transformar.py`) y los que no la
+#: tenían quedaron como `no_categorizado`. Mandar `0` deja que el motor decida —o
+#: falle con un mensaje que dice qué cargar— en lugar de inventar un dato fiscal.
+CODIGO_IVA_DE_LA_FAMILIA = {
+    CondicionIVA.RESPONSABLE_INSCRIPTO: 1,
+    CondicionIVA.MONOTRIBUTO: 6,
+    CondicionIVA.EXENTO: 4,
+    CondicionIVA.CONSUMIDOR_FINAL: 5,
+    CondicionIVA.NO_CATEGORIZADO: 0,
+}
 
 
 class ArcaNoConfigurado(RuntimeError):
@@ -267,10 +294,21 @@ async def pedir_cae(
         # un `relationship` --- este modelo evita las relaciones cargadas para
         # que un listado no dispare un N+1 sin que nadie lo pida.
         "cliente_cuit": _cuit_del_cliente(sesion, comprobante.cliente_id),
+        "cliente_iva_cond": _iva_cond_del_cliente(sesion, comprobante.cliente_id),
         "subtotal": float(neto + iva) if es_c else float(neto),
         "iva_amount": 0.0 if es_c else float(iva),
         "total": float(comprobante.total),
     }
+    es_fce = comprobante.tipo in TIPOS_FCE
+    if es_fce:
+        # Del motor: el vencimiento viaja en el comprobante y el CBU y la modalidad
+        # en la configuración. Si falta alguno, `arca_wsfe` falla con un mensaje que
+        # dice qué cargar, y llega a la pantalla tal cual.
+        factura.update({
+            "fch_vto_pago": comprobante.fch_vto_pago.isoformat(),
+            "fce_cbu": cfg.get("fce_cbu") or "",
+            "fce_transmision": cfg.get("fce_transmision") or "",
+        })
     try:
         datos = await arca_wsfe.solicitar_cae(
             factura, razon.cuit, ta["token"], ta["sign"], cfg["ambiente"],
@@ -281,6 +319,10 @@ async def pedir_cae(
     comprobante.cae = datos["cae"]
     comprobante.cae_vencimiento = _fecha_de(datos.get("cae_vto"))
     comprobante.cae_solicitado_en = datetime.now(UTC)
+    if es_fce:
+        # Con qué salió, no lo que diga la configuración mañana.
+        comprobante.fce_cbu = cfg.get("fce_cbu") or None
+        comprobante.fce_transmision = (cfg.get("fce_transmision") or "").upper() or None
     sesion.flush()
     return comprobante
 
@@ -292,7 +334,18 @@ def _cuit_del_cliente(sesion: Session, cliente_id: int) -> str:
     una factura B o C. Lo que no sería legítimo es inventarlo.
     """
     tercero = sesion.get(Tercero, cliente_id)
-    return (tercero.cuit or "") if tercero else ""
+    # **Sólo dígitos.** El motor limpia guiones y espacios y nada más: un CUIT cargado
+    # con puntos (`30.70933285.2`) llegaba como «no es un CUIT» y se emitía a consumidor
+    # final —o, en una FCE, fallaba en ARCA—. Es lo mismo que mira `facturar`.
+    return "".join(c for c in (tercero.cuit or "") if c.isdigit()) if tercero else ""
+
+
+def _iva_cond_del_cliente(sesion: Session, cliente_id: int) -> int:
+    """El código de la condición de IVA del receptor, o `0` si no se sabe."""
+    tercero = sesion.get(Tercero, cliente_id)
+    if tercero is None:
+        return 0
+    return CODIGO_IVA_DE_LA_FAMILIA.get(tercero.condicion_iva, 0)
 
 
 def _fecha_de(crudo: str | None) -> date | None:
