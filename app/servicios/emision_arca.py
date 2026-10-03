@@ -46,6 +46,7 @@ from sqlalchemy.orm import Session
 from app.models.enums import CondicionIVA, TipoComprobante
 from app.models.maestros import RazonSocial, Tercero
 from app.models.operacion import Comprobante
+from app.schemas.comprobantes import NOMBRES_DE_TIPO
 
 #: El slug con el que esta instancia da de alta su fila en `arca_config`.
 #:
@@ -84,6 +85,9 @@ TIPOS_C = {TipoComprobante.FACTURA_C, TipoComprobante.NOTA_CREDITO_C, TipoCompro
 #: La FCE lleva además el vencimiento de pago, el CBU del emisor y la modalidad de
 #: transmisión. Los dos últimos salen de la configuración de ARCA de la instancia.
 TIPOS_FCE = {TipoComprobante.FCE_A, TipoComprobante.FCE_B, TipoComprobante.FCE_C}
+
+#: Los que ARCA sólo acepta con el CUIT del receptor (DocTipo 80): la clase A y toda FCE.
+TIPOS_CON_CUIT = {TipoComprobante.FACTURA_A, TipoComprobante.NOTA_CREDITO_A} | TIPOS_FCE
 
 
 #: La condición de IVA del cliente, con el **código con que la familia la guarda**
@@ -338,6 +342,49 @@ def _cuit_del_cliente(sesion: Session, cliente_id: int) -> str:
     # con puntos (`30.70933285.2`) llegaba como «no es un CUIT» y se emitía a consumidor
     # final —o, en una FCE, fallaba en ARCA—. Es lo mismo que mira `facturar`.
     return "".join(c for c in (tercero.cuit or "") if c.isdigit()) if tercero else ""
+
+
+def cuit_con_verificador_valido(digitos: str) -> bool:
+    """¿Son 11 dígitos con el dígito verificador de AFIP/ARCA bien calculado?
+
+    Es lo que ARCA mira antes de aceptar un `DocNro` (error 10015). Se chequea acá,
+    **sólo al emitir por ARCA**, y no en la ficha del cliente: el alta acepta a
+    propósito cualquier cosa con forma de CUIT (los de las demos y los de prueba no
+    cierran) y los clientes migrados de Suitrans traen un `1` de relleno.
+    """
+    if len(digitos) != 11 or not digitos.isdigit():
+        return False
+    pesos = (5, 4, 3, 2, 7, 6, 5, 4, 3, 2)
+    resto = sum(int(d) * p for d, p in zip(digitos[:10], pesos, strict=True)) % 11
+    verificador = (11 - resto) % 11
+    return int(digitos[10]) == (9 if verificador == 10 else verificador)
+
+
+def problema_del_cuit_del_cliente(tercero: Tercero, tipo: TipoComprobante) -> str | None:
+    """Por qué el CUIT del cliente no sirve para emitir este comprobante por ARCA, o `None`.
+
+    ARCA exige el CUIT del receptor (DocTipo 80) en las clases A y en toda FCE. Si el
+    cliente tiene un CUIT de 11 dígitos con el verificador mal, ARCA lo rechaza en
+    cualquier clase. Un CUIT que no es de 11 dígitos en una B o una C no es un error:
+    el motor lo manda como consumidor final, que es lo que esas clases admiten.
+
+    Sin esto el rechazo llega igual, pero de ARCA, como un 502 con `[10013] DocTipo
+    debe ser igual a 80` y `[10015] DocNro invalido`, que no le dice nada a quien factura.
+    """
+    crudo = tercero.cuit or ""
+    digitos = "".join(c for c in crudo if c.isdigit())
+    exige_cuit = tipo in TIPOS_CON_CUIT
+    if len(digitos) == 11:
+        if cuit_con_verificador_valido(digitos):
+            return None
+        return (f"el CUIT {crudo!r} del cliente {tercero.razon_social!r} no es valido "
+                "(el digito verificador no cierra): revisalo en la ficha del cliente")
+    if not exige_cuit:
+        return None
+    cargado = f"tiene {crudo!r}" if crudo.strip() else "no tiene CUIT cargado"
+    return (f"el cliente {tercero.razon_social!r} {cargado}, y una {NOMBRES_DE_TIPO[tipo]} "
+            "se emite a un receptor con CUIT de 11 digitos: cargalo en la ficha "
+            "del cliente antes de emitir por ARCA")
 
 
 def _iva_cond_del_cliente(sesion: Session, cliente_id: int) -> int:
