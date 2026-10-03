@@ -180,7 +180,7 @@ if [ -z "${CADENAS:-}" ]; then
   docker start "$CONTENEDOR" >/dev/null
   exit 12
 fi
-COMPOSE="$CHECKOUT/clientes/demo/docker-compose.yml"
+COMPOSE="${CLIENTES_DIR:-${LIBRA_CLIENTES_DIR:-$CHECKOUT/clientes}}/demo/docker-compose.yml"
 [ -f "$COMPOSE" ] || { log "ABORTA: no encontre $COMPOSE."; docker start "$CONTENEDOR" >/dev/null; exit 12; }
 while IFS= read -r cmd; do
   [ -z "$cmd" ] && continue

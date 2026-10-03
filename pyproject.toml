@@ -42,7 +42,10 @@ dependencies = [
     # v1.121.0 -> v1.122.0 (2026-10-03): `libracore.testing.pg_por_worker`, el helper de TEST que da una
     # base por worker de xdist (reglas/ci.md del wiki). Sin migracion: el salto es un modulo nuevo y su
     # test; no cambia nada de lo que corre en produccion.
-    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.122.0",
+    # v1.122.0 -> v1.123.0 (2026-10-03): `get_config().clientes_dir` (precedencia `configure(clientes_dir=)` >
+    # env `LIBRA_CLIENTES_DIR` > `repo_root/"clientes"`), para sacar `clientes/` del arbol del repo. El default
+    # no cambia. Sin migracion.
+    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.123.0",
 ]
 
 # Los motores de la familia entran en F1, desde repos privados por deploy key.

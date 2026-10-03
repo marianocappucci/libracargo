@@ -302,3 +302,29 @@ def test_la_instancia_de_dev_declara_el_SMTP_que_el_motor_va_a_buscar():
     # un patrón mal escrito daría la lista vacía y el test pasaría siempre.
     assert re.search(r"^\s+- LIBRAAUTH_SMTP_HOST=", bloque, re.MULTILINE)
     assert not re.search(r"^\s+- LIBRAAUTH_SMTP_INVENTADA=", bloque, re.MULTILINE)
+
+
+@pytest.mark.parametrize("script", ["nuevo_cliente", "panel_admin"])
+def test_clientes_dir_sale_del_motor_y_obedece_LIBRA_CLIENTES_DIR(script, tmp_path):
+    """`CLIENTES_DIR` de los scripts es `get_config().clientes_dir`, no `REPO_ROOT / "clientes"`.
+
+    Sin esto, sacar `clientes/` del árbol del repo (env `LIBRA_CLIENTES_DIR`) dejaría a
+    `panel_admin.py` mirando un directorio y al motor (`libracore.admin.services`) otro.
+    Sin la variable, el default no cambia: `<repo>/clientes`.
+    """
+    from libracore.provisioning import get_config
+
+    modulo = importlib.import_module(f"scripts.{script}")
+    try:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.delenv("LIBRA_CLIENTES_DIR", raising=False)
+            importlib.reload(modulo)
+            assert modulo.CLIENTES_DIR == modulo.REPO_ROOT / "clientes"
+            assert modulo.CLIENTES_DIR == get_config().clientes_dir
+
+            mp.setenv("LIBRA_CLIENTES_DIR", str(tmp_path))
+            importlib.reload(modulo)
+            assert modulo.CLIENTES_DIR == tmp_path
+            assert modulo.CLIENTES_DIR == get_config().clientes_dir
+    finally:
+        importlib.reload(modulo)  # ya sin la variable: deja el módulo como lo encontró

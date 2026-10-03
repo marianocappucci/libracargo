@@ -43,4 +43,4 @@ scripts/.npm_config.json
 
 # Las instancias de cliente que crea `scripts/nuevo_cliente.py`: un directorio
 # por cliente con su compose y su `.env`. Viven en el servidor, no en git.
-/clientes/
+/clientes
