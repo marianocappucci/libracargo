@@ -232,3 +232,22 @@ def test_una_fce_a_un_responsable_inscripto_obtiene_cae_y_no_deja_nada(cliente, 
     assert re.fullmatch(r"\d{14}", cuerpo["cae"]), cuerpo
     assert cliente.get("/api/comprobantes").json() == []
     assert cliente.get(f"/api/ordenes/{a['id']}").json()["estado"] == "pendiente"
+
+
+def test_un_cliente_inscripto_con_cuit_de_relleno_se_rechaza_antes_de_ir_a_arca(
+        cliente, datos, instancia):
+    """Los clientes migrados de Suitrans traen el CUIT `1` y la condición «inscripto».
+
+    Medido el 2026-10-03: sin esta guarda, ARCA contestaba `[10013] DocTipo debe ser
+    igual a 80` y `[10015] DocNro invalido` en un 502. Ahora se dice antes, con el
+    nombre del cliente y qué hacer.
+    """
+    _receptor(cliente, datos, condicion_iva="responsable_inscripto", cuit="1")
+
+    a, r = _ensayar(cliente, datos, instancia, "factura_a")
+
+    assert r.status_code == 422, r.text
+    assert "Agro Norte" in r.text and "ficha del cliente" in r.text, r.text
+    assert "10013" not in r.text, "no llegó a ARCA"
+    assert cliente.get("/api/comprobantes").json() == []
+    assert cliente.get(f"/api/ordenes/{a['id']}").json()["estado"] == "pendiente"

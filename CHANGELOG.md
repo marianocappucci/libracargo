@@ -6,6 +6,17 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Cambiado
 
+- **Un CUIT que no sirve se dice antes de ir a ARCA** (2026-10-03). Los clientes migrados de
+  Suitrans traen un `1` de relleno como CUIT (12 de 75) y dos tienen el dígito verificador mal.
+  Medido contra ARCA de homologación: una Factura A a un inscripto con CUIT `1` volvía como
+  `[10013] DocTipo debe ser igual a 80` y `[10015] DocNro invalido`, un 502 que no le dice nada
+  a quien factura (no quedaba comprobante: sólo el mensaje era malo). Ahora, **sólo al emitir
+  por ARCA** y antes de pedirle el número, un 422 dice qué cliente y qué cargar. Se exige CUIT
+  de 11 dígitos con verificador válido en la clase A y en toda FCE, y un verificador válido en
+  cualquier clase si el CUIT tiene 11 dígitos. **No cambia** la ficha del cliente (acepta
+  cualquier cosa, como siempre), ni el camino de registrar a mano, ni una B o una C a un
+  consumidor final sin CUIT.
+
 - **libracore `v1.121.0`** (2026-10-02; antes `v1.119.0`). Dos cosas que llegan a este producto:
   la **clave privada de ARCA se guarda con permisos `0600`** (con el motor anterior quedaba en
   `644`, legible dentro del contenedor, y las instancias vivas la tienen así: se cierran solas

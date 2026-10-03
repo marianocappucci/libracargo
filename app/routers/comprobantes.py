@@ -252,6 +252,12 @@ def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
             "social no lo tiene habilitado (cargá el certificado y la clave en "
             "Configuracion, con el CUIT de esta razon social)",
         )
+    if emite:
+        # Antes de pedirle el número a ARCA: un CUIT que no sirve se dice acá, con
+        # el nombre del cliente y qué hacer, en vez de volver como un 502 de ARCA.
+        problema = emision_arca.problema_del_cuit_del_cliente(cliente, datos.tipo)
+        if problema:
+            raise HTTPException(422, problema)
     ta = cfg_arca = razon = None
     if emite:
         try:
