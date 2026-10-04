@@ -6,6 +6,8 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Cambiado
 
+- **libracore `v1.126.0`** (2026-10-04; antes `v1.124.0`). Suma el nucleo `libracore.notas_de_credito` (este producto todavia no lo usa); la guarda del CUIT del receptor deja de bloquear las notas (ARCA autoriza la nota de credito a un CUIT que no cierra, igual que la factura), e incluye v1.125.0 (los routers de libracore rechazan booleanos en los campos numericos). Sin migración.
+
 - **libracore `v1.124.0` y la guarda del CUIT pasa al motor** (2026-10-04; antes `v1.123.0`). Un CUIT que no sirve
   se dice antes de ir a ARCA, y **esa lógica ya no vive en este repo** (regla del 2026-10-03: el arreglo de fondo
   vive siempre en el motor): `facturar` llama a `arca_wsfe.problema_del_receptor` de `libracore`, y `solicitar_cae`
