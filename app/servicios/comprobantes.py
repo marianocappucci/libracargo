@@ -32,6 +32,23 @@ from app.schemas.comprobantes import (
 
 CERO = Decimal("0.00")
 
+#: Las notas de crédito, que no suman ni restan en los totales: ver `solo_facturas`.
+TIPOS_NOTA = frozenset({
+    TipoComprobante.NOTA_CREDITO_A,
+    TipoComprobante.NOTA_CREDITO_B,
+    TipoComprobante.NOTA_CREDITO_C,
+})
+
+
+def solo_facturas(consulta):
+    """Saca las notas de crédito de una suma de lo facturado.
+
+    La nota **total** acredita lo mismo que su factura, y la factura ya queda `anulado` (sale de los totales
+    en todo el rango). Si la nota se sumara, lo facturado subiría en vez de bajar, y del lado de las órdenes no
+    hay nada que la compense. Cuando exista la nota parcial esto se revisa (ver el diseño de la nota).
+    """
+    return consulta.where(Comprobante.tipo.notin_(TIPOS_NOTA))
+
 
 def etiqueta(tipo: TipoComprobante, punto_venta: int, numero: int) -> str:
     """`Factura A 0001-00000123` — como se lee en un papel argentino.
@@ -95,6 +112,7 @@ def totales_por_razon_social(
         ).where(Comprobante.anulado.is_(False)).group_by(Comprobante.razon_social_id),
         desde, hasta,
     )
+    por_comprobante = solo_facturas(por_comprobante)
     por_orden = _acotar(
         select(
             OrdenCarga.razon_social_id,

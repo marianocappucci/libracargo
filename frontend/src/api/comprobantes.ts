@@ -5,8 +5,8 @@ import type { Orden } from '@/api/ordenes'
 export type TipoComprobante =
   | 'factura_a' | 'factura_b' | 'factura_c'
   | 'nota_credito_a' | 'nota_credito_b' | 'nota_credito_c'
-  // Factura de Crédito Electrónica MiPyME. Sólo facturas: las notas no tienen
-  // camino de emisión todavía.
+  // Factura de Crédito Electrónica MiPyME. Sólo facturas: la nota de una FCE
+  // todavía no existe (ARCA sólo deja anularla si el comprador la rechazó).
   | 'fce_a' | 'fce_b' | 'fce_c'
 
 /** Lo que devuelve facturar cuando el ambiente de ARCA es homologación.
@@ -52,6 +52,9 @@ export type Comprobante = {
   fch_vto_pago?: string | null
   fce_cbu?: string | null
   fce_transmision?: string | null
+  // Sólo una nota de crédito los tiene: a qué comprobante acredita y por qué.
+  comprobante_asociado_id?: number | null
+  motivo?: string | null
 }
 
 export type SumaDeOrdenes = { cantidad: number; neto: string; iva: string; total: string }
@@ -138,4 +141,9 @@ export const comprobantes = {
   facturar: (datos: unknown) =>
     api.post<Comprobante | Ensayo>('/api/comprobantes', datos),
   anular: (id: number) => api.del<Comprobante>(`/api/comprobantes/${id}`),
+  // La nota de crédito **total** de un comprobante con CAE. Sin importe, fecha ni tipo: la nota es de hoy, por
+  // el total y de la letra del original; las decide el servidor (y el motor), no quien llama. Contra
+  // homologación contesta un `Ensayo` y no guarda nada, igual que `facturar`.
+  notaDeCredito: (id: number, motivo: string) =>
+    api.post<Comprobante | Ensayo>(`/api/comprobantes/${id}/nota-de-credito`, { motivo }),
 }

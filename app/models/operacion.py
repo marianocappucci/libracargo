@@ -81,6 +81,16 @@ class Comprobante(Base, Auditable):
     fce_cbu: Mapped[str | None] = mapped_column(String(22), nullable=True)
     fce_transmision: Mapped[str | None] = mapped_column(String(3), nullable=True)
 
+    #: A qué comprobante acredita esta nota de crédito. `NULL` en todo lo que no es
+    #: una nota. Una nota se guarda **en positivo** y el tipo dice el signo (el `CHECK`
+    #: de importes sigue valiendo). Ver `notas_de_credito` y el ADR-027.
+    comprobante_asociado_id: Mapped[int | None] = mapped_column(
+        ForeignKey("comprobantes.id", ondelete="RESTRICT", name="fk_comprobantes_asociado"),
+        nullable=True,
+    )
+    #: Por qué se emitió la nota. Sólo las notas lo tienen.
+    motivo: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     __table_args__ = (
         UniqueConstraint(
             "razon_social_id",
@@ -90,6 +100,15 @@ class Comprobante(Base, Auditable):
             name="uq_comprobantes_numeracion",
         ),
         CheckConstraint("neto >= 0 AND iva >= 0 AND total >= 0", name="ck_comprobantes_signos"),
+        # Toda nota acredita a un comprobante, y nada que no sea una nota lo hace.
+        # `::text` por lo mismo que el de la FCE: no depende de que el valor del
+        # `ENUM` ya esté creado en la misma transacción.
+        CheckConstraint(
+            "(tipo::text IN ('nota_credito_a', 'nota_credito_b', 'nota_credito_c'))"
+            " = (comprobante_asociado_id IS NOT NULL)",
+            name="ck_comprobantes_nota_con_asociado",
+        ),
+        Index("ix_comprobantes_asociado", "comprobante_asociado_id"),
         # Una FCE sin fecha de vencimiento de pago no existe: ARCA la rechaza (10163).
         # `::text` y no el literal del `ENUM`: no depende de que el valor ya esté
         # creado en la misma transacción de la migración.

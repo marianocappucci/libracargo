@@ -109,6 +109,11 @@ function Totales({ filas, razones }: { filas: TotalDeRazonSocial[]; razones: Opc
   )
 }
 
+/** Una factura (no una nota): lo único a lo que se le emite una nota de crédito. La FCE queda afuera. */
+function esFactura(tipo: Comprobante['tipo']): boolean {
+  return tipo === 'factura_a' || tipo === 'factura_b' || tipo === 'factura_c'
+}
+
 export default function Comprobantes() {
   const [filas, setFilas] = useState<Comprobante[]>([])
   const [totales, setTotales] = useState<TotalDeRazonSocial[]>([])
@@ -119,6 +124,11 @@ export default function Comprobantes() {
   const [detalle, setDetalle] = useState<ComprobanteConOrdenes | null>(null)
   const [params, setParams] = useSearchParams()
   const [confirmando, setConfirmando] = useState(false)
+  // La nota de crédito: pide un motivo y se confirma aparte, igual que anular.
+  const [notaAbierta, setNotaAbierta] = useState(false)
+  const [motivo, setMotivo] = useState('')
+  const [emitiendo, setEmitiendo] = useState(false)
+  const [aviso, setAviso] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -153,7 +163,10 @@ export default function Comprobantes() {
 
   async function ver(id: number) {
     setError(null)
+    setAviso(null)
     setConfirmando(false)
+    setNotaAbierta(false)
+    setMotivo('')
     try {
       setDetalle(await comprobantes.ver(id))
     } catch (e) {
@@ -170,6 +183,29 @@ export default function Comprobantes() {
       recargar()
     } catch (e) {
       setError(mensajeDeError(e))
+    }
+  }
+
+  async function emitirNota(id: number) {
+    setError(null)
+    setEmitiendo(true)
+    try {
+      const r = await comprobantes.notaDeCredito(id, motivo.trim())
+      if ('ensayo' in r) {
+        // Homologación: se corrió todo contra ARCA y no se guardó nada. El comprobante sigue como estaba.
+        setAviso(`Ensayo contra ${r.ambiente}: ARCA autorizó una nota de crédito de prueba `
+          + `(CAE ${r.cae ?? 's/n'}) y no se guardó nada.`)
+        setNotaAbierta(false)
+        return
+      }
+      setDetalle(null)
+      setNotaAbierta(false)
+      setMotivo('')
+      recargar()
+    } catch (e) {
+      setError(mensajeDeError(e))
+    } finally {
+      setEmitiendo(false)
     }
   }
 
@@ -278,6 +314,13 @@ export default function Comprobantes() {
                   </p>
                 </div>
               </div>
+              {detalle.comprobante.comprobante_asociado_id != null && (
+                <p role="note" className="text-sm">
+                  Acredita al comprobante #{detalle.comprobante.comprobante_asociado_id}
+                  {detalle.comprobante.motivo ? ` · ${detalle.comprobante.motivo}` : ''}
+                </p>
+              )}
+              {aviso && <p role="status" className="text-sm font-semibold">{aviso}</p>}
               {!detalle.coinciden && (
                 <p role="alert" className="text-destructive text-sm font-semibold">
                   🔴 El comprobante no dice lo mismo que sus órdenes. No usarlo
@@ -296,12 +339,42 @@ export default function Comprobantes() {
           )}
           <DialogFooter>
             {detalle && !detalle.comprobante.anulado && detalle.comprobante.cae && (
-              // 🔴 Con CAE no se ofrece el botón: anular acá no llega a ARCA, y el comprobante
-              // seguiría vigente allá mientras sus órdenes se podrían facturar de nuevo.
+              // 🔴 Con CAE no se ofrece anular: anular no llega a ARCA, y el comprobante seguiría vigente
+              // allá mientras sus órdenes se podrían facturar de nuevo. Se revierte con una nota de crédito
+              // **emitida por ARCA**; la nota de una FCE todavía no está.
               <span className="mr-auto self-center text-sm" role="note">
                 Lo emitió ARCA (CAE {detalle.comprobante.cae}): no se anula desde acá.
-                Hace falta una nota de crédito emitida por ARCA.
+                {esFactura(detalle.comprobante.tipo)
+                  ? ' Para revertirlo, emití una nota de crédito.'
+                  : detalle.comprobante.tipo.startsWith('fce_')
+                    ? ' La nota de una factura de crédito electrónica todavía no está.'
+                    : ''}
               </span>
+            )}
+            {detalle && !detalle.comprobante.anulado && detalle.comprobante.cae
+              && esFactura(detalle.comprobante.tipo) && (
+              notaAbierta ? (
+                <div className="grid w-full gap-2">
+                  <Campo id="motivo-nota" etiqueta="Motivo de la nota de crédito" valor={motivo}
+                         alCambiar={setMotivo} />
+                  <p className="text-muted-foreground text-xs">
+                    Es por el total, con fecha de hoy. ARCA la autoriza, las órdenes vuelven a
+                    pendientes y la cuenta del cliente recibe el abono.
+                  </p>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="ghost" onClick={() => setNotaAbierta(false)}>No</Button>
+                    <Button variant="destructive"
+                            disabled={emitiendo || motivo.trim().length < 3}
+                            onClick={() => emitirNota(detalle.comprobante.id)}>
+                      Confirmar nota de crédito
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button variant="destructive" onClick={() => setNotaAbierta(true)}>
+                  Emitir nota de crédito
+                </Button>
+              )
             )}
             {detalle && !detalle.comprobante.anulado && !detalle.comprobante.cae && (
               confirmando ? (
