@@ -11,6 +11,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
+from libracore import arca_wsfe
 from sqlalchemy.exc import IntegrityError
 
 from app.models import Comprobante, RazonSocial, Tercero, TipoComprobante
@@ -87,7 +88,7 @@ def test_una_fce_viaja_a_arca_con_su_codigo_y_lo_que_exige(cliente, datos, razon
     assert factura["fch_vto_pago"] == VENCIMIENTO
     assert factura["fce_cbu"] == CBU
     assert factura["fce_transmision"] == "SCA"
-    assert factura["cliente_cuit"] == "30709332852"
+    assert arca_wsfe.cuit_del_receptor(factura) == "30709332852"
 
 
 def test_la_fce_guarda_con_que_salio(cliente, datos, razon_con_fce, monkeypatch):
@@ -150,8 +151,12 @@ def test_la_fce_entra_en_los_totales_y_en_la_cuenta_corriente(cliente, datos, ra
 @pytest.mark.parametrize("cuit", ["30-70933285-2", "30.70933285.2", "30 70933285 2", "30709332852"])
 def test_el_cuit_viaja_a_arca_en_digitos_sea_cual_sea_como_se_cargo(
         cliente, datos, razon_con_fce, monkeypatch, cuit):
-    """El motor limpia guiones y espacios y nada más: con puntos, el CUIT llegaba como «no es
-    un CUIT». Se normaliza acá a dígitos."""
+    """El CUIT llega a ARCA en dígitos sea cual sea como se cargó (con guiones, puntos o espacios).
+
+    Lo normaliza **el motor** (`arca_wsfe.cuit_del_receptor`, libracore v1.124.0): antes sólo quitaba
+    guiones y espacios, y con puntos el CUIT llegaba como «no es un CUIT»; este producto lo reducía
+    a dígitos por su cuenta. Ese parche se retiró (el arreglo de fondo vive en el motor): el producto
+    manda el CUIT tal cual y el test mira lo que el motor haría con él."""
     cliente.put(f"/api/terceros/{datos['cliente']}", json={
         "razon_social": "Agro Norte", "es_cliente": True,
         "condicion_iva": "responsable_inscripto", "cuit": cuit,
@@ -161,7 +166,7 @@ def test_el_cuit_viaja_a_arca_en_digitos_sea_cual_sea_como_se_cargo(
 
     assert _facturar(cliente, datos, [a], razon_con_fce).status_code == 201
     (factura,) = [p[1] for p in pedidos if p[0] == "cae"]
-    assert factura["cliente_cuit"] == "30709332852"
+    assert arca_wsfe.cuit_del_receptor(factura) == "30709332852"
 
 
 # ── Lo que se rechaza, y dónde ──────────────────────────────────────────────

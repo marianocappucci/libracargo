@@ -45,7 +45,10 @@ dependencies = [
     # v1.122.0 -> v1.123.0 (2026-10-03): `get_config().clientes_dir` (precedencia `configure(clientes_dir=)` >
     # env `LIBRA_CLIENTES_DIR` > `repo_root/"clientes"`), para sacar `clientes/` del arbol del repo. El default
     # no cambia. Sin migracion.
-    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.123.0",
+    # v1.123.0 -> v1.124.0 (2026-10-04): la guarda del CUIT del receptor pasa al motor
+    # (`arca_wsfe.problema_del_receptor`, que `solicitar_cae` ya corre antes de llamar a ARCA) y la nota de
+    # credito repetida da 409 (este producto no usa ese endpoint). Sin migracion.
+    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.124.0",
 ]
 
 # Los motores de la familia entran en F1, desde repos privados por deploy key.
