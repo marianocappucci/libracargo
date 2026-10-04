@@ -695,10 +695,15 @@ def test_una_clave_ya_guardada_abierta_se_cierra_al_resolver_las_credenciales(cl
 
 # ── El CUIT del cliente, dicho antes de ir a ARCA ───────────────────────────
 #
-# Los clientes migrados de Suitrans traen un `1` de relleno como CUIT (12 de 75) y
-# dos con el dígito verificador mal. Medido contra ARCA de homologación el 2026-10-03:
-# una Factura A a un inscripto con CUIT `1` vuelve como `[10013] DocTipo debe ser igual
-# a 80` y `[10015] DocNro invalido`, un 502 que no le dice nada a quien factura.
+# 🔑 **La regla no vive acá: es `arca_wsfe.problema_del_receptor` de libracore** (el arreglo de fondo
+# vive siempre en el motor), con sus propios tests en el motor. Lo que se prueba en este archivo es
+# la **integración del producto**: que `facturar` conteste con un 422 que nombra al cliente **antes
+# de pedirle nada a ARCA**, y que lo haga delegando en el motor y no con una copia propia.
+#
+# Contexto, medido contra ARCA de homologación el 2026-10-03: los clientes migrados de Suitrans traen
+# un `1` de relleno como CUIT (12 de 75) y dos con el dígito verificador mal. Una Factura A con CUIT
+# `1` vuelve `[10013]` y `[10015]` (un 502 que no explica nada); con el verificador mal, una **B** se
+# rechaza (`10015`) y una **A ARCA la autoriza con CAE** y sólo avisa (`10238`).
 
 def _cliente_con_cuit(cliente, datos, cuit, condicion="responsable_inscripto"):
     r = cliente.put(f"/api/terceros/{datos['cliente']}", json={
@@ -731,7 +736,8 @@ def test_una_factura_a_sin_cuit_valido_se_rechaza_antes_de_ir_a_arca(
 @pytest.mark.parametrize("tipo", ["factura_a", "factura_b", "factura_c"])
 def test_un_cuit_de_11_digitos_con_verificador_mal_se_rechaza_en_toda_clase(
         cliente, datos, razon_con_arca, monkeypatch, tipo):
-    """ARCA rechaza el `DocNro` en cualquier clase, así que se dice acá en todas."""
+    """Con 11 dígitos el verificador tiene que cerrar **en toda clase**: una B se rechaza en ARCA y una A se
+    autoriza con una observación («la CUIT no existe»), y esa factura habría que anularla después."""
     pedidos = _arca_responde(monkeypatch)
     _cliente_con_cuit(cliente, datos, "20-10580053-9")   # un CUIT real de Suitrans, mal cargado
     a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
@@ -739,7 +745,7 @@ def test_un_cuit_de_11_digitos_con_verificador_mal_se_rechaza_en_toda_clase(
     r = facturar(cliente, datos, [a], razon=razon_con_arca, numero=None, tipo=tipo)
 
     assert r.status_code == 422, r.text
-    assert "digito verificador" in r.text and "20-10580053-9" in r.text, r.text
+    assert "dígito verificador" in r.text and "20-10580053-9" in r.text, r.text
     assert pedidos == []
 
 
@@ -754,7 +760,7 @@ def test_una_fce_con_el_verificador_mal_tambien_se_rechaza_antes_de_ir_a_arca(
     r = _facturar(cliente, datos, [a], razon_con_arca)
 
     assert r.status_code == 422, r.text
-    assert "digito verificador" in r.text, r.text
+    assert "dígito verificador" in r.text, r.text
     assert pedidos == []
 
 
@@ -792,11 +798,35 @@ def test_la_ficha_del_cliente_sigue_aceptando_cualquier_cuit(cliente, datos):
     assert r.status_code == 200, r.text
 
 
-@pytest.mark.parametrize("cuit, valido", [
-    ("30709332852", True), ("20289933604", True), ("20121094615", True),
-    ("20105800539", False), ("20116417680", False),
-    ("1", False), ("", False), ("3070933285", False), ("307093328521", False),
-    ("3070933285X", False),
-])
-def test_el_digito_verificador(cuit, valido):
-    assert emision_arca.cuit_con_verificador_valido(cuit) is valido
+def test_la_guarda_es_la_del_motor_y_no_una_copia_propia(cliente, datos, razon_con_arca, monkeypatch):
+    """🔑 Si el motor dice que el receptor no sirve, `facturar` lo repite tal cual: no decide nada.
+
+    El motor responde algo que ninguna regla local diría, y el 422 lo lleva. Y el producto no tiene su
+    propio validador de CUIT: si reaparece, esta regla (`reglas/producto.md`) volvió a romperse.
+    """
+    pedidos = _arca_responde(monkeypatch)
+    monkeypatch.setattr(emision_arca.arca_wsfe, "problema_del_receptor",
+                        lambda factura: "el motor dice que este receptor no sirve")
+    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+
+    r = facturar(cliente, datos, [a], razon=razon_con_arca, numero=None, tipo="factura_b")
+
+    assert r.status_code == 422, r.text
+    assert "el motor dice que este receptor no sirve" in r.text, r.text
+    assert pedidos == []
+    assert not hasattr(emision_arca, "cuit_con_verificador_valido"), "una copia propia del validador"
+
+
+def test_el_pedido_de_cae_lleva_el_cuit_tal_cual_y_el_nombre_del_cliente(
+        cliente, datos, razon_con_arca, monkeypatch):
+    """El producto no normaliza el CUIT (lo hace el motor) y le pasa el nombre para que el mensaje lo diga."""
+    pedidos = _arca_responde(monkeypatch)
+    _cliente_con_cuit(cliente, datos, "30.70933285.2")
+    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+
+    r = facturar(cliente, datos, [a], razon=razon_con_arca, numero=None, tipo="factura_a")
+
+    assert r.status_code == 201, r.text
+    (factura,) = [p[1] for p in pedidos if p[0] == "cae"]
+    assert factura["cliente_cuit"] == "30.70933285.2"
+    assert factura["cliente_razon"] == "Agro Norte"

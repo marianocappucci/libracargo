@@ -6,17 +6,18 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Cambiado
 
-- **Un CUIT que no sirve se dice antes de ir a ARCA** (2026-10-03). Los clientes migrados de
-  Suitrans traen un `1` de relleno como CUIT (12 de 75) y dos tienen el dígito verificador mal.
-  Medido contra ARCA de homologación: una Factura A a un inscripto con CUIT `1` volvía como
-  `[10013] DocTipo debe ser igual a 80` y `[10015] DocNro invalido`, un 502 que no le dice nada
-  a quien factura (no quedaba comprobante: sólo el mensaje era malo). Ahora, **sólo al emitir
-  por ARCA** y antes de pedirle el número, un 422 dice qué cliente y qué cargar. Se exige CUIT
-  de 11 dígitos con verificador válido en la clase A y en toda FCE, y un verificador válido en
-  cualquier clase si el CUIT tiene 11 dígitos. **No cambia** la ficha del cliente (acepta
-  cualquier cosa, como siempre), ni el camino de registrar a mano, ni una B o una C a un
-  consumidor final sin CUIT.
-
+- **libracore `v1.124.0` y la guarda del CUIT pasa al motor** (2026-10-04; antes `v1.123.0`). Un CUIT que no sirve
+  se dice antes de ir a ARCA, y **esa lógica ya no vive en este repo** (regla del 2026-10-03: el arreglo de fondo
+  vive siempre en el motor): `facturar` llama a `arca_wsfe.problema_del_receptor` de `libracore`, y `solicitar_cae`
+  corre la misma guarda antes de cualquier llamada de red. Se borraron de acá el validador del dígito verificador, la
+  lista de tipos que exigen CUIT y la reducción del CUIT a dígitos (el motor lo normaliza, también con puntos).
+  Los clientes migrados de Suitrans traen un `1` de relleno como CUIT (12 de 75) y dos con el verificador mal.
+  **Medido contra ARCA de homologación (2026-10-03):** una Factura A con CUIT `1` vuelve `[10013]` y `[10015]` (un 502
+  que no explica nada); con el verificador mal, una **B** se rechaza (`10015`) y una **A ARCA la autoriza con CAE** y
+  sólo avisa (`10238`: «la CUIT receptora no existe»). Por eso se exige CUIT de 11 dígitos en la clase A y en toda
+  FCE, y un verificador válido en cualquier clase si tiene 11 dígitos. **No cambia** la ficha del cliente (acepta
+  cualquier CUIT), ni registrar a mano, ni una B o una C a un consumidor final sin CUIT. El salto de pin no trae
+  migración; trae además la nota de crédito repetida con 409, que este producto no usa.
 - **libracore `v1.121.0`** (2026-10-02; antes `v1.119.0`). Dos cosas que llegan a este producto:
   la **clave privada de ARCA se guarda con permisos `0600`** (con el motor anterior quedaba en
   `644`, legible dentro del contenedor, y las instancias vivas la tienen así: se cierran solas
