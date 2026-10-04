@@ -389,7 +389,10 @@ def datos(cliente):
     """Los maestros mínimos para que una orden exista."""
     return {
         "cliente": _crear(cliente, "/api/terceros",
-                          {"razon_social": "Agro Norte", "es_cliente": True}),
+                          {"razon_social": "Agro Norte", "es_cliente": True,
+                           # Un CUIT con dígito verificador válido: emitir por ARCA una
+                           # clase A a un receptor sin CUIT no sale (ver `emision_arca`).
+                           "cuit": "30-70933285-2"}),
         "otro_cliente": _crear(cliente, "/api/terceros",
                                {"razon_social": "Molino Sur", "es_cliente": True}),
         "origen": _crear(cliente, "/api/localidades", {"nombre": "Suipacha"}),

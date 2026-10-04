@@ -280,6 +280,7 @@ async def pedir_cae(
     neto = Decimal(comprobante.neto)
     iva = Decimal(comprobante.iva)
     es_c = comprobante.tipo in TIPOS_C
+    tercero = sesion.get(Tercero, comprobante.cliente_id)
 
     factura = {
         "tipo": CODIGO_ARCA[comprobante.tipo],
@@ -293,7 +294,11 @@ async def pedir_cae(
         # Por id y no por relacion: `Comprobante` guarda `cliente_id` y no tiene
         # un `relationship` --- este modelo evita las relaciones cargadas para
         # que un listado no dispare un N+1 sin que nadie lo pida.
-        "cliente_cuit": _cuit_del_cliente(sesion, comprobante.cliente_id),
+        # El CUIT va **tal cual está cargado**: el motor lo normaliza a dígitos y valida
+        # al receptor (`arca_wsfe.problema_del_receptor`); este producto no repite esa
+        # lógica. La razón social viaja para que el mensaje del motor nombre al cliente.
+        "cliente_cuit": (tercero.cuit or "") if tercero else "",
+        "cliente_razon": tercero.razon_social if tercero else "",
         "cliente_iva_cond": _iva_cond_del_cliente(sesion, comprobante.cliente_id),
         "subtotal": float(neto + iva) if es_c else float(neto),
         "iva_amount": 0.0 if es_c else float(iva),
@@ -327,17 +332,20 @@ async def pedir_cae(
     return comprobante
 
 
-def _cuit_del_cliente(sesion: Session, cliente_id: int) -> str:
-    """El CUIT del receptor, o vacío.
+def problema_del_cuit_del_cliente(tercero: Tercero, tipo: TipoComprobante) -> str | None:
+    """Por qué el CUIT del cliente no sirve para emitir este comprobante por ARCA, o `None`.
 
-    Vacío es legítimo: un consumidor final no tiene CUIT y ARCA lo acepta en
-    una factura B o C. Lo que no sería legítimo es inventarlo.
+    **Esta función no decide nada: delega en el motor** (`arca_wsfe.problema_del_receptor`), que
+    es donde vive la guarda del CUIT de la familia (regla del 2026-10-03: el arreglo de fondo vive
+    siempre en el motor). Lo único propio del producto es traducir su tipo de comprobante al código
+    de ARCA y existir para que `facturar` conteste con un 422 **antes de pedir el número**, en
+    lugar de dejar que el mismo mensaje llegue después como un rechazo de ARCA.
     """
-    tercero = sesion.get(Tercero, cliente_id)
-    # **Sólo dígitos.** El motor limpia guiones y espacios y nada más: un CUIT cargado
-    # con puntos (`30.70933285.2`) llegaba como «no es un CUIT» y se emitía a consumidor
-    # final —o, en una FCE, fallaba en ARCA—. Es lo mismo que mira `facturar`.
-    return "".join(c for c in (tercero.cuit or "") if c.isdigit()) if tercero else ""
+    return arca_wsfe.problema_del_receptor({
+        "tipo": CODIGO_ARCA[tipo],
+        "cliente_cuit": tercero.cuit or "",
+        "cliente_razon": tercero.razon_social,
+    })
 
 
 def _iva_cond_del_cliente(sesion: Session, cliente_id: int) -> int:
