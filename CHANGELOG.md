@@ -4,7 +4,17 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ## [Unreleased]
 
+### Agregado
+
+- **Nota de crédito contra ARCA** (`POST /api/comprobantes/{id}/nota-de-credito`, ADR-027). Un comprobante emitido por ARCA se revierte con una nota
+  de crédito **total**, autorizada por ARCA y asociada a su factura; el original queda anulado, sus órdenes vuelven a pendientes y la cuenta del
+  cliente recibe el abono. La lógica es la del motor (`libracore.notas_de_credito`): este producto sólo guarda la nota y cierra lo suyo. La
+  pantalla de comprobantes ofrece «Emitir nota de crédito» (pide el motivo). **Migración `0013`, aditiva** (`comprobante_asociado_id`, `motivo`).
+  Las notas no suman en los totales ni en los reportes. Una FCE todavía no tiene nota.
+
 ### Cambiado
+
+- **libracore `v1.126.0`** (2026-10-04; antes `v1.124.0`). Suma el nucleo `libracore.notas_de_credito` (este producto todavia no lo usa); la guarda del CUIT del receptor deja de bloquear las notas (ARCA autoriza la nota de credito a un CUIT que no cierra, igual que la factura), e incluye v1.125.0 (los routers de libracore rechazan booleanos en los campos numericos). Sin migración.
 
 - **libracore `v1.124.0` y la guarda del CUIT pasa al motor** (2026-10-04; antes `v1.123.0`). Un CUIT que no sirve
   se dice antes de ir a ARCA, y **esa lógica ya no vive en este repo** (regla del 2026-10-03: el arreglo de fondo

@@ -12,10 +12,12 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
+from libracore.notas_de_credito import NotaNoPermitida
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import tiempo
 from app.auth import get_current_user, require_staff
 from app.db import obtener_sesion
 from app.models.cuentas import MovimientoCuenta
@@ -34,10 +36,16 @@ from app.schemas.comprobantes import (
     ComprobanteConOrdenes,
     ComprobanteOut,
     FacturarIn,
+    NotaDeCreditoIn,
     TotalDeRazonSocial,
 )
-from app.servicios import auditoria, emision_arca
-from app.servicios.comprobantes import etiqueta, sumar_ordenes, totales_por_razon_social
+from app.servicios import auditoria, emision_arca, notas_de_credito
+from app.servicios.comprobantes import (
+    TIPOS_NOTA,
+    etiqueta,
+    sumar_ordenes,
+    totales_por_razon_social,
+)
 
 router = APIRouter(prefix="/api/comprobantes", tags=["comprobantes"],
                    dependencies=[Depends(require_staff)])
@@ -112,7 +120,9 @@ def traer(id_: int, sesion: Session = Depends(obtener_sesion)):
     comprobante = _traer(sesion, id_)
     ordenes = _ordenes_de(sesion, id_)
     suma = sumar_ordenes(ordenes)
-    if comprobante.anulado:
+    if comprobante.anulado or comprobante.tipo in TIPOS_NOTA:
+        # Una nota de crédito no agrupa órdenes: acredita a un comprobante. Compararla con una suma de
+        # órdenes que no tiene la mostraría siempre como un comprobante que no coincide con las suyas.
         # Un anulado devolvió sus órdenes a pendientes, así que sus importes ya
         # no tienen contra qué compararse. Lo que sí tiene que valer es que no
         # le haya quedado ninguna colgada — una orden todavía apuntando a un
@@ -390,7 +400,7 @@ def anular(id_: int, sesion: Session = Depends(obtener_sesion),
         # vuelven a pendientes y se pueden facturar de nuevo —dos facturas por lo
         # mismo—, y la cuenta corriente quedaría revertida contra un comprobante que ARCA
         # y el cliente siguen teniendo. Revertirlo pide una nota de crédito **emitida por
-        # ARCA**, que este producto todavía no emite (ADR-026).
+        # ARCA** (ADR-026), que sale de `POST /{id}/nota-de-credito` (ADR-027).
         #
         # `cae IS NULL` es el estado de todo lo registrado a mano y de lo migrado del
         # legado: eso se sigue anulando como siempre.
@@ -399,8 +409,8 @@ def anular(id_: int, sesion: Session = Depends(obtener_sesion),
             "un comprobante emitido por ARCA (tiene CAE) no se puede anular desde aca: ARCA "
             "lo tiene registrado y sigue vigente alla"
             + (", y el comprador puede aceptarlo" if comprobante.tipo in TIPOS_FCE else "")
-            + ". Hace falta una nota de credito emitida por ARCA, que este producto todavia "
-            "no emite",
+            + ". Para revertirlo, emiti una nota de credito (POST "
+            f"/api/comprobantes/{id_}/nota-de-credito): sale de ARCA y deja las ordenes pendientes",
         )
 
     antes = auditoria.instantanea(comprobante)
@@ -426,3 +436,94 @@ def anular(id_: int, sesion: Session = Depends(obtener_sesion),
         raise traducir_integridad(err) from None
     sesion.refresh(comprobante)
     return comprobante
+
+
+#: El mismo mapa que el router de facturas del motor: la nota es una sola para toda la familia, y quien la
+#: consume por HTTP tiene que recibir el mismo código por el mismo motivo en cualquier producto.
+_STATUS_DE_NOTA = {
+    NotaNoPermitida.TIPO: 400,
+    NotaNoPermitida.YA_TIENE_NOTA: 409,
+    NotaNoPermitida.NOTA_SIN_CAE: 409,
+    NotaNoPermitida.EN_CURSO: 409,
+    NotaNoPermitida.RECEPTOR: 422,
+}
+
+
+@router.post("/{id_}/nota-de-credito", response_model=ComprobanteOut, status_code=201)
+# `def` y no `async def`, por lo mismo que `facturar`: la sesión y `openssl` son sincrónicos y bloquearían el
+# loop de uvicorn. Lo asincrónico (WSAA y WSFE) va con `asyncio.run` en un loop propio de este hilo.
+def nota_de_credito(id_: int, datos: NotaDeCreditoIn, sesion: Session = Depends(obtener_sesion),
+                    actual: dict = Depends(get_current_user)):
+    """Revierte un comprobante emitido por ARCA con una nota de crédito **total**, autorizada por ARCA.
+
+    La lógica es la del motor (`libracore.notas_de_credito`): una factura se acredita una sola vez, el CUIT del
+    receptor tiene que servir, dos pedidos a la vez emiten una sola nota, y la nota sale con la fecha de hoy y
+    asociada a su factura. Lo propio de este producto, que pasa **en la misma transacción**:
+
+    - el comprobante original queda `anulado` y sus **órdenes vuelven a pendientes** (se pueden refacturar);
+    - la cuenta corriente del cliente recibe el abono, con la fecha de la nota.
+
+    ⚠️ **Si ARCA rechaza, no queda nada**: ni la nota, ni el original anulado, ni el abono. Contra
+    homologación se corre todo y se revierte (ver `facturar`): una prueba no mueve la cuenta del cliente.
+    """
+    # `FOR UPDATE`: un segundo pedido espera a que éste termine en vez de leer el original a medio cerrar.
+    original = sesion.get(Comprobante, id_, with_for_update=True)
+    if original is None:
+        raise HTTPException(404, f"no existe el comprobante {id_}")
+    if original.anulado:
+        raise HTTPException(409, f"el comprobante {id_} ya esta anulado")
+    if not original.cae:
+        raise HTTPException(
+            409,
+            "este comprobante no tiene CAE: ARCA no lo conoce, asi que no hay nada que acreditar. "
+            "Se anula desde aca (DELETE) como siempre",
+        )
+    if original.tipo in TIPOS_FCE:
+        # La nota de una FCE todavía no existe acá (fase 3 del diseño). Medido en homologación: sin que el
+        # comprador la rechace, ARCA no deja anularla (10154) y una nota total supera el saldo (10184).
+        raise HTTPException(
+            422,
+            "la nota de credito de una factura de credito electronica todavia no esta: ARCA solo deja "
+            "anularla si el comprador la rechazo, y una nota por el total supera su saldo",
+        )
+
+    hoy = tiempo.hoy()
+    try:
+        nota, cfg = asyncio.run(notas_de_credito.emitir(
+            sesion, original, motivo=datos.motivo, hoy=hoy))
+    except NotaNoPermitida as e:
+        sesion.rollback()
+        raise HTTPException(_STATUS_DE_NOTA.get(e.codigo, 409), str(e)) from None
+    except emision_arca.ArcaNoConfigurado as e:
+        sesion.rollback()
+        raise HTTPException(409, str(e)) from None
+    except emision_arca.ArcaAmbiguo as e:
+        sesion.rollback()
+        raise HTTPException(409, str(e)) from None
+    except emision_arca.ArcaRechazo as e:
+        sesion.rollback()
+        raise HTTPException(502, f"ARCA rechazo la nota de credito: {e}") from None
+    except IntegrityError as err:
+        sesion.rollback()
+        raise traducir_integridad(err) from None
+
+    if emision_arca.es_ensayo(cfg):
+        # Se corrió todo contra homologación y no se guarda nada (ver `facturar`). La respuesta se arma antes
+        # del rollback: después `nota` queda expirada.
+        respuesta = _respuesta_de_ensayo(nota, cfg)
+        sesion.rollback()
+        return respuesta
+
+    notas_de_credito.avisar_autorizada(nota, original)
+    antes = auditoria.instantanea(original)
+    notas_de_credito.cerrar_lo_propio(sesion, original, nota)
+    auditoria.registrar(sesion, actual, "comprobante", nota.id, AccionAuditoria.ALTA, despues=nota)
+    auditoria.registrar(sesion, actual, "comprobante", original.id, AccionAuditoria.MODIFICACION,
+                        antes=antes, despues=original)
+    try:
+        sesion.commit()
+    except IntegrityError as err:
+        sesion.rollback()
+        raise traducir_integridad(err) from None
+    sesion.refresh(nota)
+    return nota
