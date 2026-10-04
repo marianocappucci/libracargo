@@ -27,6 +27,7 @@ from app.models.cuentas import MovimientoCaja, MovimientoCuenta
 from app.models.enums import EstadoOrden, MedioPago, RolCuenta, TipoMovimientoCaja
 from app.models.maestros import Localidad, RazonSocial, Tercero
 from app.models.operacion import Comprobante, OrdenCarga
+from app.servicios.comprobantes import TIPOS_NOTA, solo_facturas
 
 CERO = Decimal("0.00")
 
@@ -95,6 +96,7 @@ def resumen(sesion: Session, desde: date | None, hasta: date | None,
         _entre(select(Comprobante).where(Comprobante.anulado.is_(False)),
                Comprobante.fecha, desde, hasta),
         [(Comprobante.cliente_id, cliente_id)])
+    comprobantes = solo_facturas(comprobantes)
 
     return {
         "desde": desde, "hasta": hasta,
@@ -242,7 +244,7 @@ def por_razon_social(sesion: Session, desde: date | None, hasta: date | None,
                func.coalesce(func.sum(Comprobante.iva), 0),
                func.coalesce(func.sum(Comprobante.total), 0))
         .join(RazonSocial, RazonSocial.id == Comprobante.razon_social_id)
-        .where(Comprobante.anulado.is_(False)),
+        .where(Comprobante.anulado.is_(False)).where(Comprobante.tipo.notin_(TIPOS_NOTA)),
         Comprobante.fecha, desde, hasta),
         [(Comprobante.razon_social_id, razon_social_id)])
         .group_by(Comprobante.razon_social_id, RazonSocial.nombre)

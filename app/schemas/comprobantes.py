@@ -109,6 +109,27 @@ class FacturarIn(BaseModel):
         return valor
 
 
+class NotaDeCreditoIn(BaseModel):
+    """El pedido de nota de crédito: sólo el motivo.
+
+    Sin importe, sin fecha y sin tipo, a propósito. La nota de esta fase es **total** (copia el comprobante),
+    la fecha es la de hoy (ARCA exige fechas no decrecientes por tipo y punto de venta) y el tipo sale del
+    original. Ninguno es una decisión de quien llama.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    motivo: str = Field(min_length=3, max_length=500)
+
+    @field_validator("motivo")
+    @classmethod
+    def _sin_espacios(cls, valor: str) -> str:
+        valor = valor.strip()
+        if len(valor) < 3:
+            raise ValueError("el motivo tiene que decir por que se emite la nota (3 letras o mas)")
+        return valor
+
+
 class ComprobanteOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -137,6 +158,10 @@ class ComprobanteOut(BaseModel):
     fch_vto_pago: date | None = None
     fce_cbu: str | None = None
     fce_transmision: str | None = None
+
+    #: Sólo una nota de crédito los tiene: a qué comprobante acredita y por qué.
+    comprobante_asociado_id: int | None = None
+    motivo: str | None = None
 
 
 class SumaDeOrdenes(BaseModel):

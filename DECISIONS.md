@@ -687,5 +687,34 @@ Codex sobre la FCE; el ADR-025 lo cerró sólo para ese tipo y dejó abierto el 
   la emisión por ARCA se use de verdad, que es cuando importa.
 - Lo que **no** resuelve: cómo revertir de verdad un comprobante con CAE. Eso es la **nota de crédito contra ARCA** con su comprobante
   asociado (`CbtesAsoc`), que sigue pendiente (ADR-024). Cuando exista, `anular` pasa a emitirla y esta guarda se reemplaza.
+  *(Cerrado por el ADR-027: la nota sale de `POST /api/comprobantes/{id}/nota-de-credito`; `DELETE` no la emite, sigue en `409` con el
+  mensaje apuntando a la nota.)*
 - Consecuencias: ningún cambio de esquema ni de datos. Un comprobante emitido por error contra ARCA de **homologación** no es un caso: el
   ensayo no guarda nada (ADR-024).
+
+## ADR-027 — La nota de crédito es del motor; este producto aporta sus costuras
+
+**Estado:** aceptada (2026-10-04). **Contexto:** un comprobante con CAE no se podía revertir (ADR-026). El humano decidió el 2026-10-04 que
+**las notas de crédito salen del motor y son iguales para todos los productos** (ADR-014 de `libracore`, `libracore.notas_de_credito`,
+desde `v1.126.0`), y que el arreglo de fondo vive siempre en el motor (`reglas/producto.md` del wiki). Este producto es su primer consumidor.
+
+- Decisión 1 — **no hay lógica de nota en este repo.** Qué nota corresponde (la letra se hereda), las guardas (una factura se acredita una
+  sola vez, una nota sin CAE no se duplica, el CUIT del receptor, un solo pedido a la vez), el armado (`CbtesAsoc`, fecha de hoy) y el orden
+  *numerar → registrar → pedir CAE* son del motor. Si falta una regla, **se agrega en el motor** y llega por el bump de pin.
+- Decisión 2 — **lo propio de acá** (`app/servicios/notas_de_credito.py`): cargar el comprobante y sus notas previas; guardar la nota como una
+  fila más de `comprobantes`, **en positivo** y con `comprobante_asociado_id` (migración `0013`, aditiva: no toca ninguna fila); y, en la misma
+  transacción, **marcar el original `anulado`, devolver sus órdenes a pendientes y abonar la cuenta corriente** con la fecha de la nota.
+- Decisión 3 — **`POST /api/comprobantes/{id}/nota-de-credito` con `{motivo}` y nada más.** Sin importe, fecha ni tipo (`extra="forbid"`): la
+  nota es total, de hoy y de la letra del original. El motivo es obligatorio y queda en la nota y en la auditoría. Mismos códigos HTTP que
+  el router de facturas del motor (tipo 400; ya acreditada, sin CAE y en curso 409; receptor 422).
+- Decisión 4 — **si ARCA rechaza, no queda nada** (ni nota, ni original anulado, ni abono, ni número tomado), y contra homologación se corre
+  todo y se revierte (como `facturar`): una nota de prueba no mueve la cuenta del cliente. Antes del `commit` se deja en el log lo que ARCA
+  autorizó, para poder reconstruir una nota autorizada cuyo `commit` falló (riesgo R1 del diseño).
+- Decisión 5 — **las notas no suman en los totales** (`solo_facturas`): la nota total acredita lo mismo que su factura, que ya queda `anulado`.
+  Sumarla haría subir lo facturado. Esto se revisa cuando exista la nota **parcial**.
+- Decisión 6 — **una FCE no tiene nota todavía** (`422` con el motivo): medido en homologación, sin que el comprador la rechace ARCA no la deja
+  anular (`10154`) y una nota total supera su saldo (`10184`).
+- Lo que **no** resuelve: la nota parcial, el tope acumulado, las observaciones de ARCA guardadas y mostradas, y las facturas migradas de
+  Suitrans (existen en ARCA y acá no tienen CAE; decisión con el cliente). Diseño: `wiki/analyses/libracargo-nota-de-credito-diseno.md`.
+- Consecuencias: **migración `0013` aditiva** (dos columnas `NULL`, un `CHECK` verdadero para todo lo existente, un índice); requiere
+  `libracore >= v1.126.0`.

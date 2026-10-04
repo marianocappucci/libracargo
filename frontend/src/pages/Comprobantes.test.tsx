@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -54,10 +54,10 @@ function total(extra: Record<string, unknown> = {}) {
 }
 
 /** El detalle de un comprobante, como lo devuelve `GET /api/comprobantes/9`. */
-function detalleDe(cae: string | null) {
+function detalleDe(cae: string | null, tipo = 'factura_a') {
   return {
     comprobante: {
-      id: 9, razon_social_id: 5, tipo: 'factura_a', punto_venta: 5, numero: 42,
+      id: 9, razon_social_id: 5, tipo, punto_venta: 5, numero: 42,
       fecha: '2026-08-15', cliente_id: 1, neto: '1000.00', iva: '210.00', total: '1210.00',
       anulado: false, origen_legado: null, cae,
     },
@@ -67,11 +67,11 @@ function detalleDe(cae: string | null) {
   }
 }
 
-function abrirDetalle(cae: string | null) {
+function abrirDetalle(cae: string | null, tipo = 'factura_a') {
   responder({})
   const base = get.getMockImplementation()!
   get.mockImplementation((ruta?: string) =>
-    ruta === '/api/comprobantes/9' ? Promise.resolve(detalleDe(cae)) : base(ruta))
+    ruta === '/api/comprobantes/9' ? Promise.resolve(detalleDe(cae, tipo)) : base(ruta))
   render(<MemoryRouter initialEntries={['/comprobantes?ver=9']}><Comprobantes /></MemoryRouter>)
 }
 
@@ -112,6 +112,45 @@ describe('Comprobantes', () => {
     expect(nota).toHaveTextContent('75123456789012')
     expect(nota).toHaveTextContent('no se anula desde acá')
     expect(screen.queryByText('Anular comprobante')).toBeNull()
+    expect(nota).toHaveTextContent('emití una nota de crédito')
+  })
+
+  // La nota de crédito sale de ARCA (motor) y es la forma de revertir lo que tiene CAE.
+  it('una factura con CAE ofrece la nota de crédito, que pide un motivo y se confirma aparte', async () => {
+    abrirDetalle('75123456789012')
+    post.mockResolvedValue({ id: 10, tipo: 'nota_credito_a' })
+
+    fireEvent.click(await screen.findByText('Emitir nota de crédito'))
+    const confirmar = await screen.findByText('Confirmar nota de crédito')
+    expect(confirmar).toBeDisabled() // sin motivo no se puede
+    fireEvent.change(screen.getByLabelText('Motivo de la nota de crédito'),
+      { target: { value: 'Error de tarifa' } })
+    expect(confirmar).toBeEnabled()
+    fireEvent.click(confirmar)
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/api/comprobantes/9/nota-de-credito', { motivo: 'Error de tarifa' }))
+    // Sin importe, fecha ni tipo: los decide el servidor.
+    expect(Object.keys(post.mock.calls[0][1])).toEqual(['motivo'])
+  })
+
+  it('contra homologación avisa que fue un ensayo y no se guardó nada', async () => {
+    abrirDetalle('75123456789012')
+    post.mockResolvedValue({ ensayo: true, ambiente: 'homologacion', cae: '99', tipo: 'nota_credito_a' })
+
+    fireEvent.click(await screen.findByText('Emitir nota de crédito'))
+    fireEvent.change(await screen.findByLabelText('Motivo de la nota de crédito'),
+      { target: { value: 'Prueba' } })
+    fireEvent.click(screen.getByText('Confirmar nota de crédito'))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('no se guardó nada')
+  })
+
+  it('una FCE con CAE no ofrece la nota y dice por qué', async () => {
+    abrirDetalle('75123456789012', 'fce_a')
+
+    expect(await screen.findByRole('note')).toHaveTextContent('todavía no está')
+    expect(screen.queryByText('Emitir nota de crédito')).toBeNull()
   })
 
   it('el comprobante sin CAE (registrado a mano o migrado) se sigue pudiendo anular', async () => {

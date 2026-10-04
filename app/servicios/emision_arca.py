@@ -269,13 +269,18 @@ async def numero_que_sigue(
 
 async def pedir_cae(
     sesion: Session, comprobante: Comprobante, ta: dict,
-    cfg: dict, razon: RazonSocial,
+    cfg: dict, razon: RazonSocial, nota: dict | None = None,
 ) -> Comprobante:
     """Pide el CAE del comprobante ya creado y lo guarda.
 
     Se llama **con el ticket que ya se usó para numerar**: pedir uno nuevo entre
     el número y el CAE abre la ventana para que otro comprobante se meta en el
     medio y el número quede tomado.
+
+    `nota` es el diccionario que arma `libracore.notas_de_credito.armar_nota` cuando el
+    comprobante es una nota de crédito: de ahí salen lo que la ata a su factura ante ARCA
+    (`cbte_asoc_*`), la marca de anulación de una FCE y la leyenda. El resto del pedido se
+    arma igual que el de una factura, desde el comprobante.
     """
     neto = Decimal(comprobante.neto)
     iva = Decimal(comprobante.iva)
@@ -314,6 +319,10 @@ async def pedir_cae(
             "fce_cbu": cfg.get("fce_cbu") or "",
             "fce_transmision": cfg.get("fce_transmision") or "",
         })
+    if nota is not None:
+        # Lo arma el motor, igual para todos los productos: acá no se reescribe.
+        factura.update({k: v for k, v in nota.items()
+                        if k.startswith("cbte_asoc_") or k == "fce_anulacion"})
     try:
         datos = await arca_wsfe.solicitar_cae(
             factura, razon.cuit, ta["token"], ta["sign"], cfg["ambiente"],
