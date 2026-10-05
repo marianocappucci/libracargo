@@ -6,6 +6,12 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Agregado
 
+- **Nota de crédito parcial, y la de una FCE** (ADR-028). `POST /api/comprobantes/{id}/nota-de-credito` acepta `importe` (con IVA): la nota
+  acredita ese monto sin tocar las órdenes, con el tope acumulado del motor; cuando las notas suman el comprobante entero, el original queda
+  anulado y sus órdenes vuelven a pendientes. Una **FCE** admite notas parciales por menos que su saldo (tipos 203, 208 y 213). Los totales,
+  el resumen y lo facturado por razón social **restan** las notas con la fecha de la nota. El detalle trae las notas, lo acreditado y el saldo,
+  y la pantalla ofrece «por el total» o «por un importe». **Migración `0014`** (valores de `ENUM` y el `CHECK` de las notas; no toca filas).
+  Requiere **libracore `v1.131.0`**.
 - **Nota de crédito contra ARCA** (`POST /api/comprobantes/{id}/nota-de-credito`, ADR-027). Un comprobante emitido por ARCA se revierte con una nota
   de crédito **total**, autorizada por ARCA y asociada a su factura; el original queda anulado, sus órdenes vuelven a pendientes y la cuenta del
   cliente recibe el abono. La lógica es la del motor (`libracore.notas_de_credito`): este producto sólo guarda la nota y cierra lo suyo. La

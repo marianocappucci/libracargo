@@ -54,7 +54,7 @@ function total(extra: Record<string, unknown> = {}) {
 }
 
 /** El detalle de un comprobante, como lo devuelve `GET /api/comprobantes/9`. */
-function detalleDe(cae: string | null, tipo = 'factura_a') {
+function detalleDe(cae: string | null, tipo = 'factura_a', extra: Record<string, unknown> = {}) {
   return {
     comprobante: {
       id: 9, razon_social_id: 5, tipo, punto_venta: 5, numero: 42,
@@ -64,14 +64,15 @@ function detalleDe(cae: string | null, tipo = 'factura_a') {
     ordenes: [],
     suma_de_ordenes: { cantidad: 0, neto: '0.00', iva: '0.00', total: '0.00' },
     coinciden: true,
+    ...extra,
   }
 }
 
-function abrirDetalle(cae: string | null, tipo = 'factura_a') {
+function abrirDetalle(cae: string | null, tipo = 'factura_a', extra: Record<string, unknown> = {}) {
   responder({})
   const base = get.getMockImplementation()!
   get.mockImplementation((ruta?: string) =>
-    ruta === '/api/comprobantes/9' ? Promise.resolve(detalleDe(cae, tipo)) : base(ruta))
+    ruta === '/api/comprobantes/9' ? Promise.resolve(detalleDe(cae, tipo, extra)) : base(ruta))
   render(<MemoryRouter initialEntries={['/comprobantes?ver=9']}><Comprobantes /></MemoryRouter>)
 }
 
@@ -146,11 +147,70 @@ describe('Comprobantes', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('no se guardó nada')
   })
 
-  it('una FCE con CAE no ofrece la nota y dice por qué', async () => {
-    abrirDetalle('75123456789012', 'fce_a')
+  // ── La nota parcial (ADR-028): el servidor manda lo acreditado y el saldo ──
+  const SIN_NOTAS = { notas: [], acreditado: '0.00', saldo_acreditable: '1210.00' }
 
-    expect(await screen.findByRole('note')).toHaveTextContent('todavía no está')
-    expect(screen.queryByText('Emitir nota de crédito')).toBeNull()
+  function abrirNota(motivo = 'Diferencia de kilos') {
+    return screen.findByText('Emitir nota de crédito').then((b) => {
+      fireEvent.click(b)
+      fireEvent.change(screen.getByLabelText('Motivo de la nota de crédito'), { target: { value: motivo } })
+    })
+  }
+
+  it('con el saldo a la vista, la nota puede ser por un importe, que viaja como texto', async () => {
+    abrirDetalle('75123456789012', 'factura_a', SIN_NOTAS)
+    post.mockResolvedValue({ id: 10, tipo: 'nota_credito_a' })
+    await abrirNota()
+
+    fireEvent.click(screen.getByLabelText('Por un importe'))
+    fireEvent.change(screen.getByLabelText('Importe a acreditar (con IVA)'), { target: { value: '121,5' } })
+    fireEvent.click(screen.getByText('Confirmar nota de crédito'))
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/api/comprobantes/9/nota-de-credito', { motivo: 'Diferencia de kilos', importe: '121.50' }))
+  })
+
+  it('no deja confirmar un importe de más ni uno con tres decimales', async () => {
+    abrirDetalle('75123456789012', 'factura_a', SIN_NOTAS)
+    await abrirNota()
+    fireEvent.click(screen.getByLabelText('Por un importe'))
+    const importe = screen.getByLabelText('Importe a acreditar (con IVA)')
+    const confirmar = screen.getByText('Confirmar nota de crédito')
+
+    fireEvent.change(importe, { target: { value: '1210.01' } })
+    expect(confirmar).toBeDisabled()
+    expect(screen.getByRole('alert')).toHaveTextContent('Supera lo que queda por acreditar')
+    fireEvent.change(importe, { target: { value: '1.234' } })
+    expect(confirmar).toBeDisabled()
+    fireEvent.change(importe, { target: { value: '1210' } })
+    expect(confirmar).toBeEnabled()
+  })
+
+  it('con notas previas no ofrece la total, propone el saldo y las lista', async () => {
+    abrirDetalle('75123456789012', 'factura_a', {
+      notas: [{ id: 11, tipo: 'nota_credito_a', punto_venta: 5, numero: 43, fecha: '2026-10-05',
+                total: '121.00', motivo: 'Kilos', anulado: false }],
+      acreditado: '121.00', saldo_acreditable: '1089.00',
+    })
+    expect(await screen.findByText(/Nota de crédito A 0005-00000043/)).toBeInTheDocument()
+    expect(screen.getByText(/queda por/)).toHaveTextContent('1.089,00')
+    await abrirNota()
+
+    expect(screen.getByLabelText('Por el total')).toBeDisabled()
+    expect(screen.getByLabelText('Importe a acreditar (con IVA)')).toHaveValue('1089.00')
+  })
+
+  it('una FCE con CAE ofrece sólo la nota por un importe menor que el saldo', async () => {
+    abrirDetalle('75123456789012', 'fce_a', SIN_NOTAS)
+    expect(await screen.findByRole('note')).toHaveTextContent('menos que su saldo')
+    await abrirNota()
+
+    expect(screen.getByLabelText('Por el total')).toBeDisabled()
+    const importe = screen.getByLabelText('Importe a acreditar (con IVA)')
+    fireEvent.change(importe, { target: { value: '1210.00' } })
+    expect(screen.getByText('Confirmar nota de crédito')).toBeDisabled()
+    fireEvent.change(importe, { target: { value: '1209.99' } })
+    expect(screen.getByText('Confirmar nota de crédito')).toBeEnabled()
   })
 
   it('el comprobante sin CAE (registrado a mano o migrado) se sigue pudiendo anular', async () => {

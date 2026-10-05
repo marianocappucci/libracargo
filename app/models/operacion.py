@@ -104,7 +104,8 @@ class Comprobante(Base, Auditable):
         # `::text` por lo mismo que el de la FCE: no depende de que el valor del
         # `ENUM` ya esté creado en la misma transacción.
         CheckConstraint(
-            "(tipo::text IN ('nota_credito_a', 'nota_credito_b', 'nota_credito_c'))"
+            "(tipo::text IN ('nota_credito_a', 'nota_credito_b', 'nota_credito_c',"
+            " 'nota_credito_fce_a', 'nota_credito_fce_b', 'nota_credito_fce_c'))"
             " = (comprobante_asociado_id IS NOT NULL)",
             name="ck_comprobantes_nota_con_asociado",
         ),
