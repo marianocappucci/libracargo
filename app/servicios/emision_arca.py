@@ -75,14 +75,20 @@ CODIGO_ARCA = {
     TipoComprobante.FCE_A: 201,
     TipoComprobante.FCE_B: 206,
     TipoComprobante.FCE_C: 211,
+    # Sus notas de crédito: 203, 208 y 213.
+    TipoComprobante.NOTA_CREDITO_FCE_A: 203,
+    TipoComprobante.NOTA_CREDITO_FCE_B: 208,
+    TipoComprobante.NOTA_CREDITO_FCE_C: 213,
 }
 
 #: Los tipos C no llevan IVA discriminado: todo el importe va como neto y el
 #: bloque de alícuotas **no se manda**. Lo exige ARCA, no es una simplificación.
-TIPOS_C = {TipoComprobante.FACTURA_C, TipoComprobante.NOTA_CREDITO_C, TipoComprobante.FCE_C}
+TIPOS_C = {TipoComprobante.FACTURA_C, TipoComprobante.NOTA_CREDITO_C, TipoComprobante.FCE_C,
+           TipoComprobante.NOTA_CREDITO_FCE_C}
 
-#: La FCE lleva además el vencimiento de pago, el CBU del emisor y la modalidad de
-#: transmisión. Los dos últimos salen de la configuración de ARCA de la instancia.
+#: La **factura** FCE lleva además el vencimiento de pago, el CBU del emisor y la modalidad
+#: de transmisión. Los dos últimos salen de la configuración de ARCA de la instancia. Sus
+#: notas no: llevan la marca de anulación, que arma el motor (`armar_nota`).
 TIPOS_FCE = {TipoComprobante.FCE_A, TipoComprobante.FCE_B, TipoComprobante.FCE_C}
 
 

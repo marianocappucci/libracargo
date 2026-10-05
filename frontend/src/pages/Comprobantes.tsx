@@ -109,9 +109,22 @@ function Totales({ filas, razones }: { filas: TotalDeRazonSocial[]; razones: Opc
   )
 }
 
-/** Una factura (no una nota): lo único a lo que se le emite una nota de crédito. La FCE queda afuera. */
+/** Una factura (o una FCE), no una nota: lo único a lo que se le emite una nota de crédito. */
 function esFactura(tipo: Comprobante['tipo']): boolean {
-  return tipo === 'factura_a' || tipo === 'factura_b' || tipo === 'factura_c'
+  return tipo.startsWith('factura_') || tipo.startsWith('fce_')
+}
+
+/** `"1.234,5"` o `"121.5"` → centavos enteros, o `null` si no es un importe de hasta dos decimales. */
+function centavosDe(texto: string): number | null {
+  const limpio = texto.trim().replace(',', '.')
+  if (!/^\d+(\.\d{1,2})?$/.test(limpio)) return null
+  const [entero, dec = ''] = limpio.split('.')
+  return Number(entero) * 100 + Number((dec + '00').slice(0, 2))
+}
+
+/** Centavos → `"121.00"`: lo que viaja al servidor, como texto. */
+function deCentavos(centavos: number): string {
+  return `${Math.floor(centavos / 100)}.${String(centavos % 100).padStart(2, '0')}`
 }
 
 export default function Comprobantes() {
@@ -124,9 +137,11 @@ export default function Comprobantes() {
   const [detalle, setDetalle] = useState<ComprobanteConOrdenes | null>(null)
   const [params, setParams] = useSearchParams()
   const [confirmando, setConfirmando] = useState(false)
-  // La nota de crédito: pide un motivo y se confirma aparte, igual que anular.
+  // La nota de crédito: pide un motivo y se confirma aparte, igual que anular. Total o por un importe (ADR-028).
   const [notaAbierta, setNotaAbierta] = useState(false)
   const [motivo, setMotivo] = useState('')
+  const [parcial, setParcial] = useState(false)
+  const [importe, setImporte] = useState('')
   const [emitiendo, setEmitiendo] = useState(false)
   const [aviso, setAviso] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
@@ -167,6 +182,7 @@ export default function Comprobantes() {
     setConfirmando(false)
     setNotaAbierta(false)
     setMotivo('')
+    setImporte('')
     try {
       setDetalle(await comprobantes.ver(id))
     } catch (e) {
@@ -190,7 +206,8 @@ export default function Comprobantes() {
     setError(null)
     setEmitiendo(true)
     try {
-      const r = await comprobantes.notaDeCredito(id, motivo.trim())
+      const r = await comprobantes.notaDeCredito(
+        id, motivo.trim(), parcial && importeValido !== null ? deCentavos(importeValido) : undefined)
       if ('ensayo' in r) {
         // Homologación: se corrió todo contra ARCA y no se guardó nada. El comprobante sigue como estaba.
         setAviso(`Ensayo contra ${r.ambiente}: ARCA autorizó una nota de crédito de prueba `
@@ -201,12 +218,31 @@ export default function Comprobantes() {
       setDetalle(null)
       setNotaAbierta(false)
       setMotivo('')
+      setImporte('')
       recargar()
     } catch (e) {
       setError(mensajeDeError(e))
     } finally {
       setEmitiendo(false)
     }
+  }
+
+  // Lo que la pantalla sabe para ofrecer la nota. Sin `saldo_acreditable` (un servidor anterior) se ofrece
+  // sólo la total, como antes. El tope de verdad lo valida el motor; esto es para no ofrecer lo que va a rechazar.
+  const esFceDetalle = detalle?.comprobante.tipo.startsWith('fce_') ?? false
+  const saldoCentavos = detalle?.saldo_acreditable != null ? centavosDe(detalle.saldo_acreditable) : null
+  const tieneNotas = (detalle?.notas?.length ?? 0) > 0
+  // La total copia la factura entera: sólo sin notas previas, y nunca en una FCE (ARCA: 10184).
+  const admiteTotal = !tieneNotas && !esFceDetalle
+  const tecleado = centavosDe(importe)
+  const importeValido = tecleado !== null && tecleado > 0 && (saldoCentavos === null
+    || (esFceDetalle ? tecleado < saldoCentavos : tecleado <= saldoCentavos)) ? tecleado : null
+
+  function abrirNota() {
+    // Sin la total posible, arranca por el importe; con notas previas, propone el saldo.
+    setParcial(!admiteTotal)
+    setImporte(tieneNotas && !esFceDetalle && detalle?.saldo_acreditable ? detalle.saldo_acreditable : '')
+    setNotaAbierta(true)
   }
 
   const columnas = [
@@ -320,6 +356,28 @@ export default function Comprobantes() {
                   {detalle.comprobante.motivo ? ` · ${detalle.comprobante.motivo}` : ''}
                 </p>
               )}
+              {(detalle.notas?.length ?? 0) > 0 && (
+                <div>
+                  <p className="text-muted-foreground text-xs">Notas de crédito</p>
+                  <ul className="divide-y rounded border">
+                    {detalle.notas!.map((n) => (
+                      <li key={n.id} className="flex items-center gap-3 p-2">
+                        <span className="flex-1">
+                          {NOMBRE_DE_TIPO[n.tipo]} {numeroDe(n)} · {formatearFecha(n.fecha)}
+                          {n.motivo ? ` · ${n.motivo}` : ''}
+                        </span>
+                        <span className="tabular-nums">{formatearImporte(n.total)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {detalle.saldo_acreditable != null && (
+                <p className="text-sm">
+                  Acreditado {formatearImporte(detalle.acreditado ?? '0.00')} · queda por
+                  acreditar {formatearImporte(detalle.saldo_acreditable)}
+                </p>
+              )}
               {aviso && <p role="status" className="text-sm font-semibold">{aviso}</p>}
               {!detalle.coinciden && (
                 <p role="alert" className="text-destructive text-sm font-semibold">
@@ -341,14 +399,15 @@ export default function Comprobantes() {
             {detalle && !detalle.comprobante.anulado && detalle.comprobante.cae && (
               // 🔴 Con CAE no se ofrece anular: anular no llega a ARCA, y el comprobante seguiría vigente
               // allá mientras sus órdenes se podrían facturar de nuevo. Se revierte con una nota de crédito
-              // **emitida por ARCA**; la nota de una FCE todavía no está.
+              // **emitida por ARCA**; la de una FCE, sólo por menos que su saldo.
               <span className="mr-auto self-center text-sm" role="note">
                 Lo emitió ARCA (CAE {detalle.comprobante.cae}): no se anula desde acá.
                 {esFactura(detalle.comprobante.tipo)
-                  ? ' Para revertirlo, emití una nota de crédito.'
-                  : detalle.comprobante.tipo.startsWith('fce_')
-                    ? ' La nota de una factura de crédito electrónica todavía no está.'
-                    : ''}
+                  ? (esFceDetalle
+                    ? ' Se acredita con notas de crédito por menos que su saldo: ARCA sólo deja anularla'
+                      + ' entera si el comprador la rechazó.'
+                    : ' Para revertirlo, emití una nota de crédito.')
+                  : ''}
               </span>
             )}
             {detalle && !detalle.comprobante.anulado && detalle.comprobante.cae
@@ -357,21 +416,54 @@ export default function Comprobantes() {
                 <div className="grid w-full gap-2">
                   <Campo id="motivo-nota" etiqueta="Motivo de la nota de crédito" valor={motivo}
                          alCambiar={setMotivo} />
+                  {saldoCentavos !== null && (
+                    <fieldset className="flex gap-4 text-sm">
+                      <legend className="sr-only">Por cuánto</legend>
+                      <label className="flex items-center gap-1">
+                        <input type="radio" name="alcance-nota" checked={!parcial} disabled={!admiteTotal}
+                               onChange={() => setParcial(false)} />
+                        Por el total
+                      </label>
+                      <label className="flex items-center gap-1">
+                        <input type="radio" name="alcance-nota" checked={parcial}
+                               onChange={() => setParcial(true)} />
+                        Por un importe
+                      </label>
+                    </fieldset>
+                  )}
+                  {parcial && (
+                    <Campo id="importe-nota" etiqueta="Importe a acreditar (con IVA)" valor={importe}
+                           alCambiar={setImporte} />
+                  )}
                   <p className="text-muted-foreground text-xs">
-                    Es por el total, con fecha de hoy. ARCA la autoriza, las órdenes vuelven a
-                    pendientes y la cuenta del cliente recibe el abono.
+                    {parcial
+                      ? `Acredita ese importe, con fecha de hoy: ARCA la autoriza y la cuenta del cliente recibe el
+                        abono. Las órdenes no se tocan, salvo que con esta nota quede acreditado todo el
+                        comprobante: ahí vuelven a pendientes.${esFceDetalle
+                          ? ' En una factura de crédito electrónica tiene que ser menos que el saldo.' : ''}`
+                      : `Es por el total, con fecha de hoy. ARCA la autoriza, las órdenes vuelven a
+                        pendientes y la cuenta del cliente recibe el abono.`}
                   </p>
+                  {parcial && importe.trim() !== '' && importeValido === null && (
+                    <p role="alert" className="text-destructive text-xs">
+                      {tecleado === null || tecleado <= 0
+                        ? 'El importe tiene que ser mayor que cero, con hasta dos decimales.'
+                        : `Supera lo que queda por acreditar (${formatearImporte(detalle.saldo_acreditable ?? '')})`
+                          + (esFceDetalle ? ': en una FCE tiene que ser menos.' : '.')}
+                    </p>
+                  )}
                   <div className="flex justify-end gap-2">
                     <Button variant="ghost" onClick={() => setNotaAbierta(false)}>No</Button>
                     <Button variant="destructive"
-                            disabled={emitiendo || motivo.trim().length < 3}
+                            disabled={emitiendo || motivo.trim().length < 3 || (parcial && importeValido === null)}
                             onClick={() => emitirNota(detalle.comprobante.id)}>
                       Confirmar nota de crédito
                     </Button>
                   </div>
                 </div>
               ) : (
-                <Button variant="destructive" onClick={() => setNotaAbierta(true)}>
+                <Button variant="destructive" onClick={abrirNota}
+                        disabled={saldoCentavos !== null && saldoCentavos <= 0}>
                   Emitir nota de crédito
                 </Button>
               )

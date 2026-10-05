@@ -27,7 +27,7 @@ from app.models.cuentas import MovimientoCaja, MovimientoCuenta
 from app.models.enums import EstadoOrden, MedioPago, RolCuenta, TipoMovimientoCaja
 from app.models.maestros import Localidad, RazonSocial, Tercero
 from app.models.operacion import Comprobante, OrdenCarga
-from app.servicios.comprobantes import TIPOS_NOTA, solo_facturas
+from app.servicios.comprobantes import TIPOS_NOTA, acreditado_por_notas, solo_facturas
 
 CERO = Decimal("0.00")
 
@@ -97,6 +97,9 @@ def resumen(sesion: Session, desde: date | None, hasta: date | None,
                Comprobante.fecha, desde, hasta),
         [(Comprobante.cliente_id, cliente_id)])
     comprobantes = solo_facturas(comprobantes)
+    # Lo facturado **neto de notas de crédito** de originales vigentes, con la fecha de la nota (ADR-028).
+    acreditado = sum((Decimal(f[4]) for f in sesion.execute(acreditado_por_notas(
+        Comprobante.cliente_id, desde, hasta, [(Comprobante.cliente_id, cliente_id)]))), Decimal(0))
 
     return {
         "desde": desde, "hasta": hasta,
@@ -111,7 +114,7 @@ def resumen(sesion: Session, desde: date | None, hasta: date | None,
         "total": sobre(OrdenCarga.total),
         "comision": sobre(OrdenCarga.comision),
         "comprobantes": contar(comprobantes, Comprobante.id),
-        "facturado": sobre(Comprobante.total, comprobantes),
+        "facturado": (sobre(Comprobante.total, comprobantes) - acreditado).quantize(CERO),
         "movimientos_caja": contar(caja_base, MovimientoCaja.id),
         "cobrado": sobre(MovimientoCaja.importe, ingresos),
         "pagado": sobre(MovimientoCaja.importe, egresos),
@@ -235,7 +238,8 @@ def por_razon_social(sesion: Session, desde: date | None, hasta: date | None,
     """Lo facturado por cada razón social propia, con su nombre.
 
     Es la misma cuenta que el gate de F5, pero para leer y no para controlar: acá
-    interesa el número, no si los dos lados coinciden.
+    interesa el número, no si los dos lados coinciden. Neto de las notas de crédito, igual que el gate (ADR-028);
+    `comprobantes` cuenta facturas.
     """
     filas = sesion.execute(_iguales(_entre(
         select(Comprobante.razon_social_id, RazonSocial.nombre,
@@ -248,10 +252,23 @@ def por_razon_social(sesion: Session, desde: date | None, hasta: date | None,
         Comprobante.fecha, desde, hasta),
         [(Comprobante.razon_social_id, razon_social_id)])
         .group_by(Comprobante.razon_social_id, RazonSocial.nombre)
-        .order_by(func.coalesce(func.sum(Comprobante.total), 0).desc())).fetchall()
-    return [{"razon_social_id": f[0], "razon_social": f[1], "comprobantes": f[2],
-             "neto": Decimal(f[3]).quantize(CERO), "iva": Decimal(f[4]).quantize(CERO),
-             "total": Decimal(f[5]).quantize(CERO)} for f in filas]
+        ).fetchall()
+    notas = {f[0]: tuple(Decimal(x) for x in f[2:]) for f in sesion.execute(acreditado_por_notas(
+        Comprobante.razon_social_id, desde, hasta, [(Comprobante.razon_social_id, razon_social_id)]))}
+    salida = {f[0]: {"razon_social_id": f[0], "razon_social": f[1], "comprobantes": f[2],
+                     "neto": Decimal(f[3]), "iva": Decimal(f[4]), "total": Decimal(f[5])} for f in filas}
+    for clave, (neto, iva, total) in notas.items():
+        # Una razón social con notas en el rango y ninguna factura también sale: su número es negativo.
+        fila = salida.setdefault(clave, {
+            "razon_social_id": clave, "razon_social": sesion.get(RazonSocial, clave).nombre,
+            "comprobantes": 0, "neto": Decimal(0), "iva": Decimal(0), "total": Decimal(0)})
+        fila["neto"] -= neto
+        fila["iva"] -= iva
+        fila["total"] -= total
+    for fila in salida.values():
+        for k in ("neto", "iva", "total"):
+            fila[k] = fila[k].quantize(CERO)
+    return sorted(salida.values(), key=lambda f: f["total"], reverse=True)
 
 
 def por_ruta(sesion: Session, desde: date | None, hasta: date | None, limite: int,

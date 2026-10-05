@@ -49,6 +49,9 @@ NOMBRES_DE_TIPO = {
     TipoComprobante.FCE_A: "Factura de credito electronica A",
     TipoComprobante.FCE_B: "Factura de credito electronica B",
     TipoComprobante.FCE_C: "Factura de credito electronica C",
+    TipoComprobante.NOTA_CREDITO_FCE_A: "Nota de credito FCE A",
+    TipoComprobante.NOTA_CREDITO_FCE_B: "Nota de credito FCE B",
+    TipoComprobante.NOTA_CREDITO_FCE_C: "Nota de credito FCE C",
 }
 
 
@@ -110,16 +113,28 @@ class FacturarIn(BaseModel):
 
 
 class NotaDeCreditoIn(BaseModel):
-    """El pedido de nota de crédito: sólo el motivo.
+    """El pedido de nota de crédito: el motivo y, si es parcial, el importe.
 
-    Sin importe, sin fecha y sin tipo, a propósito. La nota de esta fase es **total** (copia el comprobante),
-    la fecha es la de hoy (ARCA exige fechas no decrecientes por tipo y punto de venta) y el tipo sale del
-    original. Ninguno es una decisión de quien llama.
+    - **Sin `importe`, la nota es total**: copia el comprobante, sus órdenes vuelven a pendientes.
+    - **Con `importe`, es parcial**: el monto a acreditar, **con IVA**, de hasta dos decimales. No toca las órdenes
+      hasta que las notas suman el comprobante entero (ADR-028). Una FCE sólo admite esta, por menos que su saldo.
+
+    Sin fecha y sin tipo, a propósito: la fecha es la de hoy (ARCA exige fechas no decrecientes por tipo y punto de
+    venta) y el tipo sale del original. El tope del importe lo valida el motor, que es el que sabe lo ya acreditado.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     motivo: str = Field(min_length=3, max_length=500)
+    importe: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=2)
+
+    @field_validator("importe", mode="before")
+    @classmethod
+    def _sin_booleanos(cls, valor):
+        """Un `true` no entra como `1`: un booleano no es un importe (la regla de la familia)."""
+        if isinstance(valor, bool):
+            raise ValueError("el importe es un numero, no un booleano")
+        return valor
 
     @field_validator("motivo")
     @classmethod
@@ -186,6 +201,12 @@ class ComprobanteConOrdenes(BaseModel):
     ordenes: list[OrdenOut]
     suma_de_ordenes: SumaDeOrdenes
     coinciden: bool
+    #: Las notas de crédito que cuelgan de este comprobante (vacío en una nota y en lo que no tiene ninguna).
+    notas: list[ComprobanteOut] = []
+    #: Lo que acreditan sus notas con CAE y lo que queda por acreditar, **calculado por el motor**
+    #: (`saldo_acreditable`). `None` donde no hay nota posible: sin CAE, anulado o una nota.
+    acreditado: Decimal | None = None
+    saldo_acreditable: Decimal | None = None
 
 
 class TotalDeRazonSocial(BaseModel):

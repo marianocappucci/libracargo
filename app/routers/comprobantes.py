@@ -131,9 +131,14 @@ def traer(id_: int, sesion: Session = Depends(obtener_sesion)):
     else:
         coinciden = ((comprobante.neto, comprobante.iva, comprobante.total)
                      == (suma.neto, suma.iva, suma.total))
+    acreditado = saldo = None
+    if comprobante.cae and not comprobante.anulado and comprobante.tipo not in TIPOS_NOTA:
+        # Lo que la pantalla necesita para ofrecer la nota: cuánto se acreditó y cuánto queda. Lo cuenta el motor.
+        acreditado, saldo = notas_de_credito.saldo(sesion, comprobante)
     return ComprobanteConOrdenes(
         comprobante=comprobante, ordenes=ordenes, suma_de_ordenes=suma,
-        coinciden=coinciden,
+        coinciden=coinciden, notas=notas_de_credito.notas_de(sesion, id_),
+        acreditado=acreditado, saldo_acreditable=saldo,
     )
 
 
@@ -446,6 +451,8 @@ _STATUS_DE_NOTA = {
     NotaNoPermitida.NOTA_SIN_CAE: 409,
     NotaNoPermitida.EN_CURSO: 409,
     NotaNoPermitida.RECEPTOR: 422,
+    NotaNoPermitida.IMPORTE: 422,
+    NotaNoPermitida.SUPERA_SALDO: 409,
 }
 
 
@@ -454,14 +461,17 @@ _STATUS_DE_NOTA = {
 # loop de uvicorn. Lo asincrónico (WSAA y WSFE) va con `asyncio.run` en un loop propio de este hilo.
 def nota_de_credito(id_: int, datos: NotaDeCreditoIn, sesion: Session = Depends(obtener_sesion),
                     actual: dict = Depends(get_current_user)):
-    """Revierte un comprobante emitido por ARCA con una nota de crédito **total**, autorizada por ARCA.
+    """Acredita un comprobante emitido por ARCA con una nota de crédito autorizada por ARCA: **total** (sin
+    `importe`) o **parcial** (`importe`, con IVA).
 
-    La lógica es la del motor (`libracore.notas_de_credito`): una factura se acredita una sola vez, el CUIT del
-    receptor tiene que servir, dos pedidos a la vez emiten una sola nota, y la nota sale con la fecha de hoy y
-    asociada a su factura. Lo propio de este producto, que pasa **en la misma transacción**:
+    La lógica es la del motor (`libracore.notas_de_credito`): la nota total sólo sobre un comprobante sin notas, la
+    suma de las notas nunca supera su total, una FCE sólo admite notas por menos que su saldo, el CUIT del receptor
+    tiene que servir, dos pedidos a la vez emiten una sola nota, y la nota sale con la fecha de hoy y asociada a su
+    comprobante. Lo propio de este producto, que pasa **en la misma transacción** (ADR-028):
 
-    - el comprobante original queda `anulado` y sus **órdenes vuelven a pendientes** (se pueden refacturar);
-    - la cuenta corriente del cliente recibe el abono, con la fecha de la nota.
+    - la cuenta corriente del cliente recibe el abono por el importe de la nota, con la fecha de la nota;
+    - si el comprobante queda acreditado **por completo**, queda `anulado` y sus **órdenes vuelven a pendientes**
+      (se pueden refacturar). Con saldo, las órdenes no se tocan.
 
     ⚠️ **Si ARCA rechaza, no queda nada**: ni la nota, ni el original anulado, ni el abono. Contra
     homologación se corre todo y se revierte (ver `facturar`): una prueba no mueve la cuenta del cliente.
@@ -478,19 +488,12 @@ def nota_de_credito(id_: int, datos: NotaDeCreditoIn, sesion: Session = Depends(
             "este comprobante no tiene CAE: ARCA no lo conoce, asi que no hay nada que acreditar. "
             "Se anula desde aca (DELETE) como siempre",
         )
-    if original.tipo in TIPOS_FCE:
-        # La nota de una FCE todavía no existe acá (fase 3 del diseño). Medido en homologación: sin que el
-        # comprador la rechace, ARCA no deja anularla (10154) y una nota total supera el saldo (10184).
-        raise HTTPException(
-            422,
-            "la nota de credito de una factura de credito electronica todavia no esta: ARCA solo deja "
-            "anularla si el comprador la rechazo, y una nota por el total supera su saldo",
-        )
+    # Ni la FCE ni las notas tienen guarda propia: qué se puede acreditar y por cuánto lo decide el motor.
 
     hoy = tiempo.hoy()
     try:
         nota, cfg = asyncio.run(notas_de_credito.emitir(
-            sesion, original, motivo=datos.motivo, hoy=hoy))
+            sesion, original, motivo=datos.motivo, hoy=hoy, importe=datos.importe))
     except NotaNoPermitida as e:
         sesion.rollback()
         raise HTTPException(_STATUS_DE_NOTA.get(e.codigo, 409), str(e)) from None

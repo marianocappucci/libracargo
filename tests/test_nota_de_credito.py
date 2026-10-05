@@ -36,8 +36,9 @@ def factura(cliente, datos, razon_con_arca, monkeypatch):  # noqa: F811
     return {"comprobante": r.json(), "orden": a, "pedidos": pedidos, "razon": razon_con_arca}
 
 
-def _nota(cliente, id_, motivo="Error de tarifa"):
-    return cliente.post(f"/api/comprobantes/{id_}/nota-de-credito", json={"motivo": motivo})
+def _nota(cliente, id_, motivo="Error de tarifa", importe=None):
+    cuerpo = {"motivo": motivo} if importe is None else {"motivo": motivo, "importe": importe}
+    return cliente.post(f"/api/comprobantes/{id_}/nota-de-credito", json=cuerpo)
 
 
 def _cuenta(cliente, datos):
@@ -207,20 +208,132 @@ def test_un_comprobante_que_no_existe_da_404(cliente):
     assert _nota(cliente, 9999).status_code == 404
 
 
-def test_el_motivo_es_obligatorio_y_no_hay_otro_campo(cliente, datos, factura):
+def test_el_motivo_es_obligatorio_y_la_fecha_y_el_tipo_no_se_eligen(cliente, datos, factura):
     id_ = factura["comprobante"]["id"]
     ruta = f"/api/comprobantes/{id_}/nota-de-credito"
     assert cliente.post(ruta, json={}).status_code == 422
     assert cliente.post(ruta, json={"motivo": "  "}).status_code == 422
-    # El importe, la fecha y el tipo no se eligen: la nota de esta fase es total, de hoy y la letra del original.
-    for campo in ({"importe": "10.00"}, {"fecha": "2026-01-01"}, {"tipo": "nota_credito_b"}):
+    # La fecha y el tipo no se eligen: la nota es de hoy y de la letra del original. El importe sí (parcial).
+    for campo in ({"fecha": "2026-01-01"}, {"tipo": "nota_credito_b"}):
         assert cliente.post(ruta, json={"motivo": "Error", **campo}).status_code == 422, campo
+    # Un importe que no es un importe no llega ni al motor: cero, negativo, tres decimales, un booleano.
+    for importe in (0, -10, "1.234", True, "diez"):
+        assert cliente.post(ruta, json={"motivo": "Error", "importe": importe}).status_code == 422, importe
     assert cliente.get(f"/api/comprobantes/{id_}").json()["comprobante"]["anulado"] is False
+    assert [p for p in factura["pedidos"] if p[0] == "cae"][1:] == [], "no se le pidio nada a ARCA"
 
 
-def test_la_nota_de_una_fce_todavia_no_esta(cliente, datos, factura, sesion):
-    """Medido: sin que el comprador la rechace ARCA no deja anular una FCE (10154) y una nota total supera
-    el saldo (10184). Se dice con ese motivo y no se le pide nada a ARCA."""
+# ── La nota parcial (ADR-028) ──────────────────────────────────────────────
+
+def _detalle(cliente, id_):
+    return cliente.get(f"/api/comprobantes/{id_}").json()
+
+
+def test_la_nota_parcial_acredita_un_importe_y_no_toca_las_ordenes(cliente, datos, factura):
+    """121 sobre una Factura A de 1210: neto 100 e IVA 21 (la alícuota de la factura, la cuenta es del motor)."""
+    original = factura["comprobante"]
+    r = _nota(cliente, original["id"], motivo="Diferencia de kilos", importe="121.00")
+    assert r.status_code == 201, r.text
+    nota = r.json()
+    assert (nota["tipo"], nota["comprobante_asociado_id"]) == ("nota_credito_a", original["id"])
+    assert (nota["neto"], nota["iva"], nota["total"]) == ("100.00", "21.00", "121.00")
+
+    pedido = [p for p in factura["pedidos"] if p[0] == "cae"][-1][1]
+    # Lo que va a ARCA sale de la fila: el mismo neto, IVA y total que quedaron guardados.
+    assert (pedido["tipo"], pedido["subtotal"], pedido["iva_amount"], pedido["total"]) == (3, 100.0, 21.0, 121.0)
+    assert (pedido["cbte_asoc_tipo"], pedido["cbte_asoc_nro"]) == (1, 42)
+
+    detalle = _detalle(cliente, original["id"])
+    assert detalle["comprobante"]["anulado"] is False, "con saldo, el original sigue vigente"
+    assert [o["id"] for o in detalle["ordenes"]] == [factura["orden"]["id"]], "las ordenes no se tocan"
+    assert detalle["coinciden"] is True, "la factura sigue diciendo lo mismo que sus ordenes"
+    assert (detalle["acreditado"], detalle["saldo_acreditable"]) == ("121.00", "1089.00")
+    assert [n["id"] for n in detalle["notas"]] == [nota["id"]]
+
+    cuenta = _cuenta(cliente, datos)
+    assert Decimal(cuenta["saldo"]) == Decimal("1089.00")
+    abono = cuenta["movimientos"][-1]["movimiento"]
+    assert (Decimal(abono["haber"]), abono["comprobante_id"]) == (Decimal("121.00"), nota["id"])
+    assert abono["descripcion"] == "Diferencia de kilos"
+
+
+def test_las_parciales_que_suman_el_total_liberan_las_ordenes(cliente, datos, factura, monkeypatch):
+    """Decisión del humano (2026-10-05): acreditada por completo, la factura queda anulada y sus órdenes
+    vuelven a pendientes, igual que con la nota total. Así una parcial seguida de «estaba toda mal» tiene arreglo."""
+    original = factura["comprobante"]
+    assert _nota(cliente, original["id"], importe="121.00").status_code == 201
+    _arca_responde(monkeypatch, ultimo=42)
+    r = _nota(cliente, original["id"], motivo="Estaba toda mal", importe="1089.00")
+    assert r.status_code == 201, r.text
+
+    detalle = _detalle(cliente, original["id"])
+    assert detalle["comprobante"]["anulado"] is True
+    assert detalle["ordenes"] == [] and detalle["coinciden"] is True
+    assert (detalle["acreditado"], detalle["saldo_acreditable"]) == (None, None), "anulado: no hay nota posible"
+    assert len(detalle["notas"]) == 2
+    assert cliente.get(f"/api/ordenes/{factura['orden']['id']}").json()["estado"] == "pendiente"
+    assert Decimal(_cuenta(cliente, datos)["saldo"]) == 0
+    # Los totales: el original anulado sale, y sus notas con él (si no, se restaría dos veces).
+    filas = cliente.get("/api/comprobantes/totales").json()
+    assert all(f["coinciden"] and Decimal(f["total_comprobantes"]) == 0 for f in filas)
+    assert Decimal(cliente.get("/api/reportes/resumen").json()["facturado"]) == 0
+
+
+def test_los_totales_restan_la_nota_parcial_de_los_dos_lados(cliente, datos, factura):
+    assert _nota(cliente, factura["comprobante"]["id"], importe="121.00").status_code == 201
+
+    fila = next(f for f in cliente.get("/api/comprobantes/totales").json()
+                if f["razon_social_id"] == factura["razon"])
+    assert fila["coinciden"] is True, "una nota parcial no es una diferencia entre comprobantes y ordenes"
+    assert (fila["neto_comprobantes"], fila["iva_comprobantes"], fila["total_comprobantes"]) == (
+        "900.00", "189.00", "1089.00")
+    assert (fila["total_ordenes"], fila["cantidad_comprobantes"]) == ("1089.00", 1)
+    resumen = cliente.get("/api/reportes/resumen").json()
+    assert (resumen["comprobantes"], Decimal(resumen["facturado"])) == (1, Decimal("1089.00"))
+
+
+def test_la_nota_parcial_resta_en_el_rango_de_su_fecha(cliente, datos, factura):
+    """La factura es del 15/08 y la nota de hoy: cada una cuenta en el rango de su propia fecha, y los dos lados
+    del gate siguen coincidiendo en cualquier recorte."""
+    assert _nota(cliente, factura["comprobante"]["id"], importe="121.00").status_code == 201
+    hoy = tiempo.hoy().isoformat()
+
+    def total(**rango):
+        filas = cliente.get("/api/comprobantes/totales", params=rango).json()
+        assert all(f["coinciden"] for f in filas), rango
+        return sum((Decimal(f["total_comprobantes"]) for f in filas), Decimal(0))
+
+    assert total(hasta="2026-09-30") == Decimal("1210.00"), "antes de la nota, la factura entera"
+    assert total(desde=hoy) == Decimal("-121.00"), "en el rango de la nota, sólo lo que acredita"
+    assert total() == Decimal("1089.00")
+
+
+def test_el_tope_acumulado_del_motor_llega_con_409(cliente, datos, factura, monkeypatch):
+    original_id = factura["comprobante"]["id"]
+    assert _nota(cliente, original_id, importe="121.00").status_code == 201
+    _arca_responde(monkeypatch, ultimo=42)
+    r = _nota(cliente, original_id, importe="1100.00")
+    assert r.status_code == 409, r.text
+    assert "supera lo que queda por acreditar" in r.json()["detail"]
+    # Y con notas previas la total ya no corresponde: pide una por el saldo.
+    r = _nota(cliente, original_id)
+    assert r.status_code == 409, r.text
+    assert "saldo acreditable (1089.00)" in r.json()["detail"]
+    assert len(_detalle(cliente, original_id)["notas"]) == 1
+
+
+def test_un_importe_igual_al_total_es_la_nota_total(cliente, datos, factura):
+    original = factura["comprobante"]
+    nota = _nota(cliente, original["id"], importe=original["total"]).json()
+    assert (nota["neto"], nota["iva"], nota["total"]) == (original["neto"], original["iva"], original["total"])
+    assert _detalle(cliente, original["id"])["comprobante"]["anulado"] is True
+
+
+# ── La nota de una FCE: sólo parcial (ADR-028; la regla es del motor) ──────
+
+@pytest.fixture
+def fce(factura, sesion):
+    """Una FCE A emitida (con CAE) de 1210, del mismo cliente y razón social que la factura."""
     original = factura["comprobante"]
     fce = Comprobante(
         razon_social_id=original["razon_social_id"], tipo=TipoComprobante.FCE_A, punto_venta=5, numero=7,
@@ -229,11 +342,33 @@ def test_la_nota_de_una_fce_todavia_no_esta(cliente, datos, factura, sesion):
     )
     sesion.add(fce)
     sesion.commit()
-    antes = len(factura["pedidos"])
+    return fce.id
 
-    r = _nota(cliente, fce.id)
+
+def test_la_nota_de_una_fce_es_parcial_y_va_con_la_marca_de_que_no_anula(cliente, datos, factura, fce):
+    r = _nota(cliente, fce, importe="121.00")
+    assert r.status_code == 201, r.text
+    nota = r.json()
+    assert (nota["tipo"], nota["total"]) == ("nota_credito_fce_a", "121.00")
+
+    pedido = [p for p in factura["pedidos"] if p[0] == "cae"][-1][1]
+    assert pedido["tipo"] == 203, "la nota de credito FCE A es el tipo 203 de ARCA"
+    # Lo arma el motor: la FCE asociada con su fecha (10158) y `N` (S pide el rechazo del comprador, 10154).
+    assert (pedido["cbte_asoc_tipo"], pedido["cbte_asoc_nro"], pedido["cbte_asoc_fecha"]) == (201, 7, "2026-08-20")
+    assert pedido["fce_anulacion"] == "N"
+    # Una nota no es una factura FCE: no lleva vencimiento de pago ni CBU propios.
+    assert "fce_cbu" not in pedido and "fch_vto_pago" not in pedido
+    assert _detalle(cliente, fce)["saldo_acreditable"] == "1089.00"
+
+
+@pytest.mark.parametrize("importe", [None, "1210.00"])
+def test_una_fce_no_admite_la_nota_por_el_total(cliente, datos, factura, fce, importe):
+    """Medido: sin que el comprador la rechace, ARCA no deja anular una FCE (10154) y una nota por el total supera
+    su saldo (10184). Lo frena el motor —también la total sin importe, libracore#343— sin pedirle nada a ARCA."""
+    antes = len(factura["pedidos"])
+    r = _nota(cliente, fce, importe=importe)
     assert r.status_code == 422, r.text
-    assert "rechazo" in r.json()["detail"]
+    assert "rechaz" in r.json()["detail"]
     assert len(factura["pedidos"]) == antes, "no se le pidio nada a ARCA"
 
 

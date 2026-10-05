@@ -5,9 +5,10 @@ import type { Orden } from '@/api/ordenes'
 export type TipoComprobante =
   | 'factura_a' | 'factura_b' | 'factura_c'
   | 'nota_credito_a' | 'nota_credito_b' | 'nota_credito_c'
-  // Factura de Crédito Electrónica MiPyME. Sólo facturas: la nota de una FCE
-  // todavía no existe (ARCA sólo deja anularla si el comprador la rechazó).
+  // Factura de Crédito Electrónica MiPyME, y su nota de crédito (sólo parcial: ARCA no deja
+  // anularla entera si el comprador no la rechazó).
   | 'fce_a' | 'fce_b' | 'fce_c'
+  | 'nota_credito_fce_a' | 'nota_credito_fce_b' | 'nota_credito_fce_c'
 
 /** Lo que devuelve facturar cuando el ambiente de ARCA es homologación.
  *
@@ -65,6 +66,11 @@ export type ComprobanteConOrdenes = {
   suma_de_ordenes: SumaDeOrdenes
   /** Si el encabezado dice lo mismo que sus ordenes. */
   coinciden: boolean
+  /** Las notas de crédito que cuelgan de este comprobante. */
+  notas?: Comprobante[]
+  /** Lo acreditado por sus notas con CAE y lo que queda (lo cuenta el motor). `null` si no admite nota. */
+  acreditado?: string | null
+  saldo_acreditable?: string | null
 }
 
 export type TotalDeRazonSocial = {
@@ -110,6 +116,8 @@ export const NOMBRE_DE_TIPO: Record<TipoComprobante, string> = {
   nota_credito_c: 'Nota de crédito C',
   fce_a: 'Factura de crédito electrónica A', fce_b: 'Factura de crédito electrónica B',
   fce_c: 'Factura de crédito electrónica C',
+  nota_credito_fce_a: 'Nota de crédito FCE A', nota_credito_fce_b: 'Nota de crédito FCE B',
+  nota_credito_fce_c: 'Nota de crédito FCE C',
 }
 
 export function numeroDe(c: Comprobante): string {
@@ -141,9 +149,11 @@ export const comprobantes = {
   facturar: (datos: unknown) =>
     api.post<Comprobante | Ensayo>('/api/comprobantes', datos),
   anular: (id: number) => api.del<Comprobante>(`/api/comprobantes/${id}`),
-  // La nota de crédito **total** de un comprobante con CAE. Sin importe, fecha ni tipo: la nota es de hoy, por
-  // el total y de la letra del original; las decide el servidor (y el motor), no quien llama. Contra
-  // homologación contesta un `Ensayo` y no guarda nada, igual que `facturar`.
-  notaDeCredito: (id: number, motivo: string) =>
-    api.post<Comprobante | Ensayo>(`/api/comprobantes/${id}/nota-de-credito`, { motivo }),
+  // La nota de crédito de un comprobante con CAE: **total** sin `importe`, **parcial** con él (con IVA, como
+  // texto: no pasa por un float). Sin fecha ni tipo: la nota es de hoy y de la letra del original; los decide el
+  // servidor (y el motor), igual que el tope del importe. Contra homologación contesta un `Ensayo` y no guarda
+  // nada, igual que `facturar`.
+  notaDeCredito: (id: number, motivo: string, importe?: string) =>
+    api.post<Comprobante | Ensayo>(`/api/comprobantes/${id}/nota-de-credito`,
+      importe === undefined ? { motivo } : { motivo, importe }),
 }
