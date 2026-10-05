@@ -34,11 +34,13 @@ def _entorno_del_compose() -> dict[str, str]:
     return entorno
 
 
-def test_el_compose_declara_las_dos_bases():
+def test_el_compose_declara_las_dos_variables_sobre_UNA_base():
+    """Desde la ADR-029 el schema del motor vive en la base del dominio: las dos
+    variables siguen declaradas, pero apuntan a la misma base."""
     entorno = _entorno_del_compose()
     assert set(entorno) == {"DATABASE_URL", f"{PREFIJO.upper()}_LIBRACORE_DATABASE_URL"}
     assert entorno["DATABASE_URL"].endswith(f"/{PREFIJO}")
-    assert entorno[f"{PREFIJO.upper()}_LIBRACORE_DATABASE_URL"].endswith(f"/{PREFIJO}_core")
+    assert entorno[f"{PREFIJO.upper()}_LIBRACORE_DATABASE_URL"].endswith(f"/{PREFIJO}")
 
 
 def test_libraauth_migrar_resuelve_la_base_del_DOMINIO():
@@ -49,13 +51,14 @@ def test_libraauth_migrar_resuelve_la_base_del_DOMINIO():
     assert url.rsplit("/", 1)[-1] == PREFIJO
 
 
-def test_libracore_migrar_sigue_resolviendo_la_base_del_CORE():
-    """Control: sumar `DATABASE_URL` como histórico del dominio no le mueve la base
-    a `libracore-migrar`."""
+def test_libracore_migrar_resuelve_la_base_que_declara_su_variable():
+    """Control: `libracore-migrar` toma su base de la variable del core, no de
+    `DATABASE_URL`. En el compose de dev las dos son la del dominio (ADR-029)."""
     from libracore.migrar import url_de_core
 
-    url = url_de_core(PREFIJO, entorno=_entorno_del_compose())
-    assert url.rsplit("/", 1)[-1] == f"{PREFIJO}_core"
+    entorno = {**_entorno_del_compose(), "DATABASE_URL": "postgresql://u:p@h/otra"}
+    url = url_de_core(PREFIJO, entorno=entorno)
+    assert url.rsplit("/", 1)[-1] == PREFIJO
 
 
 def test_sin_la_variable_del_core_libracore_migrar_FALLA_y_no_cae_al_dominio():
