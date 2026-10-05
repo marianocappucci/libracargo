@@ -11,12 +11,12 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from libraauth.models import Base as AuthBase
 from libraauth.testing import crear_schema_de_auth
 from sqlalchemy.exc import OperationalError
 
 from app.db import obtener_sesion
 from app.main import crear_app
+from tests.conftest import vaciar_auth
 
 
 def _app():
@@ -38,7 +38,7 @@ def _cadena_de_auth(engine):
     """
     crear_schema_de_auth(engine)
     yield
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
 
 
 @pytest.fixture

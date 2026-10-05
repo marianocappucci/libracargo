@@ -71,23 +71,14 @@ _PG = base_por_worker(
     "libracargo",
     os.environ.get("DATABASE_URL", "postgresql+psycopg://postgres@127.0.0.1:5433/libracargo_test"),
 )
-_PG_CORE = base_por_worker(
-    "libracargo_core",
-    os.environ.get(
-        "LIBRACARGO_LIBRACORE_DATABASE_URL",
-        "postgresql+psycopg://postgres@127.0.0.1:5433/libracargo_test_core",
-    ),
-)
-
 URL = _PG.url
 os.environ["DATABASE_URL"] = URL
 
-#: La base de **LibraCore**, que es otra. No es una preferencia de la suite: el
-#: schema del motor declara `usuarios` y `auth_log`, y las dos ya existen del
-#: lado del dominio con la forma de `libraauth`. En una sola base el segundo
-#: `CREATE TABLE IF NOT EXISTS` no hace nada y el motor termina leyendo la tabla
-#: del otro — que es un verde que no dice nada.
-URL_CORE = _PG_CORE.url
+#: La base de **LibraCore** es **la misma** que la del dominio (etapa 3, salida A
+#: del diseño `libracargo-modelo-normalizado-diseno`): la suite corre como corre
+#: una instancia unida. `usuarios` y `auth_log` son las de `libraauth`, que el
+#: motor comparte, igual que en Contalibra.
+URL_CORE = URL
 os.environ["LIBRACARGO_LIBRACORE_DATABASE_URL"] = URL_CORE
 
 
@@ -124,7 +115,7 @@ def par_de_arca() -> tuple[bytes, bytes]:
 
 
 def config_de_prueba(**extra) -> Config:
-    """El `Config` de la suite, con las DOS bases.
+    """El `Config` de la suite: la misma URL para el dominio y el core.
 
     Existe porque `database_url_core` no tiene default —a propósito: caer en la
     base del dominio es justo el choque que la separación evita— y sin esto
@@ -141,13 +132,16 @@ def config_de_prueba(**extra) -> Config:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _schema_de_libracore():
+def _schema_de_libracore(engine):
     """Crea el schema del motor una vez para toda la suite.
 
     En producción esto lo hace `libracore-migrar upgrade --prefijo libracargo`,
     declarado en el deploy; acá se llama al DDL directo para no arrastrar
     alembic a cada corrida. Es la baseline de esa misma cadena, así que crea lo
     mismo.
+
+    🔑 **Después de `engine`**, que pide la fixture: con una sola base, el
+    `DROP SCHEMA public` de `engine` se llevaría puestas las tablas del motor.
     """
     libracore_core.configure(URL_CORE)
     with libracore_core.get_connection() as conn:
@@ -369,13 +363,31 @@ def cliente(engine, sesion, monkeypatch, _arca_de_cero):
     monkeypatch.setenv("ENV", "development")
     monkeypatch.setenv("LIBRACARGO_ADMIN_USERNAME", USUARIO)
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
     crear_schema_de_auth(engine)
     cfg = config_de_prueba()
     c = TestClient(crear_app(cfg), base_url="https://testserver")
     assert c.post("/auth/login", json={"username": USUARIO, "password": CLAVE}).status_code == 200
     yield c
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
+
+
+def vaciar_auth(engine):
+    """Deja las tablas de `libraauth` vacías, sin borrarlas.
+
+    🔴 **Vaciar y no `drop_all`**: con una sola base, `usuarios` la referencian
+    las FK del motor (`facturas.usuario_id`, `caja_movimientos.usuario_id`...),
+    así que no se puede borrar. `CASCADE` vacía también lo que la referencia, que
+    es lo que el test necesita para arrancar de cero.
+    """
+    from sqlalchemy import inspect
+
+    existentes = set(inspect(engine).get_table_names())
+    tablas = [t.name for t in reversed(AuthBase.metadata.sorted_tables) if t.name in existentes]
+    if tablas:
+        with engine.begin() as con:
+            con.execute(text("TRUNCATE TABLE " + ", ".join(f'"{t}"' for t in tablas)
+                             + " RESTART IDENTITY CASCADE"))
 
 
 def _crear(c, ruta, datos):

@@ -24,15 +24,18 @@ class Config:
     database_url: str
     entorno: str
     debug: bool
-    #: La base de **LibraCore**, que no es la del dominio.
+    #: La base de **LibraCore**. Desde la etapa 3 (diseño
+    #: `libracargo-modelo-normalizado-diseno`, salida A) es **la misma que la del
+    #: dominio**: las dos variables llevan la misma URL.
     #:
-    #: 🔴 **Son dos bases y no dos schemas de la misma.** El schema del core
-    #: declara `usuarios` y `auth_log`, y las dos ya existen en la base del
-    #: dominio con la forma de `libraauth`. `init_core_schema` las crea con
-    #: `CREATE TABLE IF NOT EXISTS`, así que no fallaría: las dejaría pasar y
-    #: el motor terminaría leyendo la tabla del otro. Es la misma razón por la
-    #: que Gestiolibra, MedLibra y LibraClub llevan el core aparte — allá el
-    #: choque era `clients`.
+    #: Antes iban aparte porque los dos schemas declaran `usuarios` y `auth_log`.
+    #: Medido el 2026-10-05 sobre una copia de Suitrans: las columnas son las
+    #: mismas —es la convivencia de Contalibra, Restolibra y VentaLibra— y el
+    #: motor ya contempla los tipos de `libraauth`. Juntas es lo que hace falta
+    #: para que los comprobantes vivan en `facturas` del motor: su `usuario_id`
+    #: apunta a los usuarios reales, y el comprobante, las órdenes y la cuenta
+    #: corriente se escriben en UNA transacción (ADR-025 del motor). Una
+    #: instancia que todavía no se unió sigue andando con su core aparte.
     #:
     #: El nombre de la variable lo define `libracore.db.url_de_instancia` y no
     #: este archivo: es el único lugar de la familia que sabe cómo se llaman, y

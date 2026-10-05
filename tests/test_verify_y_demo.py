@@ -17,13 +17,12 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-from libraauth.models import Base as AuthBase
 from libraauth.testing import crear_schema_de_auth
 
 from app.auth import COOKIE
 from app.config import Config
 from app.main import crear_app
-from tests.conftest import config_de_prueba
+from tests.conftest import config_de_prueba, vaciar_auth
 
 USUARIO, CLAVE = "admin", "clave-de-prueba"
 SECRETO_DOCS = "no-es-el-secreto-real-de-ninguna-instancia"
@@ -39,10 +38,10 @@ def entorno(engine, monkeypatch):
     monkeypatch.setenv("ENV", "development")
     monkeypatch.setenv("LIBRACARGO_ADMIN_USERNAME", USUARIO)
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
     crear_schema_de_auth(engine)
     yield monkeypatch
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
 
 
 # ── /auth/verify ────────────────────────────────────────────────────────────

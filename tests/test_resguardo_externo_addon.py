@@ -12,18 +12,15 @@ gate deja pasar de más, y fue el que se usó para la falla forzada.
 
 from __future__ import annotations
 
-import os
-
 import pytest
 from fastapi.testclient import TestClient
-from libraauth.models import Base as AuthBase
 from libraauth.testing import crear_schema_de_auth
 from libracore.db import core as libracore_core
 
 import plans
 from app import database
 from app.main import crear_app
-from tests.conftest import URL_CORE, config_de_prueba
+from tests.conftest import URL_CORE, config_de_prueba, vaciar_auth
 
 ADMIN, CLAVE = "admin", "clave-de-prueba"
 ADDON = "resguardo_externo"
@@ -55,13 +52,13 @@ def cliente(engine, sesion, tmp_path, monkeypatch):
     monkeypatch.setenv("ENV", "development")
     monkeypatch.setenv("LIBRACARGO_ADMIN_USERNAME", ADMIN)
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
     crear_schema_de_auth(engine)
     cfg = config_de_prueba(directorio_de_datos=str(tmp_path))
     c = TestClient(crear_app(cfg), base_url="https://testserver")
     assert c.post("/auth/login", json={"username": ADMIN, "password": CLAVE}).status_code == 200
     yield c
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
 
 
 # ── El gate ──────────────────────────────────────────────────────────────────
@@ -123,19 +120,21 @@ def test_un_usuario_que_no_es_admin_no_entra_aunque_este_prendido(cliente):
 def test_si_no_se_puede_leer_el_estado_falla_cerrado(cliente):
     """🔑 403 y no 500 cuando la tabla no está.
 
-    Se apunta el core a la base del DOMINIO, que no tiene `modulos`: es el caso
-    real —el que se midió en `libracargo-demo`— y no una excepción inventada.
-    Aunque la fila esté prendida en la base de verdad, el gate no la puede ver y
-    tiene que cerrar.
+    Es el caso real que se midió en `libracargo-demo` cuando el core apuntaba a
+    una base sin `modulos`. Desde que las bases están unidas la tabla existe, así
+    que se la saca de en medio renombrándola mientras dura la prueba. Aunque la
+    fila esté prendida, el gate no la puede ver y tiene que cerrar.
     """
     database.set_addon(ADDON, True)
     assert cliente.get(RUTA).status_code == 200, "el control: prendido, entra"
 
-    libracore_core.configure(os.environ["DATABASE_URL"])
+    with libracore_core.get_connection() as conn:
+        conn.execute("ALTER TABLE modulos RENAME TO modulos_fuera_de_prueba")
     try:
         assert cliente.get(RUTA).status_code == 403
     finally:
-        libracore_core.configure(URL_CORE)
+        with libracore_core.get_connection() as conn:
+            conn.execute("ALTER TABLE modulos_fuera_de_prueba RENAME TO modulos")
 
 
 # ── plans.py ─────────────────────────────────────────────────────────────────
