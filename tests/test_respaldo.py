@@ -22,11 +22,10 @@ import zipfile
 
 import pytest
 from fastapi.testclient import TestClient
-from libraauth.models import Base as AuthBase
 from libraauth.testing import crear_schema_de_auth
 
 from app.main import crear_app
-from tests.conftest import URL_CORE, config_de_prueba, par_de_arca
+from tests.conftest import config_de_prueba, par_de_arca, vaciar_auth
 
 ADMIN, CLAVE = "admin", "clave-de-prueba"
 
@@ -43,14 +42,14 @@ def cliente(engine, sesion, tmp_path, monkeypatch):
     monkeypatch.setenv("ENV", "development")
     monkeypatch.setenv("LIBRACARGO_ADMIN_USERNAME", ADMIN)
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
     crear_schema_de_auth(engine)
     cfg = config_de_prueba(directorio_de_datos=str(tmp_path))
     c = TestClient(crear_app(cfg), base_url="https://testserver")
     assert c.post("/auth/login", json={"username": ADMIN, "password": CLAVE}).status_code == 200
     c.carpeta = tmp_path / "backups"
     yield c
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
 
 
 def _dumps_del_zip(contenido: bytes) -> dict[str, int]:
@@ -63,40 +62,51 @@ def _dumps_del_zip(contenido: bytes) -> dict[str, int]:
         }
 
 
-def test_el_zip_trae_LAS_DOS_bases_y_ninguna_viene_vacia(cliente):
+def test_el_zip_trae_la_base_unida_y_no_viene_vacia(cliente):
     """Lo que hay que medir es el contenido, no que el endpoint haya contestado.
 
     Un `pg_dump` que falla a mitad deja un archivo con nombre de backup y cero
     bytes adentro, y el ZIP se arma igual. El tamaño es lo que separa un backup
     de un archivo que se llama como uno.
 
-    🔴 **Y son dos desde que la configuración de ARCA vive en LibraCore.** Un
-    ZIP con una sola mitad no se puede restaurar: o volvés el dominio y las
-    credenciales quedan de otro momento, o al revés. El modo de fallar es mudo
-    —restaurar deja una instancia que no puede facturar y no lo dice— y por eso
-    se aserta el conjunto exacto y no "que esté la del dominio".
+    🔑 **Una sola base desde la etapa 3**: el dominio y el core viven juntos, así
+    que el dump de la principal ya trae `arca_config` y `facturas`. Se aserta
+    el conjunto exacto: un segundo dump querría decir que el core quedó aparte.
+    Que sigan siendo dos cuando la instancia no se unió lo fija
+    `test_una_instancia_sin_unir_respalda_sus_dos_bases`.
     """
     r = cliente.get("/api/config/backup-ahora")
     assert r.status_code == 200, r.text
     assert r.headers["content-type"] == "application/zip"
 
     dumps = _dumps_del_zip(r.content)
-    assert set(dumps) == {"libracargo.dump", _dump_del_core()}, dumps
+    assert set(dumps) == {"libracargo.dump"}, dumps
     # Un dump de un schema real no baja de unos pocos KB ni comprimido. El
     # umbral es flojo a propósito: lo que cierra es el caso de los 0 bytes.
     for nombre, tamaño in dumps.items():
         assert tamaño > 1000, (nombre, dumps)
 
 
-def _dump_del_core() -> str:
-    """Cómo se llama, dentro del ZIP, el dump de la base de LibraCore.
+def test_una_instancia_sin_unir_respalda_sus_dos_bases():
+    """Mientras una instancia tenga el core aparte, el ZIP lleva las dos bases.
 
-    Sale del nombre de la base y no de un literal: en la suite es
-    `libracargo_test_core` y en el VPS `libracargo_core`, así que un literal
-    acá mediría otra cosa que producción. `respaldo.dumps` nombra a la
-    principal por el `nombre` de la instancia y a las extra **por su base**.
+    🔴 Un ZIP con una sola mitad no se puede restaurar: o volvés el dominio y las
+    credenciales quedan de otro momento, o al revés, y restaurar deja una
+    instancia que no puede facturar y no lo dice. Con las bases unidas, en
+    cambio, declarar el core como extra haría que las dos cayeran en
+    `libracargo.dump` (y `Instancia` lo rechaza al arrancar).
     """
-    return URL_CORE.rsplit("/", 1)[-1] + ".dump"
+    from app.main import _instancia_a_respaldar
+
+    aparte = _instancia_a_respaldar(config_de_prueba(
+        database_url="postgresql+psycopg://u@h/libracargo",
+        database_url_core="postgresql+psycopg://u@h/libracargo_core"))
+    assert [n for _, n in aparte.dumps] == ["libracargo.dump", "libracargo_core.dump"]
+
+    unida = _instancia_a_respaldar(config_de_prueba(
+        database_url="postgresql+psycopg://u@h/libracargo",
+        database_url_core="postgresql://u@h/libracargo?application_name=core"))
+    assert [n for _, n in unida.dumps] == ["libracargo.dump"]
 
 
 def _razones_sociales(cliente) -> list[str]:
@@ -128,8 +138,7 @@ def test_restaurar_deja_la_base_como_estaba(cliente):
     r = cliente.post("/api/config/restore",
                      files={"backup_file": ("copia.zip", copia, "application/zip")})
     assert r.status_code == 200, r.text
-    assert sorted(r.json()["bases_restauradas"]) == sorted(
-        ["libracargo.dump", _dump_del_core()])
+    assert r.json()["bases_restauradas"] == ["libracargo.dump"]
 
     quedan = _razones_sociales(cliente)
     assert "Antes SA" in quedan, "el restore contestó ok y no repuso nada"

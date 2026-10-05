@@ -27,11 +27,10 @@ Lo que fijan estos tests, en orden de lo que se rompe sin que se note:
 
 import pytest
 from fastapi.testclient import TestClient
-from libraauth.models import Base as AuthBase
 from libraauth.testing import crear_schema_de_auth
 
 from app.main import crear_app
-from tests.conftest import config_de_prueba
+from tests.conftest import config_de_prueba, vaciar_auth
 
 ADMIN, CLAVE = "admin", "clave-de-prueba"
 
@@ -40,7 +39,7 @@ def _app(engine, monkeypatch):
     monkeypatch.setenv("ENV", "development")
     monkeypatch.setenv("LIBRACARGO_ADMIN_USERNAME", ADMIN)
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
     crear_schema_de_auth(engine)
     cfg = config_de_prueba()
     return TestClient(crear_app(cfg), base_url="https://testserver")
@@ -52,7 +51,7 @@ def sin_loguear(engine, sesion, monkeypatch):
     ellos, no encontrarlo hecho."""
     c = _app(engine, monkeypatch)
     yield c
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
 
 
 @pytest.fixture

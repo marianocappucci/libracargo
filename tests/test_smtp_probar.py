@@ -13,11 +13,10 @@ términos, que también tiene su test en cada producto.
 
 import pytest
 from fastapi.testclient import TestClient
-from libraauth.models import Base as AuthBase
 from libraauth.testing import crear_schema_de_auth
 
 from app.main import crear_app
-from tests.conftest import config_de_prueba
+from tests.conftest import config_de_prueba, vaciar_auth
 
 USUARIO, CLAVE = "admin", "clave-de-prueba"
 
@@ -27,13 +26,13 @@ def cliente(engine, sesion, monkeypatch):
     monkeypatch.setenv("ENV", "development")
     monkeypatch.setenv("LIBRACARGO_ADMIN_USERNAME", USUARIO)
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
     crear_schema_de_auth(engine)
     cfg = config_de_prueba()
     c = TestClient(crear_app(cfg), base_url="https://testserver")
     assert c.post("/auth/login", json={"username": USUARIO, "password": CLAVE}).status_code == 200
     yield c
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
 
 
 def test_el_endpoint_de_probar_esta_montado(cliente):
@@ -58,7 +57,7 @@ def test_una_ruta_inventada_al_lado_NO_contesta(cliente):
 
 def test_probar_es_de_administrador(engine, monkeypatch):
     monkeypatch.setenv("ENV", "development")
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
     crear_schema_de_auth(engine)
     cfg = config_de_prueba()
     anonimo = TestClient(crear_app(cfg, sembrar_admin=False), base_url="https://testserver")
@@ -67,4 +66,4 @@ def test_probar_es_de_administrador(engine, monkeypatch):
         # pueda hacer cualquiera que esté logueado.
         assert anonimo.post("/admin/smtp/probar").status_code == 401
     finally:
-        AuthBase.metadata.drop_all(engine)
+        vaciar_auth(engine)

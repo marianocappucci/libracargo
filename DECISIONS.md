@@ -746,3 +746,38 @@ desde `v1.126.0`), y que el arreglo de fondo vive siempre en el motor (`reglas/p
 - Lo que **no** resuelve: la FCE completa (aceptación y rechazo del comprador, anulación total, nota de débito FCE): es del motor y se diseña
   aparte. Tampoco guarda ni muestra las observaciones de ARCA.
 - Consecuencias: **migración `0014`** (tres valores de `ENUM` y el `CHECK` rehecho; no toca filas); requiere `libracore >= v1.131.0`.
+
+## ADR-029 — Una sola base: el schema de LibraCore vuelve a vivir en la del dominio
+
+**Contexto.** Desde que la configuración de ARCA pasó al motor, LibraCargo llevó el schema de LibraCore en una base aparte (`libracargo_core`). El motivo era que los dos declaran `usuarios` y `auth_log`. La etapa 3 del diseño «LibraCargo sobre el modelo de comprobantes del motor» (wiki del ecosistema) pide lo contrario: que los comprobantes vivan en `facturas` del motor. Con dos bases eso no anda:
+- `facturas.usuario_id` es una FK a `usuarios`, y el `usuarios` del core está vacío.
+- El comprobante, las órdenes y la cuenta corriente tienen que escribirse en una sola transacción (ADR-024 de este producto, ADR-025 del motor), y entre dos bases no se puede.
+
+El humano eligió la salida A, una sola base, el 2026-10-05.
+
+**Medido** ese día sobre una copia de Suitrans:
+- Choque de tablas: sólo `usuarios` y `auth_log`. Las columnas son las mismas y cambian los tipos (`varchar`/`timestamp` contra `text`). Es la misma convivencia que tienen Contalibra, VentaLibra y Restolibra, con una u otra forma.
+- El core de Suitrans está vacío salvo las semillas.
+- `libracore-migrar` sobre la base del dominio muere con *relation "alembic_version_pkc" already exists*: el renombre viejo de la tabla de versión no renombró su clave.
+- Con la clave renombrada, la cadena del motor corre y ninguna tabla del dominio cambia sus filas.
+
+**Decisión.**
+- **Revisión `0015`**: renombra la clave a `alembic_version_libracargo_pkc` si hace falta.
+- **El alta de un cliente nuevo nace con una base** (`base_core_separada=False`): las dos variables llevan la misma URL.
+- **El respaldo declara el core como segunda base sólo si es otra** (`_instancia_a_respaldar`). Con una sola base, el dump de la principal ya lo trae todo.
+- **La suite corre con una sola base**: la de producción después de unir. Las tablas de `libraauth` se vacían (`vaciar_auth`) en vez de borrarse, porque las FK del motor las referencian.
+
+**Unir una instancia existente** (dev, demo y Suitrans, cada una con su OK):
+1. Desplegar esta versión con las bases todavía separadas. La 0015 corre en la del dominio.
+2. Respaldar las dos bases y probar la restauración.
+3. Copiar a la base del dominio lo que el core tenga además de las semillas (`arca_config` y `modulos`, si tienen filas).
+4. Correr `libracore-migrar upgrade --prefijo libracargo` contra la base del dominio.
+5. Cambiar `LIBRACARGO_LIBRACORE_DATABASE_URL` en el compose para que apunte a la base del dominio, y desplegar.
+6. Verificar: health, versión del motor en la base del dominio, conteos del dominio idénticos y la configuración de ARCA presente.
+
+La base `libracargo_core` vieja se conserva como respaldo; no se borra sin preguntar.
+
+**Consecuencias.**
+- Una instancia unida y una sin unir conviven: el código mira si las URLs coinciden.
+- Lo que siga de la etapa 3 (los comprobantes en `facturas`) sólo corre en instancias unidas.
+

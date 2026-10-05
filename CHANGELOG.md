@@ -6,6 +6,12 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Agregado
 
+- **Una sola base** (ADR-029). El schema de LibraCore vuelve a vivir en la base del dominio. Es la salida A de la etapa 3 del diseño «LibraCargo sobre el modelo de comprobantes del motor».
+  - **Revisión `0015`**: renombra la clave de `alembic_version_libracargo` para que la cadena del motor pueda migrar en la misma base.
+  - **Alta y respaldo**: un cliente nuevo nace con una sola base, y el respaldo lleva el core como segunda base sólo si todavía es otra.
+  - **Instancias existentes**: no se unen con este deploy; se unen con el procedimiento del ADR, cada una con su OK.
+  - **Suite**: corre con una sola base.
+
 - **Nota de crédito parcial, y la de una FCE** (ADR-028). `POST /api/comprobantes/{id}/nota-de-credito` acepta `importe` (con IVA): la nota
   acredita ese monto sin tocar las órdenes, con el tope acumulado del motor; cuando las notas suman el comprobante entero, el original queda
   anulado y sus órdenes vuelven a pendientes. Una **FCE** admite notas parciales por menos que su saldo (tipos 203, 208 y 213). Los totales,
