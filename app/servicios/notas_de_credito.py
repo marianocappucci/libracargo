@@ -8,8 +8,9 @@ del modelo de acá:
 
 - cómo se carga el comprobante a acreditar y sus notas previas (`comprobantes`);
 - dónde se guarda la nota (una fila más de `comprobantes`, en positivo, con `comprobante_asociado_id`);
-- qué pasa con lo propio cuando se acredita: **las órdenes vuelven a pendientes** y la **cuenta corriente** del
-  cliente recibe el abono.
+- qué pasa con lo propio cuando se acredita: la **cuenta corriente** del cliente recibe el abono de cada nota, y
+  cuando el comprobante queda acreditado **por completo** —con una nota total o con parciales que suman su total—
+  **las órdenes vuelven a pendientes** (ADR-028).
 
 Si falta una guarda o una regla de la nota, se agrega en el motor y llega a todos por el bump de pin; no se escribe
 acá (`reglas/producto.md` del wiki: el arreglo de fondo vive siempre en el motor).
@@ -68,14 +69,31 @@ def _previas(sesion: Session, original_id: int) -> list[dict]:
     notas = sesion.scalars(
         select(Comprobante).where(Comprobante.comprobante_asociado_id == original_id)
     )
+    # Con su `total`: es lo que el motor suma para el tope acumulado. Sin él contaría cada previa como el
+    # comprobante entero, que es el comportamiento de la fase 1 (cualquier nota bloqueaba a la siguiente).
     return [{"tipo": emision_arca.CODIGO_ARCA[n.tipo], "punto_venta": n.punto_venta,
-             "numero": n.numero, "cae": n.cae} for n in notas]
+             "numero": n.numero, "cae": n.cae, "total": str(n.total)} for n in notas]
+
+
+def notas_de(sesion: Session, original_id: int) -> list[Comprobante]:
+    """Las notas de crédito que cuelgan de un comprobante, en el orden en que se emitieron."""
+    return list(sesion.scalars(
+        select(Comprobante).where(Comprobante.comprobante_asociado_id == original_id)
+        .order_by(Comprobante.fecha, Comprobante.id)
+    ))
+
+
+def saldo(sesion: Session, original: Comprobante) -> tuple[Decimal, Decimal]:
+    """`(acreditado, saldo_acreditable)` del comprobante. **La cuenta es del motor**; acá sólo se le pasa el modelo."""
+    forma, previas = _en_forma_del_motor(sesion, original), _previas(sesion, original.id)
+    return motor.acreditado(forma, previas), motor.saldo_acreditable(forma, previas)
 
 
 async def emitir(
-    sesion: Session, original: Comprobante, *, motivo: str, hoy: date,
+    sesion: Session, original: Comprobante, *, motivo: str, hoy: date, importe: Decimal | None = None,
 ) -> tuple[Comprobante, dict]:
-    """Emite la nota de crédito **total** de `original` y cierra lo propio. Devuelve `(nota, cfg_de_arca)`.
+    """Emite la nota de crédito de `original`: **total** sin `importe`, **parcial** con él (con IVA). Devuelve
+    `(nota, cfg_de_arca)`. Lo propio lo cierra `cerrar_lo_propio`, después.
 
     **No hace `commit`**: lo hace quien llama, igual que `facturar`. Si ARCA rechaza (o cualquier paso falla),
     levanta y no queda nada; el `rollback` también es de quien llama.
@@ -100,8 +118,10 @@ async def emitir(
             # El punto de venta con el que se numeró, no el que traía el original.
             punto_venta=razon.punto_venta, numero=nota["numero"], fecha=hoy,
             cliente_id=original.cliente_id,
-            # Los importes del original, tal cual: una nota que anula dice lo mismo que anula.
-            neto=original.neto, iva=original.iva, total=original.total,
+            # Los importes **que armó el motor**: la nota total copia los del original y la parcial reparte el
+            # importe con su alícuota (`repartir_importe`; en una C todo es neto). Son los que van a ARCA, porque
+            # `pedir_cae` arma el pedido desde esta fila.
+            **_importes(original, nota),
             comprobante_asociado_id=original.id, motivo=motivo,
         )
         sesion.add(registro)
@@ -117,33 +137,55 @@ async def emitir(
         clave=("comprobantes", original.id),
         cargar_previas=lambda: _previas(sesion, original.id),
         numerar=numerar, registrar=registrar, pedir_cae=pedir_cae,
-        hoy=hoy, motivo=motivo,
+        hoy=hoy, motivo=motivo, importe=importe,
     )
     return emitida.registro, estado["cfg"]
 
 
-def cerrar_lo_propio(sesion: Session, original: Comprobante, nota: Comprobante) -> list[OrdenCarga]:
-    """Lo que pasa en este producto cuando una factura queda acreditada. Devuelve las órdenes liberadas.
+def _importes(original: Comprobante, nota: dict) -> dict:
+    """`neto`, `iva` y `total` de la fila de la nota, a partir de lo que armó el motor.
 
-    - El original queda `anulado`: mismo significado que siempre, sin efecto contable; la nota lo referencia.
-    - Sus **órdenes vuelven a pendientes** y se pueden refacturar: ARCA ya tiene la factura *y* su nota, así
-      que no hay dos facturas vigentes por lo mismo.
-    - La **cuenta corriente** recibe el abono por el importe de la nota, **con la fecha de la nota**: es un hecho
-      fechado de ARCA. (Distinto de `anular`, que reversa un comprobante sin CAE con la fecha del original.)
+    Si el motor copió el original (nota total) se guardan **los del original tal cual**: su `subtotal` de una C es
+    `neto + iva`, y releerlo así cambiaría cómo está partida la fila. Si no, la nota es parcial y manda el motor.
     """
-    ordenes = list(sesion.scalars(
-        select(OrdenCarga).where(OrdenCarga.comprobante_id == original.id)
-        .order_by(OrdenCarga.fecha, OrdenCarga.id)
-    ))
-    for orden in ordenes:
-        orden.comprobante_id = None
-        orden.estado = EstadoOrden.PENDIENTE
-    original.anulado = True
+    total = Decimal(str(nota["total"])).quantize(Decimal("0.01"))
+    if total == Decimal(original.total):
+        return {"neto": original.neto, "iva": original.iva, "total": original.total}
+    return {"neto": Decimal(str(nota["subtotal"])).quantize(Decimal("0.01")),
+            "iva": Decimal(str(nota["iva_amount"])).quantize(Decimal("0.01")), "total": total}
+
+
+def cerrar_lo_propio(sesion: Session, original: Comprobante, nota: Comprobante) -> list[OrdenCarga]:
+    """Lo que pasa en este producto cuando se emite una nota. Devuelve las órdenes liberadas (vacío si no se liberó).
+
+    - La **cuenta corriente** recibe siempre el abono **por el importe de la nota**, **con la fecha de la nota**:
+      es un hecho fechado de ARCA. (Distinto de `anular`, que reversa un comprobante sin CAE con la fecha del
+      original.)
+    - 🔑 **Si con esta nota el comprobante queda acreditado por completo** —es una nota total, o las parciales ya
+      suman su total— el original queda `anulado` (mismo significado que siempre, sin efecto contable; las notas lo
+      referencian) y sus **órdenes vuelven a pendientes**, para refacturarlas: ARCA ya tiene la factura *y* notas por
+      todo su importe, así que no hay dos facturas vigentes por lo mismo (decisión del humano, 2026-10-05).
+    - Si queda saldo, las órdenes no se tocan: la nota acredita plata, no viajes (diferencia de kilos, bonificación).
+
+    El saldo lo calcula el motor (`saldo_acreditable`) con la nota ya guardada.
+    """
+    _acreditado, queda = saldo(sesion, original)
+    ordenes: list[OrdenCarga] = []
+    if queda == 0:
+        ordenes = list(sesion.scalars(
+            select(OrdenCarga).where(OrdenCarga.comprobante_id == original.id)
+            .order_by(OrdenCarga.fecha, OrdenCarga.id)
+        ))
+        for orden in ordenes:
+            orden.comprobante_id = None
+            orden.estado = EstadoOrden.PENDIENTE
+        original.anulado = True
     sesion.add(MovimientoCuenta(
         fecha=nota.fecha, tercero_id=nota.cliente_id, rol=RolCuenta.CLIENTE,
         concepto=f"{etiqueta(nota.tipo, nota.punto_venta, nota.numero)} s/ "
                  f"{etiqueta(original.tipo, original.punto_venta, original.numero)}",
-        descripcion="Ordenes " + ", ".join(str(o.id) for o in ordenes),
+        descripcion=("Ordenes " + ", ".join(str(o.id) for o in ordenes)) if ordenes
+                    else (nota.motivo or "Nota de credito parcial"),
         debe=0, haber=nota.total, comprobante_id=nota.id,
     ))
     return ordenes

@@ -718,3 +718,31 @@ desde `v1.126.0`), y que el arreglo de fondo vive siempre en el motor (`reglas/p
   Suitrans (existen en ARCA y acá no tienen CAE; decisión con el cliente). Diseño: `wiki/analyses/libracargo-nota-de-credito-diseno.md`.
 - Consecuencias: **migración `0013` aditiva** (dos columnas `NULL`, un `CHECK` verdadero para todo lo existente, un índice); requiere
   `libracore >= v1.126.0`.
+
+## ADR-028 — La nota de crédito parcial, y la de una FCE
+
+**Estado:** aceptada (2026-10-05). **Contexto:** la nota de ADR-027 era sólo total. El motor suma la nota **parcial** con su tope acumulado
+(`libracore` v1.130.0, ADR-018 de allá) y frena la nota total de una FCE antes de ir a ARCA (v1.131.0, libracore#343). El humano decidió el
+2026-10-05 que **unas parciales que suman el total liberan las órdenes** y que **la nota de una FCE entra ahora** (sólo parcial).
+
+- Decisión 1 — **`{motivo, importe?}`**: sin `importe` la nota es total (como ADR-027); con él, parcial por ese monto **con IVA**, de hasta dos
+  decimales (un booleano no es un importe). El tope (lo ya acreditado más esto no supera el total), la nota total sólo sin notas previas, el
+  reparto en neto e IVA con la alícuota del original y **las reglas de la FCE** son del motor; acá no hay guarda propia. Códigos nuevos:
+  `IMPORTE` 422 y `SUPERA_SALDO` 409, como el router de facturas del motor. Las notas previas viajan al motor **con su `total`**.
+- Decisión 2 — **la fila de la nota lleva los importes que armó el motor** (en una C todo es neto) y `pedir_cae` arma el pedido desde ella: lo
+  guardado es lo que se mandó a ARCA. Una nota por el total (con o sin `importe`) copia el original tal cual.
+- Decisión 3 — **cerrar lo propio depende del saldo** (`saldo_acreditable` del motor, con la nota ya guardada): toda nota abona su importe en la
+  cuenta corriente con su fecha; **si el comprobante quedó acreditado por completo** queda `anulado` y sus órdenes vuelven a pendientes
+  (refacturables); con saldo, las órdenes no se tocan (la nota acredita plata, no viajes).
+- Decisión 4 — **los totales restan las notas de un original vigente, con la fecha de la nota** (`acreditado_por_notas`), en el gate por razón
+  social (**de los dos lados**, así una parcial no aparece como diferencia), en el resumen y en lo facturado por razón social. Una nota cuyo
+  original está anulado no resta: el original ya salió de todo el rango (así la nota total sigue sin sumar ni restar, sin distinguirla).
+- Decisión 5 — **la nota de una FCE**: tipos `nota_credito_fce_a/b/c` (203, 208 y 213; migración `0014`, que rehace
+  `ck_comprobantes_nota_con_asociado` para incluirlos). Sólo por **menos que el saldo** (`10184`); anularla entera exige que el comprador la
+  rechace (`10154`), que pasa por el servicio de FCE de ARCA que la familia todavía no integra. La marca `N`, el asociado con su fecha (`10158`)
+  y no mandar vencimiento ni CBU los arma el motor.
+- Decisión 6 — **el detalle del comprobante** trae `notas`, `acreditado` y `saldo_acreditable` (`null` donde no hay nota posible), y la pantalla
+  ofrece «por el total» (sin notas previas y no FCE) o «por un importe» (≤ saldo; < saldo en una FCE), con las notas listadas.
+- Lo que **no** resuelve: la FCE completa (aceptación y rechazo del comprador, anulación total, nota de débito FCE): es del motor y se diseña
+  aparte. Tampoco guarda ni muestra las observaciones de ARCA.
+- Consecuencias: **migración `0014`** (tres valores de `ENUM` y el `CHECK` rehecho; no toca filas); requiere `libracore >= v1.131.0`.

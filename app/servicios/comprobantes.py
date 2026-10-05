@@ -20,7 +20,7 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import Select, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.models.enums import TipoComprobante
 from app.models.operacion import Comprobante, OrdenCarga
@@ -32,22 +32,61 @@ from app.schemas.comprobantes import (
 
 CERO = Decimal("0.00")
 
-#: Las notas de crédito, que no suman ni restan en los totales: ver `solo_facturas`.
+#: Las notas de crédito (de factura y de FCE). No **suman** a lo facturado: lo **restan**, y sólo
+#: mientras su original sigue vigente (ver `acreditado_por_notas`).
 TIPOS_NOTA = frozenset({
     TipoComprobante.NOTA_CREDITO_A,
     TipoComprobante.NOTA_CREDITO_B,
     TipoComprobante.NOTA_CREDITO_C,
+    TipoComprobante.NOTA_CREDITO_FCE_A,
+    TipoComprobante.NOTA_CREDITO_FCE_B,
+    TipoComprobante.NOTA_CREDITO_FCE_C,
 })
 
 
 def solo_facturas(consulta):
-    """Saca las notas de crédito de una suma de lo facturado.
+    """Saca las notas de crédito de una suma de lo facturado: las notas se **restan** aparte.
 
-    La nota **total** acredita lo mismo que su factura, y la factura ya queda `anulado` (sale de los totales
-    en todo el rango). Si la nota se sumara, lo facturado subiría en vez de bajar, y del lado de las órdenes no
-    hay nada que la compense. Cuando exista la nota parcial esto se revisa (ver el diseño de la nota).
+    Sumarlas haría subir lo facturado en vez de bajarlo. Lo que restan lo da `acreditado_por_notas`.
     """
     return consulta.where(Comprobante.tipo.notin_(TIPOS_NOTA))
+
+
+def acreditado_por_notas(
+    agrupar_por, desde: date | None = None, hasta: date | None = None, filtros=(),
+) -> Select:
+    """Lo que acreditan las notas de crédito **cuyo original sigue vigente**, agrupado por `agrupar_por`.
+
+    Devuelve `(clave, cantidad, neto, iva, total)` por grupo; es lo que se **resta** de lo facturado (ADR-028).
+
+    - 🔑 **Sólo cuentan las notas de un original no anulado.** Una nota total anula su original, y cuando las
+      parciales suman el comprobante entero también (`cerrar_lo_propio`): ese original ya salió de los totales en
+      todo el rango, y restar además sus notas lo descontaría dos veces. Así la nota total no suma ni resta, y no
+      hace falta distinguirla de una parcial.
+    - **El rango es el de la fecha de la nota**, no la del original: es un hecho fechado de ARCA, y es la fecha con la
+      que entra al libro de ventas y a la cuenta corriente.
+    - `agrupar_por` es una columna de la **nota** (`Comprobante.razon_social_id`, `Comprobante.cliente_id`…), y
+      `filtros` pares `(columna, valor)` sobre ella; un valor `None` no filtra.
+    """
+    original = aliased(Comprobante)
+    consulta = (
+        select(
+            agrupar_por,
+            func.count(Comprobante.id),
+            func.coalesce(func.sum(Comprobante.neto), 0),
+            func.coalesce(func.sum(Comprobante.iva), 0),
+            func.coalesce(func.sum(Comprobante.total), 0),
+        )
+        .select_from(Comprobante)
+        # Toda nota tiene asociado y nada más lo tiene (`ck_comprobantes_nota_con_asociado`): el `join` ya las elige.
+        .join(original, Comprobante.comprobante_asociado_id == original.id)
+        .where(Comprobante.anulado.is_(False), original.anulado.is_(False))
+        .group_by(agrupar_por)
+    )
+    for columna, valor in filtros:
+        if valor is not None:
+            consulta = consulta.where(columna == valor)
+    return _acotar(consulta, desde, hasta)
 
 
 def etiqueta(tipo: TipoComprobante, punto_venta: int, numero: int) -> str:
@@ -101,6 +140,12 @@ def totales_por_razon_social(
     Los anulados quedan afuera de los dos lados: un comprobante anulado devuelve
     sus órdenes a pendientes, así que contarlo de un lado y no del otro
     reportaría una diferencia que no existe.
+
+    🔑 **Las notas parciales se restan de los dos lados, por lo mismo** (ADR-028): acreditan plata sin tocar las
+    órdenes, así que del lado de los comprobantes lo facturado baja y del lado de las órdenes también tiene que
+    bajar —si no, cada nota parcial aparecería como una diferencia—. Los dos restan **el mismo** conjunto
+    (`acreditado_por_notas`), así que la comparación sigue siendo la de los encabezados contra sus órdenes.
+    `cantidad_comprobantes` cuenta facturas, no notas.
     """
     por_comprobante = _acotar(
         select(
@@ -129,17 +174,22 @@ def totales_por_razon_social(
 
     lado_a = {fila[0]: fila[1:] for fila in sesion.execute(por_comprobante)}
     lado_b = {fila[0]: fila[1:] for fila in sesion.execute(por_orden)}
+    notas = {fila[0]: fila[2:] for fila in sesion.execute(
+        acreditado_por_notas(Comprobante.razon_social_id, desde, hasta))}
 
     salida = []
     # La unión de las dos claves, no la intersección: una razón social que
     # aparece de un solo lado es justamente el caso que hay que ver. Con un
     # `join` entre los dos agregados, esa fila desaparecería y la pantalla
     # mostraría todo en orden.
-    for clave in sorted(set(lado_a) | set(lado_b), key=lambda k: (k is None, k or 0)):
+    for clave in sorted(set(lado_a) | set(lado_b) | set(notas), key=lambda k: (k is None, k or 0)):
         cant_c, neto_c, iva_c, total_c = lado_a.get(clave, (0, 0, 0, 0))
         cant_o, neto_o, iva_o, total_o = lado_b.get(clave, (0, 0, 0, 0))
-        neto_c, iva_c, total_c = (Decimal(x).quantize(CERO) for x in (neto_c, iva_c, total_c))
-        neto_o, iva_o, total_o = (Decimal(x).quantize(CERO) for x in (neto_o, iva_o, total_o))
+        neto_n, iva_n, total_n = (Decimal(x) for x in notas.get(clave, (0, 0, 0)))
+        neto_c, iva_c, total_c = (
+            (Decimal(x) - n).quantize(CERO) for x, n in ((neto_c, neto_n), (iva_c, iva_n), (total_c, total_n)))
+        neto_o, iva_o, total_o = (
+            (Decimal(x) - n).quantize(CERO) for x, n in ((neto_o, neto_n), (iva_o, iva_n), (total_o, total_n)))
         salida.append(TotalDeRazonSocial(
             razon_social_id=clave,
             cantidad_comprobantes=cant_c,
