@@ -56,17 +56,16 @@ configure(
     # de la imagen y `-alpine` ordena por bytes: una instancia nueva que ordenara
     # distinto que dev sería un cambio de comportamiento invisible.
     postgres_image="postgres:16",
-    # 🔴 **El schema de LibraCore NO puede compartir base con el del
-    # dominio.** Los dos declaran `usuarios` y `auth_log`; el segundo
-    # `CREATE TABLE IF NOT EXISTS` no hace nada y el motor termina
-    # leyendo la tabla de `libraauth`. Misma razón por la que Gestiolibra,
-    # MedLibra y LibraClub la llevan aparte — allá el choque era `clients`.
-    #
-    # Prender esto hace que un alta nueva cree `libracargo_core` con un
-    # init de PostgreSQL. ⚠️ Ese init corre UNA vez, al inicializar el
-    # volumen: las instancias que ya existen necesitan el `CREATE
-    # DATABASE` a mano antes de recibir esta versión.
-    base_core_separada=True,
+    # **Una sola base: el schema de LibraCore vive en la del dominio** (etapa 3
+    # del diseño `libracargo-modelo-normalizado-diseno`, salida A, 2026-10-05).
+    # Hasta acá iba aparte porque los dos declaran `usuarios` y `auth_log`; pero
+    # las columnas son las mismas —es la convivencia que ya tienen Contalibra,
+    # Restolibra y VentaLibra— y para que los comprobantes vivan en `facturas`
+    # del motor hace falta que `facturas.usuario_id` apunte a los usuarios de
+    # `libraauth`, y que el comprobante, las órdenes y la cuenta corriente se
+    # escriban en UNA transacción (ADR-025 del motor). Un alta nueva nace así;
+    # las instancias viejas se unen con el procedimiento de la etapa 3.
+    base_core_separada=False,
     # El backup del cron arma el MISMO ZIP que la pantalla de Configuración →
     # Datos / Backup, en vez de un `tar.gz` aparte que la pantalla no lista y el
     # cliente no puede restaurar. Este producto puede prenderlo porque su

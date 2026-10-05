@@ -6,11 +6,10 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from libraauth.models import Base as AuthBase
 from libraauth.testing import crear_schema_de_auth
 
 from app.main import crear_app
-from tests.conftest import config_de_prueba
+from tests.conftest import config_de_prueba, vaciar_auth
 
 USUARIO, CLAVE = "admin", "clave-de-prueba"
 
@@ -20,13 +19,13 @@ def cliente(engine, sesion, monkeypatch):
     monkeypatch.setenv("ENV", "development")
     monkeypatch.setenv("LIBRACARGO_ADMIN_USERNAME", USUARIO)
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
     crear_schema_de_auth(engine)
     cfg = config_de_prueba()
     c = TestClient(crear_app(cfg), base_url="https://testserver")
     assert c.post("/auth/login", json={"username": USUARIO, "password": CLAVE}).status_code == 200
     yield c
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
 
 
 @pytest.fixture
@@ -196,14 +195,14 @@ def test_la_auditoria_de_importes_compara_lo_guardado_con_la_cuenta(cliente, mae
 
 def test_sin_sesion_no_se_ven_las_ordenes(engine, monkeypatch):
     monkeypatch.setenv("ENV", "development")
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
     crear_schema_de_auth(engine)
     cfg = config_de_prueba()
     anonimo = TestClient(crear_app(cfg, sembrar_admin=False), base_url="https://testserver")
     try:
         assert anonimo.get("/api/ordenes").status_code == 401
     finally:
-        AuthBase.metadata.drop_all(engine)
+        vaciar_auth(engine)
 
 
 # ---------------------------------------------------------------------------

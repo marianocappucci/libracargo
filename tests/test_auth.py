@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-from libraauth.models import Base as AuthBase
 from libraauth.testing import crear_schema_de_auth
 
 from app.auth import COOKIE
 from app.main import crear_app
-from tests.conftest import config_de_prueba
+from tests.conftest import config_de_prueba, vaciar_auth
 
 USUARIO, CLAVE = "admin", "clave-de-prueba"
 
@@ -33,10 +32,10 @@ def entorno(engine, monkeypatch):
     monkeypatch.setenv("ENV", "development")
     monkeypatch.setenv("LIBRACARGO_ADMIN_USERNAME", USUARIO)
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
     crear_schema_de_auth(engine)
     yield
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
 
 
 @pytest.fixture
@@ -90,14 +89,14 @@ def test_sin_clave_de_admin_la_app_no_levanta(engine, monkeypatch):
     monkeypatch.delenv("ENV", raising=False)
     monkeypatch.delenv("LIBRACARGO_ADMIN_PASSWORD", raising=False)
     monkeypatch.setenv("SECRET_KEY", "un-secreto-cualquiera-para-el-test")
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
     crear_schema_de_auth(engine)
     try:
         cfg = config_de_prueba(entorno="production")
         with pytest.raises(RuntimeError, match="ADMIN_PASSWORD"):
             crear_app(cfg)
     finally:
-        AuthBase.metadata.drop_all(engine)
+        vaciar_auth(engine)
 
 
 def test_sin_secreto_de_sesion_la_app_no_levanta(engine, monkeypatch):
@@ -111,11 +110,11 @@ def test_sin_secreto_de_sesion_la_app_no_levanta(engine, monkeypatch):
     monkeypatch.delenv("ENV", raising=False)
     monkeypatch.delenv("SECRET_KEY", raising=False)
     monkeypatch.setenv("LIBRACARGO_ADMIN_PASSWORD", CLAVE)
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
     crear_schema_de_auth(engine)
     cfg = config_de_prueba(entorno="production")
     try:
         with pytest.raises(RuntimeError, match="SECRET_KEY"):
             crear_app(cfg)
     finally:
-        AuthBase.metadata.drop_all(engine)
+        vaciar_auth(engine)

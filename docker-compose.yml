@@ -89,15 +89,15 @@ services:
       - LIBRACARGO_ADMIN_USERNAME=${LIBRACARGO_ADMIN_USERNAME:-admin}
       - LIBRACARGO_ADMIN_PASSWORD=${LIBRACARGO_ADMIN_PASSWORD:?hay que definirla en el .env}
       - DATABASE_URL=postgresql+psycopg://libracargo:${LIBRACARGO_POSTGRES_PASSWORD:?hay que definirla en el .env}@libracargo-postgres:5432/libracargo
-      # La base de LibraCore, que NO es la del dominio: el schema del motor
-      # declara `usuarios` y `auth_log` y las dos ya existen del otro lado
-      # con la forma de `libraauth`. Sin esta variable la app no arranca —
-      # a propósito: el default silencioso sería caer en la del dominio, que
-      # es justo el choque que esta separación evita.
+      # La base de LibraCore **es la del dominio** (ADR-029): una sola base, con
+      # `usuarios` y `auth_log` compartidos con `libraauth`, como en Contalibra.
+      # La variable sigue siendo obligatoria —sin ella la app no arranca— y lleva
+      # la misma URL que `DATABASE_URL`. `libracargo_core` queda en el servidor
+      # como respaldo de la unión; no se borra sin preguntar.
       #
       # El nombre lo define `libracore.db.url_de_instancia`, que es también
       # quien lo lee. No hay una segunda convención que pueda divergir.
-      - LIBRACARGO_LIBRACORE_DATABASE_URL=postgresql+psycopg://libracargo:${LIBRACARGO_POSTGRES_PASSWORD:?hay que definirla en el .env}@libracargo-postgres:5432/libracargo_core
+      - LIBRACARGO_LIBRACORE_DATABASE_URL=postgresql+psycopg://libracargo:${LIBRACARGO_POSTGRES_PASSWORD:?hay que definirla en el .env}@libracargo-postgres:5432/libracargo
       - ENTORNO=dev
       # Como el backoffice (`admin.libracargo.com.ar`) administra los usuarios
       # de esta instancia. **Con default vacio a proposito**, al reves que las

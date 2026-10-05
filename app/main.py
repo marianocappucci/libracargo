@@ -122,6 +122,13 @@ def _instancia_a_respaldar(config: Config) -> Instancia:
     escribe el upload, o el backup respalda una carpeta vacía al lado de la que
     tiene las credenciales.
     """
+    # 🔑 **Una base o dos, según la instancia.** Desde la etapa 3 el core vive en
+    # la base del dominio (una sola URL para las dos variables): ahí el dump de
+    # la principal ya lo trae todo, y declararla dos veces haría que las dos
+    # cayeran en `libracargo.dump` —`Instancia` lo rechaza al arrancar—. Una
+    # instancia que todavía no se unió sigue con su core aparte, y entonces sí
+    # va como extra: un backup con una sola mitad no se puede restaurar.
+    extra = [] if _misma_base(config.database_url, config.database_url_core) else [config.database_url_core]
     return Instancia(
         # La principal es la del DOMINIO, no la del core: `dumps` nombra a la
         # principal por `nombre` y a las extra por su base, así que invertirlas
@@ -129,9 +136,16 @@ def _instancia_a_respaldar(config: Config) -> Instancia:
         # verificación pasaría igual, sobre un backup con una sola mitad.
         nombre="libracargo",
         postgres_url=config.database_url,
-        postgres_extra=[config.database_url_core],
+        postgres_extra=extra,
         directorios=[config_manager.CERTS_DIR],
     )
+
+
+def _misma_base(a: str, b: str) -> bool:
+    """Si dos URLs apuntan a la misma base, aunque una diga `+psycopg` y la otra no."""
+    def _normal(u: str) -> str:
+        return u.replace("postgresql+psycopg://", "postgresql://", 1).split("?", 1)[0].rstrip("/")
+    return _normal(a) == _normal(b)
 
 
 def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> FastAPI:

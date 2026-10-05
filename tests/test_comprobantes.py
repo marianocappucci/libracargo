@@ -13,12 +13,11 @@ los encabezados de los comprobantes y por las órdenes que agrupan.
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
-from libraauth.models import Base as AuthBase
 from libraauth.testing import crear_schema_de_auth
 from sqlalchemy import text
 
 from app.main import crear_app
-from tests.conftest import config_de_prueba
+from tests.conftest import config_de_prueba, vaciar_auth
 
 
 def orden(cliente, datos, tarifa, *, cliente_id=None, razon_social_id=None, fecha="2026-08-10"):
@@ -320,7 +319,7 @@ def test_el_listado_filtra_y_no_esconde_los_anulados(cliente, datos):
 
 def test_sin_sesion_no_se_ven_los_comprobantes(engine, monkeypatch):
     monkeypatch.setenv("ENV", "development")
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
     crear_schema_de_auth(engine)
     cfg = config_de_prueba()
     anonimo = TestClient(crear_app(cfg, sembrar_admin=False), base_url="https://testserver")
@@ -329,7 +328,7 @@ def test_sin_sesion_no_se_ven_los_comprobantes(engine, monkeypatch):
         assert anonimo.get("/api/comprobantes/totales").status_code == 401
         assert anonimo.post("/api/comprobantes", json={}).status_code == 401
     finally:
-        AuthBase.metadata.drop_all(engine)
+        vaciar_auth(engine)
 
 
 def test_el_iva_del_comprobante_es_la_suma_del_de_cada_orden(cliente, datos):

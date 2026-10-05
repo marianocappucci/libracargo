@@ -21,12 +21,11 @@ import os
 
 import pytest
 from fastapi.testclient import TestClient
-from libraauth.models import Base as AuthBase
 from libraauth.testing import crear_schema_de_auth
 from libracore import config_manager
 
 from app.main import crear_app
-from tests.conftest import USUARIO, config_de_prueba, par_de_arca
+from tests.conftest import USUARIO, config_de_prueba, par_de_arca, vaciar_auth
 
 
 def _subir(cliente, ambiente: str, cert: bytes, clave: bytes) -> None:
@@ -55,7 +54,7 @@ def test_sin_sesion_no_se_toca_la_configuracion_de_arca(engine, monkeypatch):
     privada del cliente sin estar logueado.
     """
     monkeypatch.setenv("ENV", "development")
-    AuthBase.metadata.drop_all(engine)
+    vaciar_auth(engine)
     crear_schema_de_auth(engine)
     anonimo = TestClient(crear_app(config_de_prueba(), sembrar_admin=False),
                          base_url="https://testserver")
@@ -66,7 +65,7 @@ def test_sin_sesion_no_se_toca_la_configuracion_de_arca(engine, monkeypatch):
                             files={"archivo": ("c.crt", b"lo que sea", "text/plain")}
                             ).status_code == 401
     finally:
-        AuthBase.metadata.drop_all(engine)
+        vaciar_auth(engine)
 
 
 # ── 2. La ruta ─────────────────────────────────────────────────────────────
