@@ -1,14 +1,13 @@
 import type { ReactNode } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
 import Layout from '@/components/Layout'
 import { useAuth } from '@/context/AuthContext'
 import Inicio from '@/pages/Inicio'
 import Caja from '@/pages/Caja'
-import Comprobantes from '@/pages/Comprobantes'
+import ComprobantesSeccion from '@/pages/ComprobantesSeccion'
 import EditarPreFactura from '@/pages/EditarPreFactura'
 import FacturarPendientes from '@/pages/FacturarPendientes'
-import Gastos from '@/pages/Gastos'
 import Configuracion from '@/pages/Configuracion'
 import CuentaCorriente from '@/pages/CuentaCorriente'
 import Login from '@/pages/Login'
@@ -33,6 +32,19 @@ function Privado({ children }: { children: ReactNode }) {
   return user ? <>{children}</> : <Navigate to="/login" replace />
 }
 
+/** `/gastos` era la pantalla de comprobantes de proveedores; hoy es la pestaña Proveedores de Comprobantes.
+ *  Se redirige conservando el query, así `/gastos?ver=5` abre el 5 en su pestaña. `replace`: el enlace viejo
+ *  no queda en el historial, y atrás no vuelve a rebotar. */
+function GastosAProveedores() {
+  const { search } = useLocation()
+  // `seccion` primero, como la escribe `irA.gasto`: un solo enlace canónico.
+  const params = new URLSearchParams({ seccion: 'proveedores' })
+  new URLSearchParams(search).forEach((valor, clave) => {
+    if (clave !== 'seccion') params.append(clave, valor)
+  })
+  return <Navigate to={`/comprobantes?${params}`} replace />
+}
+
 export default function App() {
   return (
     <Routes>
@@ -53,13 +65,16 @@ export default function App() {
                 <Route path="/ordenes" element={<Ordenes />} />
                 <Route path="/cuentas" element={<CuentaCorriente />} />
                 <Route path="/caja" element={<Caja />} />
-                <Route path="/comprobantes" element={<Comprobantes />} />
+                {/* Una entrada de menú, dos pestañas (`?seccion=`): Clientes —la ruta pelada— y Proveedores. */}
+                <Route path="/comprobantes" element={<ComprobantesSeccion />} />
                 <Route path="/comprobantes/facturar" element={<FacturarPendientes />} />
+                {/* Las pre facturas ya no tienen entrada de menú: se llega desde Comprobantes > Clientes, y
+                    «Comprobantes» queda marcada en el menú (`activoEn` con `RUTAS_DE_COMPROBANTES`). */}
                 <Route path="/pre-facturas" element={<PreFacturas />} />
                 <Route path="/pre-facturas/:id" element={<PreFactura />} />
                 {/* Editar es la pantalla de facturar pendientes sobre una pre factura que ya existe. */}
                 <Route path="/pre-facturas/:id/editar" element={<EditarPreFactura />} />
-                <Route path="/gastos" element={<Gastos />} />
+                <Route path="/gastos" element={<GastosAProveedores />} />
                 <Route path="/reportes" element={<ReportesIndice />} />
                 <Route path="/reportes/:slug" element={<Reporte />} />
                 <Route path="/usuarios" element={<Usuarios />} />

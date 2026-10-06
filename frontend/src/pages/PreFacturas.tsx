@@ -7,7 +7,7 @@
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
 import { BadgeEstado } from 'libra-ui/badge-estado'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
-import { FileText, Plus } from 'lucide-react'
+import { ArrowLeft, Plus, Receipt } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
@@ -68,7 +68,13 @@ export default function PreFacturas() {
   return (
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <TituloPantalla icono={FileText}>Pre facturas</TituloPantalla>
+        {/* Ya no tiene entrada de menú: se llega desde Comprobantes > Clientes, y de acá se vuelve ahí. */}
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" asChild aria-label="Volver a Comprobantes">
+            <Link to="/comprobantes"><ArrowLeft className="size-4" /></Link>
+          </Button>
+          <TituloPantalla icono={Receipt}>Pre facturas</TituloPantalla>
+        </div>
         <Button asChild>
           <Link to={irA.facturarPendientes()}>
             <Plus className="size-4" /> Generar pre factura

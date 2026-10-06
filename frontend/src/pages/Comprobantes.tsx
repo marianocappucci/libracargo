@@ -11,7 +11,7 @@
  * confiable que uno sano — que es justo cuando no hay que usarlo.
  */
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
-import { FileText, Plus, Receipt } from 'lucide-react'
+import { FileText, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
@@ -29,7 +29,6 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { irA } from '@/navegacion'
-import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 import { formatearFecha } from '@/components/esquema-orden'
 
 function Campo({ id, etiqueta, valor, alCambiar, tipo = 'text' }: {
@@ -276,10 +275,13 @@ export default function Comprobantes() {
   ]
 
   return (
-    <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <TituloPantalla icono={Receipt}>Comprobantes</TituloPantalla>
-        {/* El listado se imprime desde reportes (`listado-comprobantes`), que
+    <div>
+      <div className="mb-4 flex items-center justify-end">
+        {/* El título «Comprobantes» y las pestañas son de `ComprobantesSeccion`.
+            Los dos accesos de arriba: facturar pendientes (que genera la pre
+            factura) y la lista de pre facturas, que ya no está en el menú.
+
+            El listado se imprime desde reportes (`listado-comprobantes`), que
             exige rango. Aca el boton salia sin fechas y mandaba al papel todos
             los comprobantes que hubiera. */}
         <div className="flex gap-2">

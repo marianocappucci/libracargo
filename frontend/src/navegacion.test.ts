@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { estaActivo } from 'libra-ui/Layout'
 import { describe, expect, it } from 'vitest'
 
 import {
-  MAESTROS_AUDITADOS, destinoDeFilaDeReporte, destinoDelLog, irA, origenDelMovimiento,
+  MAESTROS_AUDITADOS, destinoDeFilaDeReporte, destinoDelLog, irA, origenDelMovimiento, RUTAS_DE_COMPROBANTES, seccionDe,
 } from './navegacion'
 
 function movimiento(extra: Record<string, unknown>) {
@@ -37,7 +38,7 @@ describe('origenDelMovimiento', () => {
 
   it('lleva al gasto cuando el asiento salio de un gasto de proveedor', () => {
     // Es el cuarto origen posible, y el que trajo el bloque de proveedores.
-    expect(origenDelMovimiento(movimiento({ gasto_id: 4 }))).toBe('/gastos?ver=4')
+    expect(origenDelMovimiento(movimiento({ gasto_id: 4 }))).toBe('/comprobantes?seccion=proveedores&ver=4')
   })
 
   it('un asiento sin origen NO es clickeable', () => {
@@ -52,7 +53,7 @@ describe('destinoDelLog', () => {
     expect(destinoDelLog('orden_carga', 5)).toBe('/ordenes?ver=5')
     expect(destinoDelLog('comprobante', 5)).toBe('/comprobantes?ver=5')
     expect(destinoDelLog('movimiento_caja', 5)).toBe('/caja?ver=5')
-    expect(destinoDelLog('gasto_de_proveedor', 5)).toBe('/gastos?ver=5')
+    expect(destinoDelLog('gasto_de_proveedor', 5)).toBe('/comprobantes?seccion=proveedores&ver=5')
   })
 
   it('la pre factura lleva a su pantalla, que no es un diálogo sobre la lista', () => {
@@ -126,4 +127,25 @@ describe('irA', () => {
     expect(irA.orden(1)).toBe('/ordenes?ver=1')
     expect(irA.cuentaDe(2)).toBe('/cuentas?tercero=2')
   })
+})
+
+describe('Comprobantes: secciones y menú', () => {
+  it('la sección sale del query, y lo desconocido cae en Clientes', () => {
+    expect(seccionDe('proveedores')).toBe('proveedores')
+    expect(seccionDe('clientes')).toBe('clientes')
+    expect(seccionDe(null)).toBe('clientes')
+    expect(seccionDe('cualquier-cosa')).toBe('clientes')
+  })
+
+  it('🔑 todo lo que cuelga de Comprobantes marca esa entrada del menú', () => {
+    for (const ruta of [
+      '/comprobantes', '/comprobantes/facturar', '/pre-facturas', '/pre-facturas/7',
+      '/pre-facturas/7/editar', '/gastos',
+    ]) expect(estaActivo(ruta, '/comprobantes', RUTAS_DE_COMPROBANTES), ruta).toBe(true)
+  })
+
+  it('el resto de las rutas no la marca, ni las que sólo se parecen', () => {
+    for (const ruta of ['/', '/ordenes', '/cuentas', '/caja', '/reportes/por-cliente', '/gastos-raros', '/pre-facturasX'])
+      expect(estaActivo(ruta, '/comprobantes', RUTAS_DE_COMPROBANTES), ruta).toBe(false)
+})
 })

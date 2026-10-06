@@ -29,8 +29,12 @@ describe('el icono del título sale del sidebar', () => {
     // comparadas contra dos listas vacías. Es exactamente la forma en que este
     // guard falló mientras se escribía.
     const { rutasDelNav, pantallas, conIcono, sinTitulo } = auditarTitulos(SRC)
-    expect(rutasDelNav).toBeGreaterThanOrEqual(10)
-    expect(pantallas).toBeGreaterThanOrEqual(12)
+    // Nueve: «Pre facturas» y «Comprobantes de proveedores» dejaron de ser
+    // entradas del menú y pasaron a ser parte de «Comprobantes».
+    expect(rutasDelNav).toBeGreaterThanOrEqual(9)
+    // Once: las tres rutas de «Pre facturas» y `/gastos` ya no cuelgan de una entrada propia del
+    // menú sino de «Comprobantes», que es una sola pantalla con pestañas.
+    expect(pantallas).toBeGreaterThanOrEqual(11)
     expect(conIcono).toBeGreaterThan(0)
     // 🔑 `conIcono` NO es igual a `pantallas`: hay dos envoltorios de pantallas
     // que rinde `libra-ui`, y el título —con su icono— lo pone ella. Acá no hay
