@@ -6,6 +6,8 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Agregado
 
+- **Aviso de FCE en «Facturar pendientes».** Antes de emitir, la pantalla pregunta si a ese comprobante le corresponde ser una factura de crédito electrónica (`GET /api/comprobantes/fce/corresponde`). Consulta el registro de FCE de ARCA con la regla del motor (`arca_wsfecred.corresponde_fce`, ADR-019 de LibraCore) y la configuración de la razón social elegida. Si corresponde, avisa y ofrece pasar a FCE, o dice qué cargar si la razón social todavía no puede emitirla. Es un aviso: nunca frena ni falla por ARCA.
+
 - **El comprobante vive en `facturas` del motor** (ADR-030). Deja de haber un modelo de comprobantes propio: cada comprobante es una fila de `facturas`, con lo propio del producto en `comprobantes_cargo`. Lo crea y le guarda el CAE el motor, dentro de la misma transacción que las órdenes y la cuenta corriente.
   - **Revisión `0016`**: copia los comprobantes a `facturas` con el mismo id, pasa el de apertura a `comprobante_de_apertura` y reapunta las FK. La tabla vieja queda como `comprobantes_legado`. Pide la base unida (`0015`) y que `libracore-migrar` corra antes.
   - **Cambio de comportamiento**: dos razones sociales sin ARCA propio comparten talonario (mismo tipo, punto de venta y número chocan).

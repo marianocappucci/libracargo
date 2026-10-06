@@ -58,6 +58,19 @@ export type Comprobante = {
   motivo?: string | null
 }
 
+/** Lo que contesta `GET /api/comprobantes/fce/corresponde`. La regla es del motor (ADR-019 de LibraCore). */
+export type AvisoFce = {
+  /** `false` si no se pudo preguntar (sin ARCA, cliente sin CUIT, ARCA caído): se emite como siempre. */
+  disponible: boolean
+  corresponde?: boolean
+  obligado?: boolean
+  /** Desde qué total rige para ese receptor, como texto. */
+  monto_desde?: string | null
+  motivo?: string
+  /** Si esta razón social ya puede emitir FCE (emite por ARCA y cargó CBU y modalidad). */
+  fce_habilitada: boolean
+}
+
 export type SumaDeOrdenes = { cantidad: number; neto: string; iva: string; total: string }
 
 export type ComprobanteConOrdenes = {
@@ -148,6 +161,13 @@ export const comprobantes = {
   // aparece recién en pantalla, como una navegación a la nada.
   facturar: (datos: unknown) =>
     api.post<Comprobante | Ensayo>('/api/comprobantes', datos),
+  // ¿A este comprobante le corresponde ser FCE? Lo contesta el registro de ARCA a través del motor. Es un
+  // aviso: nunca falla por ARCA (`disponible: false` y el motivo).
+  fceCorresponde: (p: { razon_social_id: number; cliente_id: number; total: string; fecha: string }) =>
+    api.get<AvisoFce>(`/api/comprobantes/fce/corresponde?${new URLSearchParams({
+      razon_social_id: String(p.razon_social_id), cliente_id: String(p.cliente_id),
+      total: p.total, fecha: p.fecha,
+    })}`),
   anular: (id: number) => api.del<Comprobante>(`/api/comprobantes/${id}`),
   // La nota de crédito de un comprobante con CAE: **total** sin `importe`, **parcial** con él (con IVA, como
   // texto: no pasa por un float). Sin fecha ni tipo: la nota es de hoy y de la letra del original; los decide el
