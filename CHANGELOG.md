@@ -4,6 +4,10 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ## [Unreleased]
 
+### Quitado
+
+- **`postgres-init/10-bases-extra.sql`**, que creaba la base `libracargo_core` al inicializar el volumen de dev, y su montaje en `docker-compose.yml`. Desde la base unida (ADR-029) el core vive en la del dominio, y las `libracargo_core` de dev, demo y Suitrans se borraron el 2026-10-06.
+
 ### Agregado
 
 - **La cuenta corriente vive en el libro de terceros del motor** (ADR-031). Cada asiento es una fila de `cc_asientos` de LibraCore, y lo propio (orden, cobro, gasto) va en `movimientos_cuenta_cargo`. Asienta, corrige y borra el motor, en la misma transacción que el documento.
@@ -37,6 +41,7 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Cambiado
 
+- **libracore `v1.137.1`** (2026-10-06; antes `v1.136.1`). La cuenta corriente de clientes también como libro, **en sombra** (`libracore.db.libro_de_clientes`, ADR-027 del motor): los escritores del motor asientan cada pago, débito, cobro a cuenta y venta fiada en `cc_asientos`, y el saldo se sigue leyendo calculado. **Con migración del motor**: `0020_origen_del_asiento`, que agrega una columna vacía. La `v1.137.1` no rompe una base sin `cc_asientos`.
 - **libracore `v1.136.1`** (2026-10-06; antes `v1.135.0`). Suma el libro de cuenta corriente de terceros, opcional (`cc_asientos` y `libracore.db.libro_de_terceros`, ADR-026 del motor). **Con migración del motor**: `0019_libro_de_terceros`, que crea una tabla vacía y deja `cc_asientos.created_at` y `cierres_diarios.created_at` en hora de Argentina. Este producto no lo usa: su comportamiento no cambia.
 
 - **libracore `v1.135.0`** (2026-10-05; antes `v1.134.0`). Las funciones del comprobante aceptan `conn=` para emitir dentro de la transacción del producto (ADR-025 del motor; sin `conn`, nada cambia) y el dinero del motor se guarda exacto en PostgreSQL (ADR-024): **migración `0018` del motor**, que pasa 33 columnas de dinero de `DOUBLE PRECISION` a `NUMERIC` sin redondear. La lectura sigue siendo `float`: el comportamiento de este producto no cambia.
