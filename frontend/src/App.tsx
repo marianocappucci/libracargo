@@ -16,6 +16,7 @@ import Logs from '@/pages/Logs'
 import Ordenes from '@/pages/Ordenes'
 import PreFactura from '@/pages/PreFactura'
 import PreFacturas from '@/pages/PreFacturas'
+import PreLiquidacionTransportistas from '@/pages/PreLiquidacionTransportistas'
 import Reporte from '@/pages/Reporte'
 import ReportesIndice from '@/pages/ReportesIndice'
 import Usuarios from '@/pages/Usuarios'
@@ -76,6 +77,10 @@ export default function App() {
                 <Route path="/pre-facturas/:id/editar" element={<EditarPreFactura />} />
                 <Route path="/gastos" element={<GastosAProveedores />} />
                 <Route path="/reportes" element={<ReportesIndice />} />
+                {/* Viene en bloques por transportista: no entra en la grilla genérica. Va antes que
+                    `:slug`, aunque el router ya prefiere la ruta estática. */}
+                <Route path="/reportes/pre-liquidacion-transportistas"
+                       element={<PreLiquidacionTransportistas />} />
                 <Route path="/reportes/:slug" element={<Reporte />} />
                 <Route path="/usuarios" element={<Usuarios />} />
                 <Route path="/logs" element={<Logs />} />

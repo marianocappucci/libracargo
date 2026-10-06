@@ -225,6 +225,26 @@
     font-size: 9pt;
   }
 
+  /* La pre liquidación de transportistas: un bloque por transportista, con su subtotal. */
+  .hoja-impresa h2 {
+    font-size: 11pt;
+    font-weight: 700;
+    margin: 6mm 0 0;
+    page-break-after: avoid;
+  }
+
+  .hoja-impresa .de-bloque {
+    margin: 0 0 1mm;
+    font-size: 8pt;
+    color: #333;
+    page-break-after: avoid;
+  }
+
+  .hoja-impresa .subtotal td {
+    font-weight: 700;
+    border-bottom-width: 0.4mm;
+  }
+
 
   /* ---------------------------------------------- la orden de carga en papel
      No es un listado: es un documento. Va con membrete, los datos en bloques,

@@ -846,3 +846,31 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 - Pide libracore v1.140.0 o posterior (migración `0021_pre_factura` del motor, que corre antes que la `0019` de acá).
 - Una pre factura anulada conserva su número y no se reabre. No hay anulación de una facturada: se revierte la factura con una nota de crédito.
 - Anular y aceptar quedan asentadas en la propia pre factura (`resuelto_por`, `motivo_descarte`, `aceptado_por`); crear, editar y facturar, además, en el log de actividad.
+
+
+## ADR-033 — La pre liquidación de transportistas: el valor es la comisión y el IVA lo decide la condición del transportista
+
+**Contexto.** El humano pidió el 2026-10-06 un reporte **«Pre liquidación de transportistas»**: con un rango de fechas, los fletes que hizo cada transportista, el valor de cada uno y el IVA sumado. Es el papel que se le manda al fletero antes de que facture. Hay dos decisiones que no son obvias y se toman acá para que no se reabran en cada cambio: **qué es el valor de un flete** y **cuándo se suma IVA**.
+
+**Decisión.**
+- **El valor de un flete es la comisión de la orden** (`OrdenCarga.comision`), no la tarifa: es lo que cobra el transportista, y el mismo importe que `ordenes.sincronizar_comision` le asienta en su cuenta corriente. La tarifa es lo que se le cobra al cliente.
+- **Qué órdenes entran** (la misma condición con que se le asienta el flete): con **fletero**, con **comisión mayor que cero**, **no anuladas**, y con la **fecha de la orden** en el rango, extremos incluidos. Pendientes y facturadas entran las dos: liquidarle al transportista no depende de que al cliente ya se le haya facturado. Una orden **sin fletero no entra**: no hay a quién liquidarle.
+- **El IVA lo decide la condición del transportista (`Tercero.condicion_iva`), no la orden.** Sólo quien discrimina IVA en su factura lo suma:
+
+  | Condición | IVA | Por qué |
+  |---|---|---|
+  | `responsable_inscripto` | `comisión × alícuota de la orden / 100` | factura A: discrimina IVA |
+  | `monotributo` | 0 | factura C: no discrimina |
+  | `exento` | 0 | exento |
+  | `consumidor_final` | 0, **con aviso** | no es una condición de quien presta un servicio: es un dato a corregir en el maestro |
+  | `no_categorizado` | 0, **con aviso** | no se sabe; sumar IVA por las dudas le liquidaría de más a quien no lo cobra |
+
+  La alícuota es la de **cada orden** (`OrdenCarga.alicuota_iva`), no una fija: una orden al 10,5 % suma 10,5 %. El IVA se redondea **por flete**, mitad hacia arriba, con la misma fórmula que el IVA de la propia orden (`calcular_importes`): la factura del transportista discrimina flete por flete, y el redondeo sobre el total daría centavos distintos.
+- **El criterio es exhaustivo sobre el enum**: un valor nuevo de `CondicionIVA` sin criterio rompe `test_cada_condicion_tiene_su_criterio` en vez de liquidarse en silencio con IVA cero.
+- **El reporte es del catálogo** (`pre-liquidacion-transportistas`, `detalle`, rango obligatorio) pero **no cabe en la grilla genérica**: viene en bloques por transportista, con subtotales y total general. Tiene pantalla propia, que se registra antes que `/reportes/:slug`.
+- **Se imprime y se baja en PDF.** El PDF lo arma el servidor con las piezas de `libracore.pdf_generator` (la base `_TextoSeguroPDF` y el encabezado de empresa de la pre factura), con los datos de la empresa de la instancia y la leyenda «Pre liquidación — no es un comprobante» arriba y en el pie de cada hoja.
+
+**Consecuencias.**
+- Es **de lectura**: no asienta nada, no toca la cuenta corriente ni el libro. Lo que se liquida de verdad sigue siendo lo asentado en la cuenta del fletero.
+- Un transportista cargado por la API sin condición queda como `consumidor_final` (el default del alta): sale **sin IVA y con aviso**. Corregirlo en el maestro de terceros es lo que hace que se le sume.
+- El motor no tiene una API pública para un informe por bloques: el PDF usa helpers de módulo de `pdf_generator` (prefijo `_`). Si un salto de versión del motor los renombra, `tests/test_pre_liquidacion.py` lo detecta (genera el PDF de verdad). Un generador de «informe por bloques» público en LibraCore sería el arreglo de fondo si otro producto lo necesita.
