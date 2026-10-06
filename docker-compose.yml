@@ -32,9 +32,6 @@ services:
       TZ: America/Argentina/Buenos_Aires
     volumes:
       - libracargo-postgres-data:/var/lib/postgresql/data
-      # Crea `libracargo_core` al inicializar el volumen. Ver el archivo:
-      # sobre un volumen que ya existe NO corre.
-      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U libracargo -d libracargo"]
       interval: 10s
@@ -92,8 +89,8 @@ services:
       # La base de LibraCore **es la del dominio** (ADR-029): una sola base, con
       # `usuarios` y `auth_log` compartidos con `libraauth`, como en Contalibra.
       # La variable sigue siendo obligatoria —sin ella la app no arranca— y lleva
-      # la misma URL que `DATABASE_URL`. `libracargo_core` queda en el servidor
-      # como respaldo de la unión; no se borra sin preguntar.
+      # la misma URL que `DATABASE_URL`. La base `libracargo_core` de antes de la
+      # unión se borró el 2026-10-06, y ya no se crea al inicializar el volumen.
       #
       # El nombre lo define `libracore.db.url_de_instancia`, que es también
       # quien lo lee. No hay una segunda convención que pueda divergir.
