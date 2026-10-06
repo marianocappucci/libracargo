@@ -76,6 +76,55 @@ export type FilaDePendiente = {
   desde: string | null; hasta: string | null; total: string
 }
 
+/** Un flete de la pre liquidación: una orden del transportista, con lo que se le liquida por ella. */
+export type FleteDePreLiquidacion = {
+  orden_id: number
+  fecha: string
+  remito: string | null
+  cliente: string
+  origen: string
+  destino: string
+  cantidad: string | null
+  unidad: string | null
+  /** El texto original cuando la cantidad del legado no parseaba a número. */
+  cantidad_legado: string | null
+  alicuota_iva: string
+  /** La comisión de la orden: lo que cobra el transportista, sin IVA. */
+  neto: string
+  iva: string
+  total: string
+}
+
+export type BloqueDeTransportista = {
+  tercero_id: number
+  transportista: string
+  cuit: string | null
+  condicion_iva: string
+  condicion_iva_texto: string
+  /** Sólo el responsable inscripto suma IVA. */
+  discrimina_iva: boolean
+  /** Un dato a corregir en el maestro de terceros (sin categorizar, consumidor final), si lo hay. */
+  aviso: string | null
+  fletes: FleteDePreLiquidacion[]
+  cantidad_fletes: number
+  neto: string
+  iva: string
+  total: string
+}
+
+export type PreLiquidacion = {
+  desde: string
+  hasta: string
+  fletero_id: number | null
+  transportistas: BloqueDeTransportista[]
+  fletes: number
+  neto: string
+  iva: string
+  total: string
+}
+
+export const SLUG_PRE_LIQUIDACION = 'pre-liquidacion-transportistas'
+
 export type ValoresDeFiltro = Record<string, string | number | boolean | undefined>
 
 export function consulta(filtros: ValoresDeFiltro): string {
@@ -97,6 +146,12 @@ export const reportes = {
     api.get<T>(`/api/reportes/${slug}${consulta(filtros)}`),
   resumen: (filtros: ValoresDeFiltro = {}) =>
     api.get<Resumen>(`/api/reportes/resumen${consulta(filtros)}`),
+  /** La pre liquidación de transportistas: un bloque por transportista, con sus fletes y subtotales. */
+  preLiquidacion: (filtros: ValoresDeFiltro = {}) =>
+    api.get<PreLiquidacion>(`/api/reportes/${SLUG_PRE_LIQUIDACION}${consulta(filtros)}`),
+  /** El mismo reporte en PDF. Se abre y se baja por un enlace común: la sesión viaja en la cookie. */
+  urlDelPdfPreLiquidacion: (filtros: ValoresDeFiltro = {}) =>
+    `/api/reportes/${SLUG_PRE_LIQUIDACION}/pdf${consulta(filtros)}`,
   saldos: (filtros: ValoresDeFiltro = {}) =>
     api.get<FilaDeSaldo[]>(`/api/reportes/saldos${consulta(filtros)}`),
 }

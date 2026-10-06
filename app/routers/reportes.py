@@ -21,6 +21,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -33,6 +34,7 @@ from app.auth import (
 from app.db import obtener_sesion
 from app.models.enums import (
     AccionAuditoria,
+    CondicionIVA,
     MedioPago,
     RolCuenta,
     TipoComprobante,
@@ -52,6 +54,7 @@ from app.schemas.comprobantes import ComprobanteOut
 from app.schemas.cuentas import MovimientoCajaOut
 from app.schemas.gastos import GastoOut
 from app.schemas.ordenes import OrdenOut
+from app.servicios import pre_liquidacion, pre_liquidacion_pdf
 from app.servicios import reportes as servicio
 
 router = APIRouter(prefix="/api/reportes", tags=["reportes"],
@@ -150,6 +153,18 @@ CATALOGO = [
                         "papel; como el resto del log, sólo lo ve un administrador.",
             parametros=["rango", "entidad", "usuario", "accion"],
             detalle=True, solo_admin=True),
+
+    # ── El papel para el transportista ──────────────────────────────────────
+    #
+    # Tampoco es un agregado: son los fletes de cada transportista con lo que se le va a liquidar, y se
+    # imprime o se baja en PDF para mandárselo. Por eso lleva `detalle=True` (rango obligatorio). Lo
+    # dibuja una pantalla propia —no la grilla genérica—, porque viene en bloques por transportista.
+    Reporte(slug="pre-liquidacion-transportistas", titulo="Pre liquidación de transportistas",
+            descripcion="Los fletes que hizo cada transportista en el período, con la comisión "
+                        "de cada uno, el IVA si el transportista es responsable inscripto y los "
+                        "subtotales. Es para mandarle antes de que facture; no es un comprobante.",
+            parametros=["rango", "fletero"],
+            detalle=True),
 ]
 
 
@@ -404,3 +419,84 @@ def listado_logs(sesion: Session = Depends(obtener_sesion),
         sesion=sesion, entidad=entidad, entidad_id=None, usuario=usuario,
         accion=accion, desde=desde, hasta=hasta,
         limite=limite, desplazamiento=desplazamiento).registros
+
+
+# ── La pre liquidación de transportistas ────────────────────────────────────
+#
+# Del cálculo se ocupa `servicios/pre_liquidacion.py`; acá sólo el rango obligatorio, la forma de la
+# respuesta y el PDF. Los dos endpoints heredan el `require_staff` del router, como los otros.
+
+
+class FleteDePreLiquidacion(BaseModel):
+    orden_id: int
+    fecha: date
+    remito: str | None
+    cliente: str
+    origen: str
+    destino: str
+    cantidad: Decimal | None
+    unidad: str | None
+    #: El texto original cuando la cantidad del legado no parseaba a número.
+    cantidad_legado: str | None
+    alicuota_iva: Decimal
+    #: La comisión de la orden: lo que cobra el transportista, sin IVA.
+    neto: Decimal
+    iva: Decimal
+    total: Decimal
+
+
+class BloqueDeTransportista(BaseModel):
+    tercero_id: int
+    transportista: str
+    cuit: str | None
+    condicion_iva: CondicionIVA
+    condicion_iva_texto: str
+    #: Si a este transportista se le suma IVA (sólo al responsable inscripto).
+    discrimina_iva: bool
+    #: Un dato a corregir en el maestro (sin categorizar, consumidor final), si lo hay.
+    aviso: str | None
+    fletes: list[FleteDePreLiquidacion]
+    cantidad_fletes: int
+    neto: Decimal
+    iva: Decimal
+    total: Decimal
+
+
+class PreLiquidacion(BaseModel):
+    desde: date
+    hasta: date
+    fletero_id: int | None
+    transportistas: list[BloqueDeTransportista]
+    fletes: int
+    neto: Decimal
+    iva: Decimal
+    total: Decimal
+
+
+def _pre_liquidacion(sesion: Session, desde: date | None, hasta: date | None,
+                     fletero_id: int | None) -> dict:
+    _exigir_rango(desde, hasta)
+    if desde > hasta:
+        raise HTTPException(422, "el rango está al revés: el desde es posterior al hasta")
+    return pre_liquidacion.armar(sesion, desde, hasta, fletero_id)
+
+
+@router.get("/pre-liquidacion-transportistas", response_model=PreLiquidacion)
+def pre_liquidacion_transportistas(sesion: Session = Depends(obtener_sesion),
+                                   desde: date | None = None, hasta: date | None = None,
+                                   fletero_id: int | None = None):
+    """Los fletes de cada transportista en el rango, con la comisión, el IVA y los subtotales."""
+    return _pre_liquidacion(sesion, desde, hasta, fletero_id)
+
+
+@router.get("/pre-liquidacion-transportistas/pdf")
+def pre_liquidacion_transportistas_pdf(sesion: Session = Depends(obtener_sesion),
+                                       desde: date | None = None, hasta: date | None = None,
+                                       fletero_id: int | None = None):
+    """El mismo reporte, en PDF, con el encabezado de la empresa y la leyenda de que no es un
+    comprobante. `def` y no `async def`: arma el PDF y lee la base, ambos sincrónicos."""
+    datos = _pre_liquidacion(sesion, desde, hasta, fletero_id)
+    contenido = pre_liquidacion_pdf.generar(sesion, datos)
+    nombre = f"pre-liquidacion-transportistas-{desde}-{hasta}.pdf"
+    return Response(content=contenido, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{nombre}"'})

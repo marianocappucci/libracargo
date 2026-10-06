@@ -341,7 +341,9 @@ def test_el_catalogo_distingue_los_listados_de_los_agregados(cliente):
     assert catalogo["listado-caja"]["solo_admin"] is False
     # Y todo listado ofrece rango: es el filtro que lo hace imprimible.
     listados = [s for s, r in catalogo.items() if r["detalle"]]
-    assert len(listados) == 5
+    # Los cinco `listado-*` y la pre liquidación de transportistas (que también exige rango).
+    assert len(listados) == 6
+    assert "pre-liquidacion-transportistas" in listados
     for slug in listados:
         assert "rango" in catalogo[slug]["parametros"], slug
 
