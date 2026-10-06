@@ -233,6 +233,12 @@ def engine():
     with eng.begin() as con:
         con.execute(text("DROP SCHEMA public CASCADE"))
         con.execute(text("CREATE SCHEMA public"))
+    # 🔑 **El schema del motor va ANTES que la cadena de acá**, como en el deploy
+    # (`libracore-migrar` y después `alembic upgrade head`): desde la `0016` el
+    # comprobante vive en `facturas` del motor y la cadena le pone FK.
+    libracore_core.configure(URL_CORE)
+    with libracore_core.get_connection() as conn:
+        init_core_schema(conn)
     previo = os.environ.get("DATABASE_URL")
     os.environ["DATABASE_URL"] = URL
     try:
@@ -256,6 +262,8 @@ def sesion(engine):
     s.rollback()
     for tabla in reversed(Base.metadata.sorted_tables):
         s.execute(text(f'TRUNCATE TABLE "{tabla.name}" RESTART IDENTITY CASCADE'))
+    # Las del motor que escribe este producto: el comprobante vive en `facturas`.
+    s.execute(text("TRUNCATE TABLE facturas RESTART IDENTITY CASCADE"))
     s.commit()
     s.close()
 
@@ -377,17 +385,28 @@ def vaciar_auth(engine):
 
     🔴 **Vaciar y no `drop_all`**: con una sola base, `usuarios` la referencian
     las FK del motor (`facturas.usuario_id`, `caja_movimientos.usuario_id`...),
-    así que no se puede borrar. `CASCADE` vacía también lo que la referencia, que
-    es lo que el test necesita para arrancar de cero.
+    así que no se puede borrar.
+
+    🔴 **`DELETE` y no `TRUNCATE ... CASCADE`.** Desde la `0016` el comprobante vive
+    en `facturas`, y `ordenes_carga` y `movimientos_cuenta` la referencian: la
+    cascada desde `usuarios` llegaba hasta las tablas del dominio y pedía un lock
+    exclusivo sobre ellas. Con la `sesion` del test todavía abierta (se cierra
+    después que `cliente`), esperaba para siempre. Las FK del motor hacia
+    `usuarios` son `ON DELETE SET NULL`, así que el `DELETE` no se lleva nada más.
     """
     from sqlalchemy import inspect
 
     existentes = set(inspect(engine).get_table_names())
-    tablas = [t.name for t in reversed(AuthBase.metadata.sorted_tables) if t.name in existentes]
+    tablas = [t for t in reversed(AuthBase.metadata.sorted_tables) if t.name in existentes]
     if tablas:
         with engine.begin() as con:
-            con.execute(text("TRUNCATE TABLE " + ", ".join(f'"{t}"' for t in tablas)
-                             + " RESTART IDENTITY CASCADE"))
+            for tabla in tablas:
+                con.execute(text(f'DELETE FROM "{tabla.name}"'))
+                for columna in tabla.primary_key.columns:
+                    secuencia = con.execute(text("SELECT pg_get_serial_sequence(:t, :c)"),
+                                            {"t": tabla.name, "c": columna.name}).scalar()
+                    if secuencia:
+                        con.execute(text("SELECT setval(:s, 1, false)"), {"s": secuencia})
 
 
 def _crear(c, ruta, datos):
@@ -412,3 +431,28 @@ def datos(cliente):
         "razon": _crear(cliente, "/api/razones-sociales", {"nombre": "Suitrans"}),
         "otra_razon": _crear(cliente, "/api/razones-sociales", {"nombre": "Mauricio"}),
     }
+
+
+def comprobante_de_prueba(sesion, *, cae: str | None = None, comprobante_asociado_id: int | None = None,
+                          **campos):
+    """Un comprobante ya guardado, creado por la única puerta que tiene (`servicios.comprobantes`).
+
+    Desde la `0016` el comprobante es una fila de `facturas` del motor, así que un test no
+    lo arma con el ORM: lo crea el motor y, si se pide, le guarda el CAE. Los importes
+    pueden venir como texto, como los devuelve la API.
+    """
+    from datetime import date as _date
+    from decimal import Decimal as _Decimal
+
+    from app.models import Comprobante
+    from app.servicios import comprobantes
+
+    for clave in ("neto", "iva", "total"):
+        campos[clave] = _Decimal(str(campos[clave]))
+    asociado = sesion.get(Comprobante, comprobante_asociado_id) if comprobante_asociado_id else None
+    comp = comprobantes.crear(sesion, items=[], asociado=asociado, **campos)
+    if cae:
+        vto = campos.get("fecha", _date.today())
+        comprobantes.guardar_cae(sesion, comp, cae, vto.strftime("%Y%m%d"))
+    sesion.commit()
+    return comp

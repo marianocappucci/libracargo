@@ -36,14 +36,13 @@ la del CUIT del certificado, su alta pasa a emitir y el número deja de pedirse.
 from __future__ import annotations
 
 import os
-from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from libracore import arca_credenciales, arca_wsaa, arca_wsfe
 from libracore.db import arca_config as db_arca_config
 from sqlalchemy.orm import Session
 
-from app.models.enums import CondicionIVA, TipoComprobante
+from app.models.enums import CODIGO_ARCA, CondicionIVA, TipoComprobante
 from app.models.maestros import RazonSocial, Tercero
 from app.models.operacion import Comprobante
 
@@ -61,25 +60,6 @@ from app.models.operacion import Comprobante
 #: muda que documenta `build_arca_router`: pantalla que dice "Guardado" y
 #: facturación que dice "ARCA no está configurado". Acá no puede pasar.)
 EMPRESA_ARCA = "agencia"
-
-#: El código que ARCA le da a cada tipo. No es un detalle de presentación: va
-#: en `CbteTipo` del pedido de CAE, y equivocarlo emite otra cosa.
-CODIGO_ARCA = {
-    TipoComprobante.FACTURA_A: 1,
-    TipoComprobante.FACTURA_B: 6,
-    TipoComprobante.FACTURA_C: 11,
-    TipoComprobante.NOTA_CREDITO_A: 3,
-    TipoComprobante.NOTA_CREDITO_B: 8,
-    TipoComprobante.NOTA_CREDITO_C: 13,
-    # Factura de Crédito Electrónica MiPyME (FCE): 201, 206 y 211.
-    TipoComprobante.FCE_A: 201,
-    TipoComprobante.FCE_B: 206,
-    TipoComprobante.FCE_C: 211,
-    # Sus notas de crédito: 203, 208 y 213.
-    TipoComprobante.NOTA_CREDITO_FCE_A: 203,
-    TipoComprobante.NOTA_CREDITO_FCE_B: 208,
-    TipoComprobante.NOTA_CREDITO_FCE_C: 213,
-}
 
 #: Los tipos C no llevan IVA discriminado: todo el importe va como neto y el
 #: bloque de alícuotas **no se manda**. Lo exige ARCA, no es una simplificación.
@@ -336,15 +316,12 @@ async def pedir_cae(
     except Exception as e:
         raise ArcaRechazo(str(e)) from None
 
-    comprobante.cae = datos["cae"]
-    comprobante.cae_vencimiento = _fecha_de(datos.get("cae_vto"))
-    comprobante.cae_solicitado_en = datetime.now(UTC)
-    if es_fce:
-        # Con qué salió, no lo que diga la configuración mañana.
-        comprobante.fce_cbu = cfg.get("fce_cbu") or None
-        comprobante.fce_transmision = (cfg.get("fce_transmision") or "").upper() or None
-    sesion.flush()
-    return comprobante
+    # El CAE lo guarda el motor, en la transacción de la sesión: el comprobante es una
+    # fila de su `facturas` (ADR-030). El vencimiento va como lo devolvió ARCA.
+    # (Import acá adentro: `servicios.comprobantes` importa este módulo.)
+    from app.servicios.comprobantes import guardar_cae
+
+    return guardar_cae(sesion, comprobante, datos["cae"], datos.get("cae_vto"))
 
 
 def problema_del_cuit_del_cliente(tercero: Tercero, tipo: TipoComprobante) -> str | None:
@@ -369,13 +346,3 @@ def _iva_cond_del_cliente(sesion: Session, cliente_id: int) -> int:
     if tercero is None:
         return 0
     return CODIGO_IVA_DE_LA_FAMILIA.get(tercero.condicion_iva, 0)
-
-
-def _fecha_de(crudo: str | None) -> date | None:
-    """ARCA devuelve el vencimiento del CAE como `AAAAMMDD`, sin separadores."""
-    if not crudo or len(crudo) != 8:
-        return None
-    try:
-        return date(int(crudo[:4]), int(crudo[4:6]), int(crudo[6:]))
-    except ValueError:
-        return None

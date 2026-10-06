@@ -50,6 +50,30 @@ class TipoComprobante(enum.Enum):
     NOTA_CREDITO_FCE_C = "nota_credito_fce_c"
 
 
+#: El código que ARCA le da a cada tipo. No es un detalle de presentación: va
+#: en `CbteTipo` del pedido de CAE, y equivocarlo emite otra cosa. Es además como
+#: guarda el tipo la tabla `facturas` del motor, donde vive el comprobante.
+CODIGO_ARCA = {
+    TipoComprobante.FACTURA_A: 1,
+    TipoComprobante.FACTURA_B: 6,
+    TipoComprobante.FACTURA_C: 11,
+    TipoComprobante.NOTA_CREDITO_A: 3,
+    TipoComprobante.NOTA_CREDITO_B: 8,
+    TipoComprobante.NOTA_CREDITO_C: 13,
+    # Factura de Crédito Electrónica MiPyME (FCE): 201, 206 y 211.
+    TipoComprobante.FCE_A: 201,
+    TipoComprobante.FCE_B: 206,
+    TipoComprobante.FCE_C: 211,
+    # Sus notas de crédito: 203, 208 y 213.
+    TipoComprobante.NOTA_CREDITO_FCE_A: 203,
+    TipoComprobante.NOTA_CREDITO_FCE_B: 208,
+    TipoComprobante.NOTA_CREDITO_FCE_C: 213,
+}
+
+#: Del código de ARCA al tipo de este producto (lo inverso de `CODIGO_ARCA`).
+TIPO_DE_CODIGO = {codigo: tipo for tipo, codigo in CODIGO_ARCA.items()}
+
+
 class CondicionIVA(enum.Enum):
     RESPONSABLE_INSCRIPTO = "responsable_inscripto"
     MONOTRIBUTO = "monotributo"

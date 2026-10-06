@@ -320,6 +320,8 @@ def migrado(staging, engine):
         with engine.begin() as con:
             for tabla in reversed(Base.metadata.sorted_tables):
                 con.execute(sql(f'TRUNCATE TABLE "{tabla.name}" RESTART IDENTITY CASCADE'))
+            # Desde la `0016` el comprobante vive en `facturas` del motor (ADR-030).
+            con.execute(sql("TRUNCATE TABLE facturas RESTART IDENTITY CASCADE"))
 
     vaciar()
     # La orden 2 apunta a un cliente que no existe: está puesta así para el
@@ -387,23 +389,34 @@ def test_la_fecha_en_cero_sale_de_la_contrapartida_y_no_del_vecino(migrado):
 
 
 def test_la_orden_sin_factura_entra_con_el_comprobante_de_apertura(migrado):
-    """ADR-010. Y el `CHECK` del modelo obliga: facturada exige comprobante."""
+    """ADR-010. Y el `CHECK` del modelo obliga: facturada exige comprobante o apertura.
+
+    Desde la `0016` la apertura no es una fila de `facturas` (no es fiscal): tiene su
+    tabla, y la orden la referencia por `apertura_id` (ADR-030)."""
     con, _, _ = migrado
     apertura = con.execute(
-        "SELECT id, punto_venta, numero, total FROM comprobantes "
-        "WHERE origen_legado = 'apertura'").fetchone()
+        "SELECT id, total FROM comprobante_de_apertura WHERE origen_legado = 'apertura'").fetchone()
     assert apertura is not None, "tiene que existir el comprobante de apertura"
-    assert (apertura[1], apertura[2]) == (0, 0)
+    assert con.execute("SELECT count(*) FROM facturas WHERE punto_venta = 0").fetchone()[0] == 0
 
-    estado, comprobante = con.execute(
-        "SELECT estado, comprobante_id FROM ordenes_carga "
+    estado, comprobante, de_apertura = con.execute(
+        "SELECT estado, comprobante_id, apertura_id FROM ordenes_carga "
         "WHERE origen_legado = 'carga:4'").fetchone()
-    assert estado == "facturada"
-    assert comprobante == apertura[0]
+    assert (estado, comprobante, de_apertura) == ("facturada", None, apertura[0])
     # Y su importe es el de las órdenes que agrupa, como cualquier comprobante.
-    assert apertura[3] == con.execute(
-        "SELECT sum(total) FROM ordenes_carga WHERE comprobante_id = %s", (apertura[0],)
+    assert apertura[1] == con.execute(
+        "SELECT sum(total) FROM ordenes_carga WHERE apertura_id = %s", (apertura[0],)
     ).fetchone()[0]
+
+
+def test_cada_factura_migrada_lleva_sus_items_y_su_cliente(migrado):
+    """Lo que `completar_facturas` agrega cuando ya están las órdenes."""
+    con, _, _ = migrado
+    sin_items = con.execute(
+        "SELECT count(*) FROM facturas f WHERE items = '[]' AND EXISTS "
+        "(SELECT 1 FROM ordenes_carga o WHERE o.comprobante_id = f.id)").fetchone()[0]
+    assert sin_items == 0
+    assert con.execute("SELECT count(*) FROM facturas WHERE cliente_razon IS NULL").fetchone()[0] == 0
 
 
 def test_la_cuenta_sin_viajes_queda_marcada(migrado):
@@ -440,7 +453,8 @@ def test_la_cantidad_que_no_es_numero_se_guarda_como_texto(migrado):
 def test_las_secuencias_quedan_adelantadas(migrado):
     """Los ids los puso el script: si la secuencia sigue en 1, el primer alta choca."""
     con, _, _ = migrado
-    for tabla in ("terceros", "ordenes_carga", "movimientos_cuenta", "comprobantes"):
+    for tabla in ("terceros", "ordenes_carga", "movimientos_cuenta", "facturas",
+                  "comprobante_de_apertura"):
         filas = con.execute(f"SELECT count(*) FROM {tabla}").fetchone()[0]
         siguiente = con.execute(
             f"SELECT nextval(pg_get_serial_sequence('{tabla}', 'id'))").fetchone()[0]

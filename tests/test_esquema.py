@@ -11,11 +11,10 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
 from app.models import (
-    Comprobante,
     CondicionIVA,
     EstadoOrden,
     Localidad,
@@ -26,6 +25,7 @@ from app.models import (
     Tercero,
     TipoComprobante,
 )
+from app.servicios import comprobantes
 
 
 def _cliente(sesion, nombre="ACOPIO SUR SA"):
@@ -212,11 +212,10 @@ def test_una_orden_pendiente_no_puede_tener_comprobante(sesion):
     sesion.add(rs)
     sesion.commit()
     cliente = _cliente(sesion, "OTRO CLIENTE")
-    comp = Comprobante(razon_social_id=rs.id, tipo=TipoComprobante.FACTURA_A,
-                       punto_venta=1, numero=1, fecha=date(2026, 5, 4),
-                       cliente_id=cliente.id, neto=Decimal("1"),
-                       iva=Decimal("0.21"), total=Decimal("1.21"))
-    sesion.add(comp)
+    comp = comprobantes.crear(
+        sesion, razon_social_id=rs.id, tipo=TipoComprobante.FACTURA_A, punto_venta=1,
+        numero=1, fecha=date(2026, 5, 4), cliente_id=cliente.id, neto=Decimal("1"),
+        iva=Decimal("0.21"), total=Decimal("1.21"), items=[])
     sesion.commit()
 
     sesion.add(_orden(sesion, estado=EstadoOrden.PENDIENTE, comprobante_id=comp.id))
@@ -226,23 +225,32 @@ def test_una_orden_pendiente_no_puede_tener_comprobante(sesion):
 
 def test_la_numeracion_de_comprobantes_no_se_repite(sesion):
     """La PK vieja era `(factura_nro, factura_razonsocial)`: no contemplaba
-    ni el tipo de comprobante ni el punto de venta."""
+    ni el tipo de comprobante ni el punto de venta.
+
+    Desde la `0016` lo garantiza el índice de numeración de `facturas` del motor
+    (`idx_facturas_numeracion`), y el registro manual lo dice con nombre antes de
+    llegar a él (`registrar_comprobante`)."""
     rs = RazonSocial(nombre="Suitrans", punto_venta=1, codigo_legado=1)
     sesion.add(rs)
     sesion.commit()
     cliente = _cliente(sesion)
 
     def comp(numero):
-        return Comprobante(razon_social_id=rs.id, tipo=TipoComprobante.FACTURA_A,
-                           punto_venta=1, numero=numero, fecha=date(2026, 5, 4),
-                           cliente_id=cliente.id, neto=Decimal("100"),
-                           iva=Decimal("21"), total=Decimal("121"))
+        return comprobantes.crear(
+            sesion, razon_social_id=rs.id, tipo=TipoComprobante.FACTURA_A, punto_venta=1,
+            numero=numero, fecha=date(2026, 5, 4), cliente_id=cliente.id,
+            neto=Decimal("100"), iva=Decimal("21"), total=Decimal("121"), items=[])
 
-    sesion.add(comp(1))
+    comp(1)
     sesion.commit()
-    sesion.add(comp(1))
-    with pytest.raises(IntegrityError, match="uq_comprobantes_numeracion"):
-        sesion.commit()
+    with pytest.raises(comprobantes.NumeroRepetido):
+        comp(1)
+    sesion.rollback()
+    # Y la base lo sostiene aunque alguien saltee la función.
+    with pytest.raises(IntegrityError, match="idx_facturas_numeracion"):
+        sesion.execute(text(
+            "INSERT INTO facturas (tipo, punto_venta, numero, fecha, items, subtotal, "
+            "iva_amount, total) VALUES (1, 1, 1, '2026-05-04', '[]', 1, 0, 1)"))
 
 
 # ------------------------------------------------------------ el texto largo

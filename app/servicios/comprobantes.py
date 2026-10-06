@@ -16,19 +16,24 @@ sin tabla ni clave foránea que los ate.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
+from libracore.db import arca_config as db_arca_config
+from libracore.db import facturas as db_facturas
+from libracore.db.migraciones import conexion_libracore
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, aliased
 
-from app.models.enums import TipoComprobante
-from app.models.operacion import Comprobante, OrdenCarga
+from app.models.enums import CODIGO_ARCA, TipoComprobante
+from app.models.maestros import RazonSocial, Tercero
+from app.models.operacion import Comprobante, ComprobanteCargo, OrdenCarga
 from app.schemas.comprobantes import (
     NOMBRES_DE_TIPO,
     SumaDeOrdenes,
     TotalDeRazonSocial,
 )
+from app.servicios.emision_arca import CODIGO_IVA_DE_LA_FAMILIA, ArcaAmbiguo
 
 CERO = Decimal("0.00")
 
@@ -42,6 +47,10 @@ TIPOS_NOTA = frozenset({
     TipoComprobante.NOTA_CREDITO_FCE_B,
     TipoComprobante.NOTA_CREDITO_FCE_C,
 })
+
+
+#: Las facturas FCE, que exigen vencimiento de pago.
+TIPOS_FCE_FACTURA = frozenset({TipoComprobante.FCE_A, TipoComprobante.FCE_B, TipoComprobante.FCE_C})
 
 
 def solo_facturas(consulta):
@@ -201,3 +210,155 @@ def totales_por_razon_social(
             coinciden=(neto_c, iva_c, total_c) == (neto_o, iva_o, total_o),
         ))
     return salida
+
+
+# ── Escribir el comprobante: lo hace el motor ───────────────────────────────
+#
+# Desde la revisión `0016` el comprobante es una fila de `facturas` (ADR-030).
+# Este producto no la escribe con su ORM: la crea, le guarda el CAE y la anula
+# **el motor**, con las funciones que aceptan `conn=` (ADR-025 de LibraCore). Se
+# les pasa la conexión de la sesión, así que todo pasa **en la transacción de
+# acá**: el comprobante, las órdenes y la cuenta corriente siguen entrando o no
+# entrando juntos (ADR-024). Lo único que escribe el ORM es `comprobantes_cargo`.
+
+
+class NumeroRepetido(Exception):
+    """El número ya está registrado para ese emisor, tipo y punto de venta."""
+
+
+def _conexion_del_motor(sesion: Session):
+    """La conexión de la sesión, como la espera `libracore.db`. Antes, lo pendiente a la base:
+    el motor lee y escribe por SQL y no ve lo que el ORM todavía no mandó."""
+    sesion.flush()
+    return conexion_libracore(sesion.connection())
+
+
+def emisor_de(sesion: Session, razon_social_id: int) -> int | None:
+    """El emisor del motor (`arca_config.id`) de esta razón social, o `None` (el emisor único).
+
+    Es la fila de ARCA de **su CUIT** (`config_por_cuit`), la misma guarda que decide si
+    emite (`emision_arca.configuracion_activa`). Sin CUIT, o sin fila de ese CUIT, el
+    comprobante es del emisor único de la instancia, que es lo que hay hoy en Suitrans.
+    """
+    razon = sesion.get(RazonSocial, razon_social_id)
+    if razon is None:
+        return None
+    try:
+        cfg = db_arca_config.config_por_cuit(razon.cuit)
+    except db_arca_config.ArcaAmbiguo as e:
+        raise ArcaAmbiguo(str(e)) from None
+    return cfg["id"] if cfg else None
+
+
+def _cliente(sesion: Session, cliente_id: int) -> dict:
+    """Los datos fiscales del receptor, copiados al comprobante como hace el motor al emitir."""
+    tercero = sesion.get(Tercero, cliente_id)
+    if tercero is None:
+        return {"cliente_cuit": "", "cliente_razon": "", "cliente_iva_cond": 0}
+    return {
+        "cliente_cuit": tercero.cuit or "",
+        "cliente_razon": tercero.razon_social,
+        "cliente_iva_cond": CODIGO_IVA_DE_LA_FAMILIA.get(tercero.condicion_iva, 0),
+    }
+
+
+def items_de(ordenes: Iterable[OrdenCarga]) -> list[dict]:
+    """Un ítem por orden, con la forma de ítem de la familia (la que lee el PDF del motor)."""
+    return [{
+        "description": "Flete",
+        "detalle": f"Orden {o.id} del {o.fecha:%d/%m/%Y}" + (f", remito {o.remito}" if o.remito else ""),
+        "qty": 1, "unit_price": float(o.tarifa), "subtotal": float(o.tarifa),
+        "iva_pct": float(o.alicuota_iva),
+    } for o in ordenes]
+
+
+def crear(
+    sesion: Session, *, razon_social_id: int, tipo: TipoComprobante, punto_venta: int,
+    numero: int, fecha: date, cliente_id: int, neto: Decimal, iva: Decimal, total: Decimal,
+    items: list[dict], ambiente: str | None = None, fch_vto_pago: date | None = None,
+    fce_cbu: str | None = None, fce_transmision: str | None = None,
+    asociado: Comprobante | None = None, motivo: str | None = None,
+) -> Comprobante:
+    """Crea el comprobante en `facturas` y su fila de `comprobantes_cargo`. No hace `commit`.
+
+    - **Sin `ambiente`, se registra**: el número lo tipeó una persona y el motor no lo
+      cambia (`registrar_comprobante`, ADR-024). Si ya está, `NumeroRepetido`.
+    - **Con `ambiente`, se emite**: el número es el que dio ARCA. El motor lo crea en ese
+      ambiente (`create_factura`). Si ese número ya estaba tomado acá, el motor elegiría
+      otro, y ARCA rechazaría el CAE de un número que no es el suyo: se dice antes,
+      con `NumeroRepetido`.
+    """
+    # Las reglas que la tabla vieja tenía como CHECK y `facturas` no tiene: se dicen acá,
+    # que es la única puerta de entrada de un comprobante de este producto.
+    if tipo in TIPOS_FCE_FACTURA and fch_vto_pago is None:
+        raise ValueError("una FCE sin fecha de vencimiento de pago no existe: ARCA la rechaza (10163)")
+    if (tipo in TIPOS_NOTA) != (asociado is not None):
+        raise ValueError("toda nota de credito acredita a un comprobante, y nada mas lo hace")
+    if min(neto, iva, total) < 0:
+        raise ValueError("los importes de un comprobante no son negativos: el tipo dice el signo")
+    conn = _conexion_del_motor(sesion)
+    codigo = CODIGO_ARCA[tipo]
+    campos = {
+        **_cliente(sesion, cliente_id),
+        "items": items, "subtotal": neto, "iva_amount": iva, "total": total,
+    }
+    opcionales = {
+        "observaciones": motivo or "",
+        "fch_vto_pago": fch_vto_pago.isoformat() if fch_vto_pago else "",
+        "fce_cbu": fce_cbu or "", "fce_transmision": fce_transmision or "",
+    }
+    if asociado is not None:
+        opcionales.update({
+            "cbte_asoc_tipo": CODIGO_ARCA[asociado.tipo], "cbte_asoc_pv": asociado.punto_venta,
+            "cbte_asoc_nro": asociado.numero, "cbte_asoc_fecha": asociado.fecha.strftime("%Y%m%d"),
+        })
+    emisor = emisor_de(sesion, razon_social_id)
+    if ambiente is None:
+        try:
+            factura_id = db_facturas.registrar_comprobante(
+                codigo, punto_venta, numero, fecha.isoformat(), **campos,
+                emisor_id=emisor, conn=conn, **opcionales)
+        except db_facturas.NumeroYaRegistrado:
+            raise NumeroRepetido(
+                f"ya hay un {etiqueta(tipo, punto_venta, numero)} registrado") from None
+    else:
+        factura_id = db_facturas.create_factura(
+            codigo, punto_venta, numero, fecha.isoformat(), campos["cliente_cuit"],
+            campos["cliente_razon"], campos["cliente_iva_cond"], items, neto, iva, total,
+            ambiente=ambiente, emisor_id=emisor, conn=conn, **opcionales)
+        if db_facturas.get_factura(factura_id, conn=conn)["numero"] != numero:
+            raise NumeroRepetido(
+                f"ARCA dio el {etiqueta(tipo, punto_venta, numero)}, y ese número ya está "
+                "registrado acá: revisá los comprobantes cargados a mano")
+    sesion.add(ComprobanteCargo(
+        factura_id=factura_id, razon_social_id=razon_social_id, cliente_id=cliente_id,
+        anulado=False, comprobante_asociado_id=asociado.id if asociado is not None else None,
+    ))
+    sesion.flush()
+    return sesion.get(Comprobante, factura_id)
+
+
+def guardar_cae(sesion: Session, comprobante: Comprobante, cae: str, cae_vto: str | None) -> Comprobante:
+    """Guarda el CAE que dio ARCA (`cae_vto` como lo devuelve ARCA, `AAAAMMDD`). No hace `commit`."""
+    conn = _conexion_del_motor(sesion)
+    db_facturas.update_factura_cae(comprobante.id, cae, cae_vto or "", conn=conn)
+    comprobante.cae_solicitado_en = datetime.now(UTC)
+    sesion.flush()
+    sesion.expire(comprobante)
+    return comprobante
+
+
+def anular(sesion: Session, comprobante: Comprobante, usuario_id: int | None,
+           motivo: str = "") -> Comprobante:
+    """Anula un comprobante **sin CAE**: queda con su número, fuera de los libros y de los totales.
+
+    El rastro (cuándo, quién y por qué) lo deja el motor (`anular_factura`, ADR-022 de
+    LibraCore), que además lo saca del libro IVA. Lo propio —las órdenes y la cuenta
+    corriente— lo hace quien llama. No hace `commit`.
+    """
+    conn = _conexion_del_motor(sesion)
+    db_facturas.anular_factura(comprobante.id, usuario_id, motivo, conn=conn)
+    comprobante.anulado = True
+    sesion.flush()
+    sesion.expire(comprobante)
+    return comprobante

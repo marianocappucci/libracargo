@@ -31,8 +31,13 @@ sistema legado tenía cero FK y dos índices fuera de las claves primarias.
 - **`razones_sociales`** — las razones sociales propias con CUIT y punto de venta.
 - **`ordenes_carga`** — el núcleo. Estado explícito, comisión propia, FK real al
   comprobante.
-- **`comprobantes`** — numeración única por *(razón social, tipo, punto de
-  venta, número)*.
+- **El comprobante vive en `facturas` del motor** (ADR-030). Lo propio de acá
+  (razón social, tercero, anulado, origen en el legado) va en
+  `comprobantes_cargo`, con el mismo id. La numeración es única por *(emisor,
+  ambiente, tipo, punto de venta, número)*: el emisor es la fila de ARCA del
+  CUIT de la razón social. El comprobante de apertura del legado, que no es
+  fiscal, está en `comprobante_de_apertura`. La tabla vieja quedó como
+  `comprobantes_legado`, de sólo lectura.
 - **`movimientos_cuenta`** — las tres cuentas corrientes, con `debe`/`haber` y
   descripción sin límite de largo. Sin saldo materializado: se suma con índice.
 - **`movimientos_caja`** — cobros y pagos, con contrapartida en la misma

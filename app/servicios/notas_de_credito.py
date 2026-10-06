@@ -27,16 +27,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.cuentas import MovimientoCuenta
-from app.models.enums import EstadoOrden, RolCuenta
+from app.models.enums import CODIGO_ARCA, TIPO_DE_CODIGO, EstadoOrden, RolCuenta
 from app.models.maestros import Tercero
 from app.models.operacion import Comprobante, OrdenCarga
-from app.servicios import emision_arca
+from app.servicios import comprobantes, emision_arca
 from app.servicios.comprobantes import etiqueta
 
 log = logging.getLogger(__name__)
 
-#: Del código de ARCA al tipo de este producto (lo inverso de `CODIGO_ARCA`).
-_TIPO_DE_CODIGO = {codigo: tipo for tipo, codigo in emision_arca.CODIGO_ARCA.items()}
 
 
 def _en_forma_del_motor(sesion: Session, comprobante: Comprobante) -> dict:
@@ -45,7 +43,7 @@ def _en_forma_del_motor(sesion: Session, comprobante: Comprobante) -> dict:
     neto, iva = Decimal(comprobante.neto), Decimal(comprobante.iva)
     es_c = comprobante.tipo in emision_arca.TIPOS_C
     return {
-        "tipo": emision_arca.CODIGO_ARCA[comprobante.tipo],
+        "tipo": CODIGO_ARCA[comprobante.tipo],
         "punto_venta": comprobante.punto_venta,
         "numero": comprobante.numero,
         "fecha": comprobante.fecha.isoformat(),
@@ -71,7 +69,7 @@ def _previas(sesion: Session, original_id: int) -> list[dict]:
     )
     # Con su `total`: es lo que el motor suma para el tope acumulado. Sin él contaría cada previa como el
     # comprobante entero, que es el comportamiento de la fase 1 (cualquier nota bloqueaba a la siguiente).
-    return [{"tipo": emision_arca.CODIGO_ARCA[n.tipo], "punto_venta": n.punto_venta,
+    return [{"tipo": CODIGO_ARCA[n.tipo], "punto_venta": n.punto_venta,
              "numero": n.numero, "cae": n.cae, "total": str(n.total)} for n in notas]
 
 
@@ -107,26 +105,27 @@ async def emitir(
         # El punto de venta de la nota es el de la razón social (`numero_que_sigue` lo lee de ahí), como
         # en `facturar`; el que viene del original es el mismo salvo que se haya cambiado después.
         numero, ta, cfg, razon = await emision_arca.numero_que_sigue(
-            sesion, original.razon_social_id, _TIPO_DE_CODIGO[tipo_nota])
+            sesion, original.razon_social_id, TIPO_DE_CODIGO[tipo_nota])
         estado["cfg"] = cfg
         return numero, (ta, cfg, razon)
 
     def registrar(nota: dict, contexto) -> Comprobante:
-        _ta, _cfg, razon = contexto
-        registro = Comprobante(
-            razon_social_id=original.razon_social_id, tipo=_TIPO_DE_CODIGO[nota["tipo"]],
+        _ta, cfg, razon = contexto
+        importes = _importes(original, nota)
+        # La crea el motor en `facturas`, en el ambiente con el que se numeró y asociada a su
+        # comprobante (ADR-030). Los importes son **los que armó el motor**: la nota total copia
+        # los del original y la parcial reparte el importe con su alícuota (`repartir_importe`;
+        # en una C todo es neto). Son los que van a ARCA, porque `pedir_cae` arma el pedido
+        # desde esta fila.
+        return comprobantes.crear(
+            sesion, razon_social_id=original.razon_social_id, tipo=TIPO_DE_CODIGO[nota["tipo"]],
             # El punto de venta con el que se numeró, no el que traía el original.
             punto_venta=razon.punto_venta, numero=nota["numero"], fecha=hoy,
-            cliente_id=original.cliente_id,
-            # Los importes **que armó el motor**: la nota total copia los del original y la parcial reparte el
-            # importe con su alícuota (`repartir_importe`; en una C todo es neto). Son los que van a ARCA, porque
-            # `pedir_cae` arma el pedido desde esta fila.
-            **_importes(original, nota),
-            comprobante_asociado_id=original.id, motivo=motivo,
+            cliente_id=original.cliente_id, **importes,
+            items=[{"description": motivo or "Nota de credito", "qty": 1,
+                    "unit_price": float(importes["neto"]), "subtotal": float(importes["neto"])}],
+            ambiente=cfg["ambiente"], asociado=original, motivo=motivo,
         )
-        sesion.add(registro)
-        sesion.flush()
-        return registro
 
     async def pedir_cae(registro: Comprobante, nota: dict, contexto) -> Comprobante:
         ta, cfg, razon = contexto

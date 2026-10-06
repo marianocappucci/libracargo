@@ -781,3 +781,23 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 - Una instancia unida y una sin unir conviven: el código mira si las URLs coinciden.
 - Lo que siga de la etapa 3 (los comprobantes en `facturas`) sólo corre en instancias unidas.
 
+
+## ADR-030 — El comprobante vive en `facturas` del motor
+
+**Contexto.** El humano pidió que LibraCargo no tenga un modelo de comprobantes separado del de la familia («no quiero que sean modelos separados»). Con la base unida (ADR-029) y el motor preparado (emisor por comprobante, anulación con rastro, registro manual, `conn=` y dinero exacto: ADR-021 a ADR-025 de LibraCore), el comprobante puede pasar a `facturas`. Es la etapa 3b del diseño «LibraCargo sobre el modelo de comprobantes del motor» del wiki del ecosistema.
+
+**Decisión.**
+- **El comprobante es una fila de `facturas`, con el mismo id que tenía en `comprobantes`.** Así las FK de `ordenes_carga` y `movimientos_cuenta` no cambian de valor: sólo apuntan a otra tabla (revisión `0016`).
+- **Lo propio va en `comprobantes_cargo`**, una fila por comprobante: la razón social y el tercero con sus FK, `anulado`, el origen en el legado, cuándo se pidió el CAE y la FK exacta de la nota a su comprobante.
+- **`Comprobante` se mapea sobre la unión de las dos tablas.** Los reportes, el control F5 y las pantallas leen igual que antes.
+- **Escribe el motor.** El comprobante lo crea `registrar_comprobante` si se registra a mano, o `create_factura(ambiente=)` si emite por ARCA. El CAE lo guarda `update_factura_cae`. Todo pasa con la conexión de la sesión (`conexion_libracore`), en la misma transacción que las órdenes y la cuenta corriente (ADR-024). La única puerta es `app/servicios/comprobantes.py`.
+- 🔑 **`anulado` no es `anulada_en`.** Acá un comprobante también queda anulado cuando sus notas lo acreditan entero (ADR-028). Sale de los totales del producto, pero **sigue en el libro IVA** junto a sus notas. Por eso `anulado` se queda en el producto, y `anular_factura` del motor se llama sólo en la anulación **sin CAE**, que sí lo saca de los libros.
+- **El emisor** es la fila de `arca_config` del CUIT de la razón social, o `NULL` (el emisor único) si no tiene.
+- **El comprobante de apertura** (ADR-010) no es fiscal y no entra en `facturas`. Pasa a `comprobante_de_apertura`, y sus órdenes a `apertura_id`.
+- `comprobantes` queda como `comprobantes_legado`, de sólo lectura, por un ciclo.
+
+**Consecuencias.**
+- **Dos razones sociales sin ARCA propio comparten talonario**: las dos son del emisor único y el índice de numeración del motor es por emisor. Antes eran dos talonarios. Con su propio emisor, cada una vuelve a tener el suyo. Suitrans tiene una sola razón social; la demo y dev usan puntos de venta distintos.
+- Los CHECK de la tabla vieja que `facturas` no tiene (vencimiento de la FCE, la nota con su asociado, los signos) los dice `crear`.
+- Los totales y reportes de este producto ya no cuentan el comprobante de apertura. Sus órdenes tampoco, así que el F5 sigue coincidiendo.
+- El libro IVA, los PDF y los listados del motor ven los comprobantes de LibraCargo.
