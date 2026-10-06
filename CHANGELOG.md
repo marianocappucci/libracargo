@@ -4,6 +4,10 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ## [Unreleased]
 
+### Quitado
+
+- **`postgres-init/10-bases-extra.sql`**, que creaba la base `libracargo_core` al inicializar el volumen de dev, y su montaje en `docker-compose.yml`. Desde la base unida (ADR-029) el core vive en la del dominio, y las `libracargo_core` de dev, demo y Suitrans se borraron el 2026-10-06.
+
 ### Agregado
 
 - **La cuenta corriente vive en el libro de terceros del motor** (ADR-031). Cada asiento es una fila de `cc_asientos` de LibraCore, y lo propio (orden, cobro, gasto) va en `movimientos_cuenta_cargo`. Asienta, corrige y borra el motor, en la misma transacción que el documento.
