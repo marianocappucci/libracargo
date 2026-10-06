@@ -93,8 +93,8 @@ function Eleccion({ id, etiqueta, valor, alCambiar, children }: {
 const nombreDe = (lista: { id: number; etiqueta: string }[] | undefined, id: number | null) =>
   lista?.find((o) => o.id === id)?.etiqueta ?? ''
 
-/** `titulo` lo pone quien la usa para **editar** (`EditarPreFactura`): esa ruta cuelga de «Pre facturas» en el
- *  menú y su título lleva el icono de esa entrada, no el de Comprobantes. Sin él, es «Facturar pendientes». */
+/** `titulo` lo pone quien la usa para **editar** (`EditarPreFactura`): el título de editar es otro
+ *  («Editar pre factura N»). Las dos cuelgan de «Comprobantes» en el menú. Sin él, es «Facturar pendientes». */
 export default function FacturarPendientes({ titulo }: { titulo?: (numero: string) => ReactNode } = {}) {
   const [params, setParams] = useSearchParams()
   const navegar = useNavigate()

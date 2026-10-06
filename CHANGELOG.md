@@ -8,7 +8,7 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 - **Pre factura** (ADR-032). Antes de facturar se genera una pre factura: un documento **sin valor fiscal** que se manda al cliente (PDF por correo desde la app, o se descarga) para que confirme los datos, y desde la que se **factura por ARCA**.
   - **«Facturar pendientes» ahora genera la pre factura.** Se elige cliente, razón social, tipo, fecha y órdenes (y el vencimiento de pago si es FCE). **Ya no pide punto de venta ni número.** Las órdenes quedan reservadas: no entran en otra pre factura.
-  - **Pantalla nueva «Pre facturas»** (en el menú, junto a Comprobantes): lista con estado y filtros, y el detalle con el PDF, **Enviar por correo** (con el email del cliente prellenado), **Editar** (órdenes, razón social, tipo y fecha), **Marcar aceptada**, **Anular** (con motivo) y **Facturar por ARCA** (confirma, y muestra la factura o el error). Estados: Pendiente, Enviada, Aceptada, Facturada, Anulada.
+  - **Pantalla nueva «Pre facturas»** (se llega desde Comprobantes > Clientes; no tiene entrada de menú): lista con estado y filtros, y el detalle con el PDF, **Enviar por correo** (con el email del cliente prellenado), **Editar** (órdenes, razón social, tipo y fecha), **Marcar aceptada**, **Anular** (con motivo) y **Facturar por ARCA** (confirma, y muestra la factura o el error). Estados: Pendiente, Enviada, Aceptada, Facturada, Anulada.
   - **API**: `POST /api/pre-facturas`, `PUT /api/pre-facturas/{id}`, `POST /api/pre-facturas/{id}/facturar`, y las del motor (`GET`, `/pdf`, `/enviar-email`, `/aceptar`, `/anular`). Las órdenes tienen los filtros `reservada` y `pre_factura_id`.
   - **Migración `0019`** (aditiva: `pre_facturas_cargo` y `pre_factura_ordenes`, vacías). Pide libracore **v1.140.0** o posterior, y que `libracore-migrar` corra antes.
 
@@ -49,6 +49,13 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 - **La demo no trae comprobantes sembrados** (no tiene certificado de ARCA): el seed deja tres pre facturas de ejemplo.
 
 ### Cambiado
+
+- **«Comprobantes» es una sola entrada del menú, con dos pestañas: «Clientes» y «Proveedores».** Antes eran tres entradas sueltas («Comprobantes», «Pre facturas» y «Comprobantes de proveedores»). Sólo frontend: la API y los reportes no cambian.
+  - **Clientes** es la pantalla de siempre (facturas y notas emitidas), con arriba los botones **Facturar pendientes** y **Pre facturas**. **Proveedores** es la de comprobantes de proveedores, sin cambios de comportamiento.
+  - **La pestaña va en la URL**: `/comprobantes` es Clientes y `/comprobantes?seccion=proveedores` es Proveedores (el mismo `?seccion=` de la Configuración). Elegir una pestaña la escribe en el historial, así que atrás y adelante vuelven a la anterior; un enlace guardado cae en la pestaña correcta. Al cambiar de pestaña se descarta el `?ver=` de la otra.
+  - **Los enlaces de antes siguen andando**: `/gastos` y `/gastos?ver=5` redirigen a `/comprobantes?seccion=proveedores` (con su `ver`); `/comprobantes?ver=`, `/comprobantes/facturar`, `/pre-facturas`, `/pre-facturas/:id` y `/pre-facturas/:id/editar` no cambian. Los enlaces que arma la app hacia un comprobante de proveedor (cuenta corriente, caja, log de actividad) van directo a la pestaña.
+  - **«Comprobantes» queda marcada en el menú** en todas esas pantallas (facturar pendientes, pre facturas y su detalle y edición). Las pantallas de pre facturas pasan a llevar el icono de Comprobantes y una flecha de vuelta a Clientes.
+  - Las dos pestañas las ven los mismos roles que antes (todos los de personal): no hay nada que ocultar por rol.
 
 - **libracore `v1.139.0`** (2026-10-06; antes `v1.138.0`). La cuenta corriente de clientes se lee **sólo** del libro (ADR-029 del motor): se retiran el saldo calculado y el interruptor `LIBRACORE_CC_DESDE_EL_LIBRO`. Sin migración. Lo cargado por fuera de los escritores del motor se ve después de `libro_de_clientes.reconstruir()`.
 - **libracore `v1.138.0`** (2026-10-06; antes `v1.137.1`). Las lecturas de la cuenta corriente de clientes pueden salir del libro (ADR-028 del motor), detrás del interruptor por instancia `LIBRACORE_CC_DESDE_EL_LIBRO`, **apagado por defecto**: sin encenderlo no cambia nada. Sin migración.

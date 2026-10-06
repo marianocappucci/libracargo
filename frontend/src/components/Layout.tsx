@@ -6,15 +6,15 @@
 //
 // Dos ítems del mismo menú no comparten dibujo — si no, el icono deja de
 // distinguir y hay que leer el texto igual.
-import { createLayout } from 'libra-ui/Layout'
+import { createLayout, type NavSection } from 'libra-ui/Layout'
 import {
-  BarChart3, BookOpen, ClipboardList, FileText, LayoutDashboard, Receipt, ReceiptText, ScrollText,
-  Settings, UserCog, Wallet,
+  BarChart3, BookOpen, ClipboardList, LayoutDashboard, Receipt, ScrollText, Settings, UserCog, Wallet,
 } from 'lucide-react'
 
 import { useConfiguracion } from '@/api/configuracion'
 import { LOGO, WORDMARK } from '@/branding'
 import { useAuth } from '@/context/AuthContext'
+import { RUTAS_DE_COMPROBANTES } from '@/navegacion'
 
 type Usuario = { role?: string; name?: string; empresa?: string }
 
@@ -37,7 +37,7 @@ function useAuthConEmpresa() {
 
 /** Las secciones del menu, afuera para que un test pueda afirmarlas sin
  *  montar el layout entero. */
-export const NAV_SECCIONES = [
+export const NAV_SECCIONES: NavSection<Usuario>[] = [
     {
       items: [
         // 'Dashboard' y no 'Inicio': es como se llama en Gestiolibra,
@@ -47,13 +47,11 @@ export const NAV_SECCIONES = [
         { to: '/ordenes', label: 'Órdenes de carga', icon: ClipboardList },
         { to: '/cuentas', label: 'Cuenta corriente', icon: BookOpen },
         { to: '/caja', label: 'Caja', icon: Wallet },
-        { to: '/comprobantes', label: 'Comprobantes', icon: Receipt },
-        // La pre factura que se manda al cliente antes de facturar (ADR-032): va pegada a Comprobantes.
-        { to: '/pre-facturas', label: 'Pre facturas', icon: FileText },
-        // La etiqueta es la palabra del cliente. El modelo es un gasto
-        // -ver ADR-021-, pero en el menu del sistema viejo esto se
-        // llamaba asi y es como lo pide.
-        { to: '/gastos', label: 'Comprobantes de proveedores', icon: ReceiptText },
+        // Una sola entrada para todo lo que es un comprobante, con dos pestañas
+        // (Clientes y Proveedores). «Pre facturas» y «Comprobantes de
+        // proveedores» eran dos entradas sueltas; ahora son accesos y una
+        // pestaña de ésta. `activoEn` (libra-ui 0.119.0) la marca en esas rutas.
+        { to: '/comprobantes', label: 'Comprobantes', icon: Receipt, activoEn: RUTAS_DE_COMPROBANTES },
         { to: '/reportes', label: 'Reportes', icon: BarChart3 },
       ],
     },
