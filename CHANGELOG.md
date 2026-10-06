@@ -6,6 +6,11 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Agregado
 
+- **El comprobante vive en `facturas` del motor** (ADR-030). Deja de haber un modelo de comprobantes propio: cada comprobante es una fila de `facturas`, con lo propio del producto en `comprobantes_cargo`. Lo crea y le guarda el CAE el motor, dentro de la misma transacción que las órdenes y la cuenta corriente.
+  - **Revisión `0016`**: copia los comprobantes a `facturas` con el mismo id, pasa el de apertura a `comprobante_de_apertura` y reapunta las FK. La tabla vieja queda como `comprobantes_legado`. Pide la base unida (`0015`) y que `libracore-migrar` corra antes.
+  - **Cambio de comportamiento**: dos razones sociales sin ARCA propio comparten talonario (mismo tipo, punto de venta y número chocan).
+  - La API y las pantallas no cambian.
+
 - **Una sola base** (ADR-029). El schema de LibraCore vuelve a vivir en la base del dominio. Es la salida A de la etapa 3 del diseño «LibraCargo sobre el modelo de comprobantes del motor».
   - **Revisión `0015`**: renombra la clave de `alembic_version_libracargo` para que la cadena del motor pueda migrar en la misma base.
   - **Alta y respaldo**: un cliente nuevo nace con una sola base, y el respaldo lleva el core como segunda base sólo si todavía es otra.

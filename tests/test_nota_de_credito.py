@@ -16,12 +16,12 @@ from decimal import Decimal
 import pytest
 from libracore import notas_de_credito as motor
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 
 from app import tiempo
 from app.models import Comprobante, MovimientoCuenta, TipoComprobante
 from app.models.enums import EstadoOrden
 from app.models.operacion import OrdenCarga
+from tests.conftest import comprobante_de_prueba
 from tests.test_comprobantes import facturar, orden
 from tests.test_emision_arca import _arca_responde, _configurar_arca, razon_con_arca  # noqa: F401
 
@@ -145,13 +145,12 @@ def test_una_factura_ya_acreditada_no_admite_otra_nota(cliente, datos, factura):
 def test_la_guarda_de_la_nota_repetida_del_motor_llega_con_409(cliente, datos, factura, sesion):
     """Una nota previa colgada del original (aunque el original no figure anulado): el motor la ve y frena."""
     original = factura["comprobante"]
-    sesion.add(Comprobante(
-        razon_social_id=original["razon_social_id"], tipo=TipoComprobante.NOTA_CREDITO_A, punto_venta=5,
-        numero=99, fecha=date(2026, 8, 20), cliente_id=original["cliente_id"], neto=original["neto"],
-        iva=original["iva"], total=original["total"], comprobante_asociado_id=original["id"],
-        cae="75000000000001",
-    ))
-    sesion.commit()
+    comprobante_de_prueba(
+        sesion, razon_social_id=original["razon_social_id"], tipo=TipoComprobante.NOTA_CREDITO_A,
+        punto_venta=5, numero=99, fecha=date(2026, 8, 20), cliente_id=original["cliente_id"],
+        neto=original["neto"], iva=original["iva"], total=original["total"],
+        comprobante_asociado_id=original["id"], cae="75000000000001",
+    )
 
     r = _nota(cliente, original["id"])
     assert r.status_code == 409, r.text
@@ -335,13 +334,11 @@ def test_un_importe_igual_al_total_es_la_nota_total(cliente, datos, factura):
 def fce(factura, sesion):
     """Una FCE A emitida (con CAE) de 1210, del mismo cliente y razón social que la factura."""
     original = factura["comprobante"]
-    fce = Comprobante(
-        razon_social_id=original["razon_social_id"], tipo=TipoComprobante.FCE_A, punto_venta=5, numero=7,
-        fecha=date(2026, 8, 20), cliente_id=original["cliente_id"], neto="1000.00", iva="210.00",
-        total="1210.00", cae="75000000000002", fch_vto_pago=date(2026, 9, 20),
+    fce = comprobante_de_prueba(
+        sesion, razon_social_id=original["razon_social_id"], tipo=TipoComprobante.FCE_A, punto_venta=5,
+        numero=7, fecha=date(2026, 8, 20), cliente_id=original["cliente_id"], neto="1000.00",
+        iva="210.00", total="1210.00", cae="75000000000002", fch_vto_pago=date(2026, 9, 20),
     )
-    sesion.add(fce)
-    sesion.commit()
     return fce.id
 
 
@@ -435,13 +432,11 @@ def test_contra_homologacion_se_ensaya_y_no_se_guarda(cliente, datos, sesion, mo
     pedidos = _arca_responde(monkeypatch, ultimo=41)
 
     a = orden(cliente, datos, "1000.00", razon_social_id=razon)
-    original = Comprobante(
-        razon_social_id=razon, tipo=TipoComprobante.FACTURA_A, punto_venta=5, numero=42,
+    original = comprobante_de_prueba(
+        sesion, razon_social_id=razon, tipo=TipoComprobante.FACTURA_A, punto_venta=5, numero=42,
         fecha=date(2026, 8, 20), cliente_id=datos["cliente"], neto="1000.00", iva="210.00",
         total="1210.00", cae="75000000000003",
     )
-    sesion.add(original)
-    sesion.flush()
     sesion.execute(OrdenCarga.__table__.update().where(OrdenCarga.id == a["id"]).values(
         comprobante_id=original.id, estado=EstadoOrden.FACTURADA))
     sesion.commit()
@@ -459,16 +454,14 @@ def test_contra_homologacion_se_ensaya_y_no_se_guarda(cliente, datos, sesion, mo
 
 # ── La base ─────────────────────────────────────────────────────────────────
 
-def test_la_base_no_admite_una_nota_sin_asociado_ni_una_factura_con_asociado(cliente, datos, factura, sesion):
+def test_no_se_crea_una_nota_sin_asociado_ni_una_factura_con_asociado(cliente, datos, factura, sesion):
+    """Era un CHECK de la tabla propia; `facturas` no lo tiene, así que lo dice `crear` (ADR-030)."""
     original = factura["comprobante"]
     comun = dict(razon_social_id=original["razon_social_id"], punto_venta=5, fecha=date(2026, 8, 20),
                  cliente_id=original["cliente_id"], neto="1.00", iva="0.21", total="1.21")
-    for malo in (
-        Comprobante(tipo=TipoComprobante.NOTA_CREDITO_A, numero=500, **comun),
-        Comprobante(tipo=TipoComprobante.FACTURA_A, numero=501, comprobante_asociado_id=original["id"], **comun),
-    ):
-        sesion.add(malo)
-        with pytest.raises(IntegrityError) as e:
-            sesion.flush()
-        assert "ck_comprobantes_nota_con_asociado" in str(e.value)
-        sesion.rollback()
+    with pytest.raises(ValueError, match="acredita a un comprobante"):
+        comprobante_de_prueba(sesion, tipo=TipoComprobante.NOTA_CREDITO_A, numero=500, **comun)
+    with pytest.raises(ValueError, match="acredita a un comprobante"):
+        comprobante_de_prueba(sesion, tipo=TipoComprobante.FACTURA_A, numero=501,
+                              comprobante_asociado_id=original["id"], **comun)
+

@@ -52,14 +52,19 @@ def _filas_de_secretos():
 
 
 @pytest.fixture(autouse=True)
-def _limpio(cliente):
+def _limpio(cliente, tmp_path, monkeypatch):
     """Sin secretos en la base ni en el archivo, antes y despues.
 
     Pide `cliente` a proposito: es el fixture que arma la base de cero y
     dispara el arranque REAL de la app —`exigir_schema_al_dia`, el enganche del
     almacen y la migracion de secretos—. Sin el, `secretos_instancia` no
     existe: la crea la revision `0002` de libraauth, no un `create_all`.
+
+    🔴 **Un `config.json` por test**, como `test_tema`. El de por defecto está en la
+    raíz del repo y lo comparten los workers de xdist: la limpieza de uno borraba
+    el archivo que otro estaba por leer (`FileNotFoundError` en el CI, 2026-10-06).
     """
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", str(tmp_path / "config.json"))
     def limpiar():
         almacen = config_manager.almacen_de_secretos()
         if almacen is not None:

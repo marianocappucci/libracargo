@@ -21,6 +21,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 
+from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from app.models.auditoria import RegistroAuditoria
@@ -60,10 +61,13 @@ def instantanea(objeto: Any) -> dict[str, Any]:
         return {}
     if isinstance(objeto, dict):
         return objeto
+    # Por los atributos del mapper y no por `__table__.columns`: `Comprobante` está
+    # mapeado sobre la unión de `facturas` y `comprobantes_cargo`, y las columnas de
+    # una unión no se llaman como los atributos (`neto` es `facturas.subtotal`).
     return {
-        c.key: _plano(getattr(objeto, c.key))
-        for c in objeto.__table__.columns
-        if c.key not in IGNORADAS
+        a.key: _plano(getattr(objeto, a.key))
+        for a in inspect(objeto).mapper.column_attrs
+        if a.key not in IGNORADAS
     }
 
 

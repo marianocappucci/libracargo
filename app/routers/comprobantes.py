@@ -39,7 +39,7 @@ from app.schemas.comprobantes import (
     NotaDeCreditoIn,
     TotalDeRazonSocial,
 )
-from app.servicios import auditoria, emision_arca, notas_de_credito
+from app.servicios import auditoria, comprobantes, emision_arca, notas_de_credito
 from app.servicios.comprobantes import (
     TIPOS_NOTA,
     etiqueta,
@@ -298,19 +298,32 @@ def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
             )
         numero, punto_venta = datos.numero, datos.punto_venta
 
-    comprobante = Comprobante(
-        razon_social_id=datos.razon_social_id, tipo=datos.tipo,
-        punto_venta=punto_venta, numero=numero, fecha=datos.fecha,
-        cliente_id=datos.cliente_id,
-        neto=suma.neto, iva=suma.iva, total=suma.total,
-        fch_vto_pago=datos.fecha_vencimiento_pago,
-    )
-    sesion.add(comprobante)
     try:
-        # `flush` y no `commit`: hace falta el id para las órdenes y para el
-        # movimiento de cuenta, pero la transacción sigue abierta. Con un commit
-        # acá, un fallo más abajo dejaría el comprobante grabado sin órdenes.
-        sesion.flush()
+        # Lo crea el motor en `facturas`, en esta misma transacción (ADR-030): hace
+        # falta el id para las órdenes y para el movimiento de cuenta, pero no hay
+        # `commit` hasta el final. Con uno acá, un fallo más abajo dejaría el
+        # comprobante grabado sin órdenes.
+        try:
+            comprobante = comprobantes.crear(
+                sesion, razon_social_id=datos.razon_social_id, tipo=datos.tipo,
+                punto_venta=punto_venta, numero=numero, fecha=datos.fecha,
+                cliente_id=datos.cliente_id, neto=suma.neto, iva=suma.iva, total=suma.total,
+                items=comprobantes.items_de(ordenes),
+                # Si emite, en el ambiente de la configuración con la que se numeró.
+                ambiente=cfg_arca["ambiente"] if emite else None,
+                fch_vto_pago=datos.fecha_vencimiento_pago,
+                # La FCE sale con el CBU y la modalidad de la configuración de hoy, y
+                # quedan en el comprobante aunque la configuración cambie después.
+                fce_cbu=(cfg_arca.get("fce_cbu") or None) if es_fce and emite else None,
+                fce_transmision=((cfg_arca.get("fce_transmision") or "").upper() or None)
+                if es_fce and emite else None,
+            )
+        except comprobantes.NumeroRepetido as e:
+            sesion.rollback()
+            raise HTTPException(409, str(e)) from None
+        except emision_arca.ArcaAmbiguo as e:
+            sesion.rollback()
+            raise HTTPException(409, str(e)) from None
         for orden in ordenes:
             orden.comprobante_id = comprobante.id
             orden.estado = EstadoOrden.FACTURADA
@@ -423,7 +436,9 @@ def anular(id_: int, sesion: Session = Depends(obtener_sesion),
     for orden in ordenes:
         orden.comprobante_id = None
         orden.estado = EstadoOrden.PENDIENTE
-    comprobante.anulado = True
+    # El rastro lo deja el motor, que además lo saca del libro IVA (ADR-022 de LibraCore).
+    usuario_id = int(actual["id"]) if str(actual.get("id", "")).isdigit() else None
+    comprobantes.anular(sesion, comprobante, usuario_id=usuario_id)
     sesion.add(MovimientoCuenta(
         fecha=comprobante.fecha, tercero_id=comprobante.cliente_id,
         rol=RolCuenta.CLIENTE,

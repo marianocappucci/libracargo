@@ -6,121 +6,231 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
+    Column,
     Date,
     DateTime,
     Enum,
     ForeignKey,
     Index,
     Integer,
+    MetaData,
     Numeric,
     String,
+    Table,
     Text,
-    UniqueConstraint,
+    TypeDecorator,
+    join,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, column_property, mapped_column
 
 from app.models.base import Anotable, Auditable, Base
-from app.models.enums import EstadoOrden, TipoComprobante
+from app.models.enums import CODIGO_ARCA, TIPO_DE_CODIGO, EstadoOrden, TipoComprobante
+
+# ── El comprobante vive en `facturas`, la tabla del motor ──────────────────
+#
+# Hasta la revisión `0016` este producto tenía su propia tabla `comprobantes`.
+# Desde ahí el comprobante es **el de la familia**: una fila de `facturas` de
+# LibraCore (diseño `libracargo-modelo-normalizado-diseno`, etapa 3b, ADR-030).
+# Lo que sólo usa este producto —la razón social, el tercero con su FK, la marca
+# de anulado, el origen en el legado— va en `comprobantes_cargo`, una fila por
+# comprobante con el **mismo id**.
+#
+# `Comprobante` sigue siendo la clase que leen los reportes, el control F5 y las
+# pantallas, mapeada sobre la unión de las dos tablas: las consultas de este
+# producto no cambiaron. **Lo que cambió es quién escribe `facturas`**: el motor,
+# con las funciones que aceptan `conn=` (ADR-025 de LibraCore), dentro de la
+# transacción de la sesión. Ver `app/servicios/comprobantes.py`.
+
+#: Las tablas del motor que este producto lee con su ORM, **en un `MetaData`
+#: aparte**: las crea y las migra `libracore-migrar`, así que ni `create_all` ni
+#: la cadena de Alembic de acá las tocan. Se declaran sólo las columnas que este
+#: producto usa.
+MOTOR = MetaData()
 
 
-class Comprobante(Base, Auditable):
-    """Factura o nota de crédito emitida por una de las razones sociales propias.
+class _CodigoDeTipo(TypeDecorator):
+    """El tipo del comprobante: en `facturas` es el código de ARCA (1, 6, 201...)."""
 
-    La numeración es única por razón social, tipo y punto de venta — en el
-    legado la PK era `(factura_nro, factura_razonsocial)`, que no contemplaba
-    ni el tipo ni el punto de venta.
+    impl = Integer
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return None if value is None else CODIGO_ARCA[TipoComprobante(value)]
+
+    def process_result_value(self, value, dialect):
+        return None if value is None else TIPO_DE_CODIGO[value]
+
+
+class _Fecha(TypeDecorator):
+    """Una fecha que el motor guarda como texto. `''` es «no tiene», igual que `NULL`.
+
+    Lee las dos formas que hay en `facturas`: la ISO (`2026-10-05`) y la de ARCA
+    (`20261005`), que es como llega el vencimiento del CAE. Escribe la ISO.
     """
 
-    __tablename__ = "comprobantes"
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return value.isoformat() if isinstance(value, date) else value
+
+    def process_result_value(self, value, dialect):
+        if not value:
+            return None
+        if len(value) == 8 and value.isdigit():
+            return date(int(value[:4]), int(value[4:6]), int(value[6:]))
+        return date.fromisoformat(value[:10])
+
+
+class _Texto(TypeDecorator):
+    """Texto del motor, donde `''` quiere decir «no tiene»: acá se lee `None`."""
+
+    impl = Text
+    cache_ok = True
+
+    def process_result_value(self, value, dialect):
+        return value or None
+
+
+class _Dinero(TypeDecorator):
+    """Un importe del motor (`NUMERIC` sin escala desde su ADR-024), a dos decimales.
+
+    Sin escala, `1210` y `1210.00` son el mismo número pero no el mismo texto: la
+    API y la cuenta corriente siempre mostraron dos decimales.
+    """
+
+    impl = Numeric
+    cache_ok = True
+
+    def process_result_value(self, value, dialect):
+        return None if value is None else Decimal(value).quantize(Decimal("0.01"))
+
+
+facturas = Table(
+    "facturas", MOTOR,
+    Column("id", BigInteger, primary_key=True),
+    Column("tipo", _CodigoDeTipo, nullable=False),
+    Column("punto_venta", Integer, nullable=False),
+    Column("numero", Integer, nullable=False),
+    Column("fecha", _Fecha, nullable=False),
+    Column("subtotal", _Dinero, nullable=False),
+    Column("iva_amount", _Dinero, nullable=False),
+    Column("total", _Dinero, nullable=False),
+    Column("cae", _Texto),
+    Column("cae_vto", _Fecha),
+    Column("observaciones", _Texto),
+    Column("fch_vto_pago", _Fecha),
+    Column("fce_cbu", _Texto),
+    Column("fce_transmision", _Texto),
+    Column("ambiente", Text),
+    Column("emisor_id", Integer),
+    Column("anulada_en", _Texto),
+)
+
+
+class ComprobanteCargo(Base, Auditable):
+    """Lo que sólo este producto sabe de un comprobante. Una fila por cada fila de `facturas`.
+
+    🔑 **`anulado` no es el `anulada_en` del motor**, y por eso se queda acá. En
+    este producto un comprobante también queda anulado cuando sus notas de
+    crédito lo acreditan entero (ADR-028): sale de los totales de acá, pero
+    **sigue en el libro IVA**, junto a sus notas, porque ARCA tiene las dos cosas.
+    `anulada_en` sí lo saca de los libros, así que se marca sólo cuando se anula
+    un comprobante **sin CAE** (`servicios.comprobantes.anular`).
+    """
+
+    __tablename__ = "comprobantes_cargo"
+
+    factura_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(facturas.c.id, ondelete="RESTRICT", name="fk_comprobantes_cargo_factura"),
+        primary_key=True, autoincrement=False,
+    )
+    #: La razón social que lo emitió. El emisor del motor (`facturas.emisor_id`)
+    #: es el par de ARCA de su CUIT, y es `NULL` mientras no tenga uno.
+    razon_social_id: Mapped[int] = mapped_column(
+        ForeignKey("razones_sociales.id", ondelete="RESTRICT"), nullable=False
+    )
+    #: El tercero con su FK. En `facturas` quedan además sus datos fiscales
+    #: copiados al emitir, que son los que valen para el libro IVA.
+    cliente_id: Mapped[int] = mapped_column(
+        ForeignKey("terceros.id", ondelete="RESTRICT"), nullable=False
+    )
+    anulado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    origen_legado: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    #: Cuándo se le pidió el CAE, que no es la fecha del comprobante: un reintento
+    #: después de que ARCA estuvo caído deja las dos separadas.
+    cae_solicitado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    #: A qué comprobante acredita esta nota de crédito. `NULL` en todo lo que no
+    #: es una nota. En `facturas` va además como `cbte_asoc_*`, que es lo que
+    #: viaja a ARCA; acá es la FK exacta, sin depender de la terna.
+    comprobante_asociado_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(facturas.c.id, ondelete="RESTRICT", name="fk_comprobantes_cargo_asociado"),
+        nullable=True,
+    )
+
+    __table_args__ = (
+        Index("ix_comprobantes_cargo_asociado", "comprobante_asociado_id"),
+        Index("ix_comprobantes_cargo_cliente", "cliente_id"),
+        Index("ix_comprobantes_cargo_razon_social", "razon_social_id"),
+        Index("ix_comprobantes_cargo_origen_legado", "origen_legado", unique=True),
+    )
+
+
+_cargo = ComprobanteCargo.__table__
+
+
+class Comprobante(Base):
+    """Factura o nota de crédito emitida por una de las razones sociales propias.
+
+    Es la unión de `facturas` (el comprobante de la familia) y `comprobantes_cargo`
+    (lo propio). Se **lee** como antes; se **crea, se le guarda el CAE y se
+    anula** por `app/servicios/comprobantes.py`, que lo hace con el motor.
+
+    La numeración es única por emisor, ambiente, tipo y punto de venta: la
+    garantiza el índice `idx_facturas_numeracion` del motor.
+    """
+
+    __table__ = join(facturas, _cargo, facturas.c.id == _cargo.c.factura_id)
+
+    id = column_property(facturas.c.id, _cargo.c.factura_id)
+    #: Los nombres de siempre de este producto sobre las columnas del motor.
+    neto = column_property(facturas.c.subtotal)
+    iva = column_property(facturas.c.iva_amount)
+    cae_vencimiento = column_property(facturas.c.cae_vto)
+    #: Por qué se emitió la nota. Sólo las notas lo tienen.
+    motivo = column_property(facturas.c.observaciones)
+
+    __mapper_args__ = {
+        # Los datos de ARCA del comprobante los escribe el motor, no el ORM.
+        "exclude_properties": ["ambiente", "anulada_en"],
+    }
+
+
+#: El comprobante de apertura del legado (ADR-010): **no es fiscal**, así que no
+#: entra en `facturas` (decisión 5 del diseño). Agrupa las órdenes de 2023 que el
+#: sistema viejo marcaba facturadas sin factura. Hay uno solo, en Suitrans.
+class ComprobanteDeApertura(Base, Auditable):
+    __tablename__ = "comprobante_de_apertura"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     razon_social_id: Mapped[int] = mapped_column(
         ForeignKey("razones_sociales.id", ondelete="RESTRICT"), nullable=False
     )
-    tipo: Mapped[TipoComprobante] = mapped_column(
-        Enum(TipoComprobante, name="tipo_comprobante",
-             values_callable=lambda e: [m.value for m in e]),
-        nullable=False,
-    )
-    punto_venta: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    numero: Mapped[int] = mapped_column(Integer, nullable=False)
-    fecha: Mapped[date] = mapped_column(Date, nullable=False)
     cliente_id: Mapped[int] = mapped_column(
         ForeignKey("terceros.id", ondelete="RESTRICT"), nullable=False
     )
-
-    # NUMERIC, nunca float: el legado sumaba `float(10,2)` sobre 22.588
-    # movimientos y arrastraba el error de redondeo a los saldos.
+    fecha: Mapped[date] = mapped_column(Date, nullable=False)
     neto: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     iva: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     total: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
-
-    anulado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    origen_legado: Mapped[str | None] = mapped_column(String(40), nullable=True)
-
-    #: El CAE que devolvio ARCA. `None` es el estado normal de todo lo migrado
-    #: --- 741 comprobantes de un sistema que facturaba por afuera --- y de todo
-    #: lo que se registre a mano mientras la razon social no tenga ARCA activo.
-    #: No es una fila incompleta.
-    cae: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    cae_vencimiento: Mapped[date | None] = mapped_column(Date, nullable=True)
-    #: Cuando se le pidio, que no es la fecha del comprobante: un reintento
-    #: despues de que ARCA estuvo caido deja las dos separadas.
-    cae_solicitado_en: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-    #: FCE MiPyME. El vencimiento de pago lo exige ARCA en toda FCE; el CBU y la
-    #: modalidad (`SCA` o `ADC`) son **con los que salió**: se guardan en el
-    #: comprobante y no se leen de la configuración, para que un comprobante diga
-    #: con qué CBU se emitió aunque la configuración cambie después. `NULL` en
-    #: todo lo que no es FCE, que es casi todo.
-    fch_vto_pago: Mapped[date | None] = mapped_column(Date, nullable=True)
-    fce_cbu: Mapped[str | None] = mapped_column(String(22), nullable=True)
-    fce_transmision: Mapped[str | None] = mapped_column(String(3), nullable=True)
-
-    #: A qué comprobante acredita esta nota de crédito. `NULL` en todo lo que no es
-    #: una nota. Una nota se guarda **en positivo** y el tipo dice el signo (el `CHECK`
-    #: de importes sigue valiendo). Ver `notas_de_credito` y el ADR-027.
-    comprobante_asociado_id: Mapped[int | None] = mapped_column(
-        ForeignKey("comprobantes.id", ondelete="RESTRICT", name="fk_comprobantes_asociado"),
-        nullable=True,
-    )
-    #: Por qué se emitió la nota. Sólo las notas lo tienen.
-    motivo: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    __table_args__ = (
-        UniqueConstraint(
-            "razon_social_id",
-            "tipo",
-            "punto_venta",
-            "numero",
-            name="uq_comprobantes_numeracion",
-        ),
-        CheckConstraint("neto >= 0 AND iva >= 0 AND total >= 0", name="ck_comprobantes_signos"),
-        # Toda nota acredita a un comprobante, y nada que no sea una nota lo hace.
-        # `::text` por lo mismo que el de la FCE: no depende de que el valor del
-        # `ENUM` ya esté creado en la misma transacción.
-        CheckConstraint(
-            "(tipo::text IN ('nota_credito_a', 'nota_credito_b', 'nota_credito_c',"
-            " 'nota_credito_fce_a', 'nota_credito_fce_b', 'nota_credito_fce_c'))"
-            " = (comprobante_asociado_id IS NOT NULL)",
-            name="ck_comprobantes_nota_con_asociado",
-        ),
-        Index("ix_comprobantes_asociado", "comprobante_asociado_id"),
-        # Una FCE sin fecha de vencimiento de pago no existe: ARCA la rechaza (10163).
-        # `::text` y no el literal del `ENUM`: no depende de que el valor ya esté
-        # creado en la misma transacción de la migración.
-        CheckConstraint(
-            "tipo::text NOT IN ('fce_a', 'fce_b', 'fce_c') OR fch_vto_pago IS NOT NULL",
-            name="ck_comprobantes_fce_vencimiento",
-        ),
-        Index("ix_comprobantes_fecha", "fecha"),
-        Index("ix_comprobantes_cliente_fecha", "cliente_id", "fecha"),
-        Index("ix_comprobantes_origen_legado", "origen_legado", unique=True),
-    )
+    origen_legado: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
 
 
 class OrdenCarga(Base, Auditable, Anotable):
@@ -182,13 +292,19 @@ class OrdenCarga(Base, Auditable, Anotable):
     razon_social_id: Mapped[int | None] = mapped_column(
         ForeignKey("razones_sociales.id", ondelete="RESTRICT"), nullable=True
     )
-    # FK real, no el número de factura copiado a mano como hacía el legado.
+    # FK real, no el número de factura copiado a mano como hacía el legado. Desde
+    # la revisión `0016` apunta a `facturas` del motor, donde vive el comprobante.
     comprobante_id: Mapped[int | None] = mapped_column(
-        ForeignKey("comprobantes.id", ondelete="RESTRICT"), nullable=True
+        BigInteger, ForeignKey(facturas.c.id, ondelete="RESTRICT",
+                               name="fk_ordenes_carga_comprobante"),
+        nullable=True,
+    )
+    #: Las 17 órdenes de 2023 que el legado daba por facturadas sin factura van al
+    #: comprobante de apertura, que no es fiscal y no está en `facturas` (ADR-010).
+    apertura_id: Mapped[int | None] = mapped_column(
+        ForeignKey("comprobante_de_apertura.id", ondelete="RESTRICT"), nullable=True
     )
     origen_legado: Mapped[str | None] = mapped_column(String(40), nullable=True)
-
-    comprobante: Mapped[Comprobante | None] = relationship("Comprobante", lazy="raise")
 
     __table_args__ = (
         # El escape por `origen_legado` es para el histórico migrado: hay 33
@@ -203,10 +319,11 @@ class OrdenCarga(Base, Auditable, Anotable):
         CheckConstraint(
             "alicuota_iva >= 0 AND alicuota_iva <= 100", name="ck_ordenes_alicuota"
         ),
-        # Una orden facturada tiene comprobante; una pendiente no puede tenerlo.
+        # Una orden facturada tiene comprobante —o, si es del legado, el de
+        # apertura—; una pendiente no puede tener ninguno de los dos.
         CheckConstraint(
-            "(estado = 'facturada' AND comprobante_id IS NOT NULL) "
-            "OR (estado <> 'facturada' AND comprobante_id IS NULL)",
+            "(estado = 'facturada' AND (comprobante_id IS NOT NULL) <> (apertura_id IS NOT NULL)) "
+            "OR (estado <> 'facturada' AND comprobante_id IS NULL AND apertura_id IS NULL)",
             name="ck_ordenes_facturada_con_comprobante",
         ),
         Index("ix_ordenes_fecha", "fecha"),
@@ -214,6 +331,7 @@ class OrdenCarga(Base, Auditable, Anotable):
         Index("ix_ordenes_fletero_fecha", "fletero_id", "fecha"),
         Index("ix_ordenes_estado", "estado"),
         Index("ix_ordenes_comprobante", "comprobante_id"),
+        Index("ix_ordenes_apertura", "apertura_id"),
         Index("ix_ordenes_remito", "remito"),
         Index("ix_ordenes_origen_legado", "origen_legado", unique=True),
     )

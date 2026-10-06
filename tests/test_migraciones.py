@@ -12,6 +12,8 @@ from urllib.parse import urlsplit, urlunsplit
 import pytest
 from alembic import command
 from alembic.config import Config
+from libracore.db.core import conectar
+from libracore.db.schema import init_core_schema
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 
@@ -51,6 +53,11 @@ def base_limpia():
         _soltar(con)
         con.execute(text(f"CREATE DATABASE {BASE_SCRATCH}"))
     url = _url_con_base(BASE_URL, BASE_SCRATCH)
+    # 🔑 Con el schema del motor, como en el deploy (`libracore-migrar` antes que esta
+    # cadena): desde la `0016` el comprobante vive en `facturas` y la cadena le pone FK.
+    with conectar(url) as conn:
+        init_core_schema(conn)
+        conn.commit()
     yield url
     with admin.connect() as con:
         _soltar(con)
@@ -86,6 +93,12 @@ def test_upgrade_downgrade_upgrade(base_limpia):
     """
     original = os.environ.get("DATABASE_URL")
     try:
+        eng = create_engine(base_limpia)
+        with eng.connect() as con:
+            del_motor = con.execute(text(
+                "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'"
+            )).scalar_one()
+        eng.dispose()
         cfg = _alembic(base_limpia)
         command.upgrade(cfg, "head")
         command.downgrade(cfg, "base")
@@ -112,7 +125,11 @@ def test_upgrade_downgrade_upgrade(base_limpia):
         # configuracion de ARCA paso a `arca_config` de LibraCore, que vive
         # en otra base. Que el numero BAJE es el punto de tenerlo a mano:
         # una tabla que se va sin querer se ve igual que una que aparece.
-        assert tablas == 14
+        # Desde la base unida (ADR-029) están además las del motor, que se crean antes
+        # y no son de esta cadena: se cuentan aparte. Subió a 16 con la `0016`
+        # (`comprobantes_cargo` y `comprobante_de_apertura`; `comprobantes` sigue,
+        # como `comprobantes_legado`).
+        assert tablas - del_motor == 16
         eng.dispose()
     finally:
         if original:

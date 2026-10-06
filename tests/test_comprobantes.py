@@ -14,10 +14,12 @@ from decimal import Decimal
 
 from fastapi.testclient import TestClient
 from libraauth.testing import crear_schema_de_auth
+from libracore.db import arca_config as db_arca_config
+from libracore.db import core as libracore_core
 from sqlalchemy import text
 
 from app.main import crear_app
-from tests.conftest import config_de_prueba, vaciar_auth
+from tests.conftest import URL_CORE, config_de_prueba, vaciar_auth
 
 
 def orden(cliente, datos, tarifa, *, cliente_id=None, razon_social_id=None, fecha="2026-08-10"):
@@ -96,7 +98,10 @@ def test_los_totales_por_razon_social_dan_igual_por_los_dos_lados(cliente, datos
     b = orden(cliente, datos, "2000.00")
     c = orden(cliente, datos, "500.00")
     assert facturar(cliente, datos, [a, b], numero=1).status_code == 201
-    assert facturar(cliente, datos, [c], numero=1, razon=datos["otra_razon"]).status_code == 201
+    # Con otro punto de venta: sin ARCA propio, las dos razones sociales son del emisor
+    # único y comparten talonario (ver `test_dos_razones_sociales_son_dos_talonarios...`).
+    assert facturar(cliente, datos, [c], numero=1, razon=datos["otra_razon"],
+                    punto_venta=2).status_code == 201
 
     filas = {f["razon_social_id"]: f for f in cliente.get("/api/comprobantes/totales").json()}
     assert set(filas) == {datos["razon"], datos["otra_razon"]}
@@ -191,14 +196,32 @@ def test_el_numero_es_unico_por_razon_social_tipo_y_punto_de_venta(cliente, dato
 
     repetido = facturar(cliente, datos, [b], numero=7)
     assert repetido.status_code == 409
-    assert "uq_comprobantes_numeracion" in repetido.text
+    assert "Factura A 0001-00000007" in repetido.text
     # La orden que iba en el comprobante rechazado sigue pendiente.
     assert cliente.get(f"/api/ordenes/{b['id']}").json()["estado"] == "pendiente"
 
-    # El mismo número en OTRA razón social sí entra: son dos talonarios.
-    assert facturar(cliente, datos, [b], numero=7, razon=datos["otra_razon"]).status_code == 201
-    # Y el mismo número en otro punto de venta, también.
+    # El mismo número en otro punto de venta sí entra.
     assert facturar(cliente, datos, [c], numero=7, punto_venta=2).status_code == 201
+
+
+def test_dos_razones_sociales_son_dos_talonarios_si_cada_una_tiene_su_emisor(cliente, datos):
+    """Desde la `0016` el comprobante vive en `facturas` y numera por **emisor** (ADR-030).
+
+    El emisor es la fila de ARCA del CUIT de la razón social. Dos razones sociales **sin**
+    ARCA propio son las dos del emisor único, así que comparten talonario: el mismo
+    número en las dos choca. Con su propio emisor, cada una tiene el suyo.
+    """
+    a = orden(cliente, datos, "100.00")
+    b = orden(cliente, datos, "200.00")
+    assert facturar(cliente, datos, [a], numero=7).status_code == 201
+    assert facturar(cliente, datos, [b], numero=7, razon=datos["otra_razon"]).status_code == 409
+
+    cuit = "30-70933285-2"
+    assert cliente.put(f"/api/razones-sociales/{datos['otra_razon']}",
+                       json={"nombre": "Mauricio", "cuit": cuit}).status_code == 200
+    libracore_core.configure(URL_CORE)
+    db_arca_config.crear_arca_config("mauricio", cuit, 1, "", "")
+    assert facturar(cliente, datos, [b], numero=7, razon=datos["otra_razon"]).status_code == 201
 
 
 def test_un_comprobante_es_de_un_solo_cliente(cliente, datos):
@@ -307,7 +330,7 @@ def test_el_listado_filtra_y_no_esconde_los_anulados(cliente, datos):
     a = orden(cliente, datos, "100.00")
     b = orden(cliente, datos, "200.00")
     uno = facturar(cliente, datos, [a], numero=1).json()
-    facturar(cliente, datos, [b], numero=2, razon=datos["otra_razon"])
+    facturar(cliente, datos, [b], numero=2, razon=datos["otra_razon"], punto_venta=2)
     cliente.delete(f"/api/comprobantes/{uno['id']}")
 
     assert len(cliente.get("/api/comprobantes").json()) == 2
