@@ -17,10 +17,10 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user, require_staff
 from app.db import obtener_sesion
 from app.models.enums import AccionAuditoria, EstadoOrden
-from app.models.operacion import OrdenCarga
+from app.models.operacion import OrdenCarga, PreFacturaOrden
 from app.routers.maestros import traducir_integridad
 from app.schemas.ordenes import OrdenIn, OrdenOut, calcular_importes
-from app.servicios import auditoria
+from app.servicios import auditoria, pre_facturas
 from app.servicios.ordenes import (
     revertir_comision,
     sincronizar_comision,
@@ -35,6 +35,14 @@ def _traer(sesion: Session, id_: int) -> OrdenCarga:
     if orden is None:
         raise HTTPException(404, f"no existe la orden {id_}")
     return orden
+
+
+def _exigir_libre(sesion: Session, orden: OrdenCarga) -> None:
+    """Una orden en una pre factura abierta no se edita ni se anula: la pre factura quedaría diciendo otra cosa."""
+    try:
+        pre_facturas.exigir_orden_libre(sesion, orden)
+    except pre_facturas.Rechazo as e:
+        raise HTTPException(e.status, e.detalle) from None
 
 
 def _aplicar_importes(orden: OrdenCarga, datos: OrdenIn) -> None:
@@ -58,6 +66,10 @@ def listar(
     # `None` es "las dos", distinto de `False`. Es el filtro que en el legado
     # era una pantalla propia: "facturar pendientes".
     facturada: bool | None = Query(default=None),
+    # Reservada en una pre factura abierta (ADR-032). `reservada=false` son las que se pueden incluir en
+    # una pre factura nueva; `pre_factura_id`, las de esa pre factura.
+    reservada: bool | None = Query(default=None),
+    pre_factura_id: int | None = None,
     q: str | None = Query(default=None, description="busca en remito y observaciones"),
     limite: int = Query(default=200, ge=1, le=1000),
     desplazamiento: int = Query(default=0, ge=0),
@@ -87,6 +99,13 @@ def listar(
             OrdenCarga.comprobante_id.is_not(None) if facturada
             else OrdenCarga.comprobante_id.is_(None)
         )
+    if reservada is not None:
+        reservadas = select(PreFacturaOrden.orden_id)
+        consulta = consulta.where(
+            OrdenCarga.id.in_(reservadas) if reservada else OrdenCarga.id.not_in(reservadas))
+    if pre_factura_id is not None:
+        consulta = consulta.where(OrdenCarga.id.in_(
+            select(PreFacturaOrden.orden_id).where(PreFacturaOrden.pre_factura_id == pre_factura_id)))
     if q:
         patron = f"%{q.strip()}%"
         consulta = consulta.where(or_(
@@ -145,6 +164,7 @@ def editar(id_: int, datos: OrdenIn, sesion: Session = Depends(obtener_sesion),
         raise HTTPException(409, "la orden esta facturada: no se puede modificar")
     if orden.estado is EstadoOrden.ANULADA:
         raise HTTPException(409, "la orden esta anulada: no se puede modificar")
+    _exigir_libre(sesion, orden)
     antes = auditoria.instantanea(orden)
     for campo, valor in datos.model_dump().items():
         setattr(orden, campo, valor)
@@ -178,6 +198,7 @@ def anular(id_: int, sesion: Session = Depends(obtener_sesion),
         raise HTTPException(
             409, "la orden esta facturada: primero hay que anular el comprobante"
         )
+    _exigir_libre(sesion, orden)
     antes = auditoria.instantanea(orden)
     # El contraasiento se arma ANTES de marcarla anulada: lee el cargo vigente,
     # y `sincronizar_comision` no vuelve a crearlo porque una orden anulada no

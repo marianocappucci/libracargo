@@ -131,6 +131,15 @@ facturas = Table(
 )
 
 
+#: La bandeja de comprobantes por facturar del motor, donde vive la pre factura (ADR-030 de
+#: LibraCore). Sólo el `id`: lo propio de la pre factura va en `pre_facturas_cargo`, y lo demás
+#: (ítems, cliente, estado) lo lee y lo escribe `libracore.pre_facturas`.
+comprobantes_pendientes = Table(
+    "comprobantes_pendientes", MOTOR,
+    Column("id", BigInteger, primary_key=True),
+)
+
+
 class ComprobanteCargo(Base, Auditable):
     """Lo que sólo este producto sabe de un comprobante. Una fila por cada fila de `facturas`.
 
@@ -211,6 +220,63 @@ class Comprobante(Base):
         # Los datos de ARCA del comprobante los escribe el motor, no el ORM.
         "exclude_properties": ["ambiente", "anulada_en"],
     }
+
+
+class PreFacturaCargo(Base):
+    """Lo que sólo este producto sabe de una pre factura: la razón social que facturaría y el tercero.
+
+    La pre factura vive en `comprobantes_pendientes` del motor (ADR-030 de LibraCore), que guarda al
+    cliente como foto y al emisor como el `arca_config` de su CUIT, o `NULL` si la razón social no
+    tiene uno. Eso no alcanza para facturar: una razón social **sin** certificado queda sin emisor, y
+    el error de «no tiene configurado el certificado» tiene que nombrarla. Una fila por pre factura,
+    con el **mismo id**, como `comprobantes_cargo` con `facturas`.
+    """
+
+    __tablename__ = "pre_facturas_cargo"
+
+    pre_factura_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(comprobantes_pendientes.c.id, ondelete="RESTRICT",
+                   name="fk_pre_facturas_cargo_pre_factura"),
+        primary_key=True, autoincrement=False,
+    )
+    razon_social_id: Mapped[int] = mapped_column(
+        ForeignKey("razones_sociales.id", ondelete="RESTRICT"), nullable=False
+    )
+    cliente_id: Mapped[int] = mapped_column(
+        ForeignKey("terceros.id", ondelete="RESTRICT"), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_pre_facturas_cargo_cliente", "cliente_id"),
+        Index("ix_pre_facturas_cargo_razon_social", "razon_social_id"),
+    )
+
+
+class PreFacturaOrden(Base):
+    """La reserva de una orden en una pre factura abierta (pendiente, enviada o aceptada).
+
+    🔑 **`orden_id` es la clave primaria**: una orden está en a lo sumo una pre factura abierta, y lo
+    dice la base y no sólo el código. La fila existe **mientras la pre factura está abierta**: anular
+    la pre factura o facturarla la borra. Así una orden que vuelve a pendientes (porque se anuló el
+    comprobante que la facturó) no queda ligada a una pre factura ya cerrada, y se puede reservar de
+    nuevo. Qué órdenes tuvo una pre factura cerrada lo dicen sus ítems (`orden_id`) y, si se facturó,
+    `ordenes_carga.comprobante_id`.
+    """
+
+    __tablename__ = "pre_factura_ordenes"
+
+    orden_id: Mapped[int] = mapped_column(
+        ForeignKey("ordenes_carga.id", ondelete="RESTRICT"), primary_key=True, autoincrement=False
+    )
+    pre_factura_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(comprobantes_pendientes.c.id, ondelete="RESTRICT",
+                   name="fk_pre_factura_ordenes_pre_factura"),
+        nullable=False,
+    )
+
+    __table_args__ = (Index("ix_pre_factura_ordenes_pre_factura", "pre_factura_id"),)
 
 
 #: El comprobante de apertura del legado (ADR-010): **no es fiscal**, así que no

@@ -1,8 +1,9 @@
 /** Comprobantes: lo facturado, y el gate de F5 a la vista.
  *
- * El sistema **registra** el comprobante, no lo emite: el número lo tipea una
- * persona, igual que en el sistema viejo. Eso es lo que permite comparar
- * totales contra el legado durante la migración; emitir es F8.
+ * Acá no se crean comprobantes (ADR-032): salen de una pre factura, por ARCA, que
+ * les pone el número y el punto de venta. Esta pantalla lista lo emitido, lo
+ * anterior (registrado a mano y migrado del legado) y deja anular lo que no
+ * tiene CAE o acreditarlo con una nota de crédito.
  *
  * 🔑 **El panel de totales muestra los dos lados, no uno.** El total por razón
  * social se cuenta por los encabezados de los comprobantes y por las órdenes
@@ -281,11 +282,18 @@ export default function Comprobantes() {
         {/* El listado se imprime desde reportes (`listado-comprobantes`), que
             exige rango. Aca el boton salia sin fechas y mandaba al papel todos
             los comprobantes que hubiera. */}
-        <Button asChild>
-          <Link to={irA.facturarPendientes()}>
-            <Plus className="size-4" /> Facturar pendientes
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link to="/pre-facturas">
+              <FileText className="size-4" /> Pre facturas
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link to={irA.facturarPendientes()}>
+              <Plus className="size-4" /> Facturar pendientes
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">

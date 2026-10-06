@@ -38,6 +38,11 @@ sistema legado tenía cero FK y dos índices fuera de las claves primarias.
   CUIT de la razón social. El comprobante de apertura del legado, que no es
   fiscal, está en `comprobante_de_apertura`. La tabla vieja quedó como
   `comprobantes_legado`, de sólo lectura.
+- **La pre factura vive en `comprobantes_pendientes` del motor** (ADR-032), con
+  número interno `PF-0001` y su ciclo. Lo propio de acá va en dos tablas:
+  `pre_facturas_cargo` (la razón social y el tercero, con el mismo id) y
+  `pre_factura_ordenes` (la reserva: `orden_id` es la clave primaria, así una
+  orden está en a lo sumo una pre factura abierta).
 - **La cuenta corriente vive en `cc_asientos`**, el libro de terceros del motor
   (ADR-031): las tres cuentas —cliente, fletero, proveedor— con `debe`/`haber` y
   descripción sin límite de largo, y lo propio (orden, cobro, gasto) en
@@ -54,8 +59,11 @@ Todo importe es `NUMERIC(14,2)`; las cantidades, `NUMERIC(12,3)`.
 1. Se carga una **orden de carga**: cliente, origen, destino, fletero, chofer,
    equipo, tarifa y comisión. Nace `pendiente`.
 2. El **IVA se calcula en el servidor** a partir de la alícuota del tercero.
-3. Al facturar, se emite un **comprobante** que agrupa una o más órdenes; las
-   órdenes pasan a `facturada` y quedan ligadas por FK.
+3. Se genera la **pre factura** de una o más órdenes del cliente (se reservan),
+   se manda al cliente y, cuando está de acuerdo, se **factura por ARCA**: se
+   emite el **comprobante** (el número lo da ARCA), las órdenes pasan a
+   `facturada` y quedan ligadas por FK. No hay otra forma de crear un
+   comprobante (ADR-032).
 4. Cada operación asienta en las **cuentas corrientes** correspondientes:
    el cliente debe, el fletero cobra.
 5. Los cobros y pagos entran por **caja** y generan su contrapartida en cuenta

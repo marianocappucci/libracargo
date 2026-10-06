@@ -1,15 +1,18 @@
-/** Los tests del flujo de facturar, mudados del modal a la pantalla.
+/** Los tests de «Facturar pendientes», que desde ADR-032 **genera la pre factura**.
  *
- * Eran cuatro adentro de `Comprobantes.test.tsx` y probaban el `<Dialog>`. La
- * lógica que cubren —qué órdenes se ofrecen, cómo suma la vista previa, qué
- * viaja en el POST— no cambió al mudarse: lo que cambió es dónde vive.
+ * Nacieron como cuatro adentro de `Comprobantes.test.tsx` y probaban el `<Dialog>`; se mudaron a la pantalla.
+ * La lógica que cubren —qué órdenes se ofrecen, cómo suma la vista previa, qué viaja en el POST— sigue: lo que
+ * cambió es que ya no se factura acá. No hay punto de venta ni número (no se tipean más: el de la pre factura
+ * lo pone el motor y el de la factura, ARCA), y el botón genera la pre factura y lleva a ella. La misma pantalla
+ * edita una pre factura abierta (`/pre-facturas/:id/editar`).
  */
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const get = vi.fn()
 const post = vi.fn()
+const put = vi.fn()
 vi.mock('libra-ui/api-client', async () => {
   class ApiError extends Error {
     status: number
@@ -18,20 +21,23 @@ vi.mock('libra-ui/api-client', async () => {
       super(String(detail)); this.status = status; this.detail = detail
     }
   }
-  return { ApiError, api: { get, post, put: vi.fn(), del: vi.fn() } }
+  return { ApiError, api: { get, post, put, del: vi.fn() } }
 })
 
 const { default: FacturarPendientes } = await import('./FacturarPendientes')
+const { default: EditarPreFactura } = await import('./EditarPreFactura')
 
 const TERCEROS = [{ id: 1, razon_social: 'Agro Norte', es_cliente: true }]
 const RAZONES = [
   { id: 5, nombre: 'Suitrans' },
-  { id: 6, nombre: 'Mauricio' },
+  { id: 6, nombre: 'Juan Pérez' },
 ]
 
-function responder(ordenes: unknown[] = []) {
+function responder(ordenes: unknown[] = [], propias: unknown[] = []) {
   get.mockImplementation((ruta?: string) => {
     if (!ruta) return Promise.resolve([])
+    // Las reservadas en la pre factura que se edita, aparte de las libres.
+    if (ruta.startsWith('/api/ordenes') && ruta.includes('pre_factura_id=')) return Promise.resolve(propias)
     if (ruta.startsWith('/api/ordenes')) return Promise.resolve(ordenes)
     if (ruta.startsWith('/api/terceros')) return Promise.resolve(TERCEROS)
     if (ruta.startsWith('/api/razones-sociales')) return Promise.resolve(RAZONES)
@@ -50,9 +56,15 @@ function orden(id: number, extra: Record<string, unknown> = {}) {
   }
 }
 
-/** Monta la pantalla y elige cliente y razón social. */
+/** Monta la pantalla con las rutas a las que navega, y elige cliente y razón social. */
 async function abrir(cliente = '1', razon = '5') {
-  render(<MemoryRouter><FacturarPendientes /></MemoryRouter>)
+  render(
+    <MemoryRouter initialEntries={['/comprobantes/facturar']}>
+      <Routes>
+        <Route path="/comprobantes/facturar" element={<FacturarPendientes />} />
+        <Route path="/pre-facturas/:id" element={<p>Pantalla de la pre factura</p>} />
+      </Routes>
+    </MemoryRouter>)
   const selectCliente = await screen.findByLabelText('Cliente')
   await waitFor(() => expect(selectCliente.querySelectorAll('option').length).toBe(2))
   // Dentro de act: elegir el cliente dispara el pedido de las pendientes, y
@@ -68,7 +80,7 @@ async function abrir(cliente = '1', razon = '5') {
 const casilla = (id: number) => screen.getByLabelText(`Elegir la orden ${id}`)
 
 describe('Facturar pendientes', () => {
-  beforeEach(() => { get.mockReset(); post.mockReset() })
+  beforeEach(() => { get.mockReset(); post.mockReset(); put.mockReset() })
 
   it('es una pantalla y no un modal', async () => {
     // 🔑 Lo que el humano pidió. Un `<Dialog>` de shadcn monta `role="dialog"`
@@ -97,11 +109,8 @@ describe('Facturar pendientes', () => {
     await abrir()
 
     await waitFor(() => expect(casilla(1)).toBeInTheDocument())
-    // El numero va PRIMERO: sin el, el boton estaria deshabilitado por eso y no
-    // por lo que este test dice medir.
-    fireEvent.change(screen.getByLabelText('Número'), { target: { value: '123' } })
     expect(screen.getByText('Total: $ 0,00')).toBeInTheDocument()
-    expect(screen.getByText('Facturar')).toBeDisabled()
+    expect(screen.getByText('Generar pre factura')).toBeDisabled()
     expect(screen.getByText('No elegiste ninguna orden.')).toBeInTheDocument()
 
     fireEvent.click(casilla(1))
@@ -109,7 +118,7 @@ describe('Facturar pendientes', () => {
     // 0.10 + 0.20 en punto flotante da 0.30000000000000004: la suma va en
     // centavos enteros justamente por esto.
     expect(screen.getByText('Total: $ 0,30')).toBeInTheDocument()
-    expect(screen.getByText('Facturar')).toBeEnabled()
+    expect(screen.getByText('Generar pre factura')).toBeEnabled()
   })
 
   it('la casilla del encabezado marca y desmarca todas', async () => {
@@ -151,33 +160,66 @@ describe('Facturar pendientes', () => {
     fireEvent.change(screen.getByLabelText('Razón social', { selector: '#n-razon' }),
                      { target: { value: '5' } })
     expect(screen.getByText('Total: $ 0,00')).toBeInTheDocument()
-    expect(screen.getByText('Facturar')).toBeDisabled()
+    expect(screen.getByText('Generar pre factura')).toBeDisabled()
   })
 
-  it('factura las ordenes elegidas con el numero tipeado', async () => {
+  it('genera la pre factura de las ordenes elegidas y va a ella', async () => {
     responder([orden(1)])
     post.mockResolvedValue({ id: 9 })
     await abrir()
 
     await waitFor(() => expect(casilla(1)).toBeInTheDocument())
     fireEvent.click(casilla(1))
-    fireEvent.change(screen.getByLabelText('Número'), { target: { value: '123' } })
-    fireEvent.click(screen.getByText('Facturar'))
+    fireEvent.click(screen.getByText('Generar pre factura'))
 
     await waitFor(() => expect(post).toHaveBeenCalled())
-    expect(post.mock.calls[0][0]).toBe('/api/comprobantes')
+    expect(post.mock.calls[0][0]).toBe('/api/pre-facturas')
     expect(post.mock.calls[0][1]).toMatchObject({
-      cliente_id: 1, razon_social_id: 5, tipo: 'factura_a',
-      punto_venta: 1, numero: 123, orden_ids: [1],
+      cliente_id: 1, razon_social_id: 5, tipo: 'factura_a', orden_ids: [1],
     })
+    // 🔴 Se sacó el registro a mano: ni el punto de venta ni el número viajan, ni se ofrecen.
+    expect(post.mock.calls[0][1]).not.toHaveProperty('punto_venta')
+    expect(post.mock.calls[0][1]).not.toHaveProperty('numero')
+    expect(await screen.findByText('Pantalla de la pre factura')).toBeInTheDocument()
+  })
+
+  it('no pide punto de venta ni número', async () => {
+    // El control de lo de arriba: que el POST no los mande no alcanza si el formulario los sigue pidiendo.
+    responder([orden(1)])
+    await abrir()
+    expect(screen.queryByLabelText('Punto de venta')).toBeNull()
+    expect(screen.queryByLabelText('Número')).toBeNull()
+    expect(screen.queryByText('Facturar')).toBeNull()
+  })
+
+  it('sólo ofrece las ordenes libres: las reservadas en otra pre factura no se piden', async () => {
+    responder([orden(1)])
+    await abrir()
+    await waitFor(() => expect(casilla(1)).toBeInTheDocument())
+    const pedidas = get.mock.calls.map((c) => String(c[0])).filter((r) => r.startsWith('/api/ordenes'))
+    expect(pedidas.length).toBeGreaterThan(0)
+    expect(pedidas.every((r) => r.includes('reservada=false'))).toBe(true)
+  })
+
+  it('si el servidor rechaza, muestra el motivo y se queda', async () => {
+    const { ApiError } = await import('libra-ui/api-client')
+    responder([orden(1)])
+    post.mockRejectedValue(new ApiError(409, 'la orden 1 ya esta en la pre factura PF-0003'))
+    await abrir()
+    await waitFor(() => expect(casilla(1)).toBeInTheDocument())
+    fireEvent.click(casilla(1))
+    fireEvent.click(screen.getByText('Generar pre factura'))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('ya esta en la pre factura PF-0003')
+    expect(screen.queryByText('Pantalla de la pre factura')).toBeNull()
+    expect(screen.getByText('Generar pre factura')).toBeEnabled()
   })
 
   // ── La Factura de Crédito Electrónica MiPyME ─────────────────────────────
   //
-  // Se emite sólo por ARCA, que da el número: no se tipea. En cambio exige el
-  // vencimiento de pago, y sin él ARCA la rechaza. La pantalla es la misma: el
-  // selector tiene tres opciones más y el campo del número se cambia por el
-  // vencimiento.
+  // Se emite sólo por ARCA, que da el número. En cambio exige el vencimiento de
+  // pago, y sin él ARCA la rechaza. La pantalla es la misma: el selector tiene
+  // tres opciones más y aparece el campo del vencimiento.
 
   async function elegirFce(fecha = '2026-08-15') {
     responder([orden(1)])
@@ -191,32 +233,30 @@ describe('Facturar pendientes', () => {
     fireEvent.click(casilla(1))
   }
 
-  it('una FCE pide el vencimiento de pago, a 30 días, y ya no el número', async () => {
+  it('una FCE pide el vencimiento de pago, a 30 días', async () => {
     await elegirFce('2026-08-15')
 
     expect(screen.getByLabelText('Vencimiento de pago')).toHaveValue('2026-09-14')
-    expect(screen.queryByLabelText('Número')).not.toBeInTheDocument()
   })
 
-  it('una FCE viaja con el vencimiento y sin número', async () => {
+  it('una FCE viaja con el vencimiento', async () => {
     await elegirFce('2026-08-15')
     fireEvent.change(screen.getByLabelText('Vencimiento de pago'),
                      { target: { value: '2026-10-01' } })
-    fireEvent.click(screen.getByText('Facturar'))
+    fireEvent.click(screen.getByText('Generar pre factura'))
 
     await waitFor(() => expect(post).toHaveBeenCalled())
     const cuerpo = post.mock.calls[0][1]
     expect(cuerpo).toMatchObject({
       tipo: 'fce_a', fecha_vencimiento_pago: '2026-10-01', orden_ids: [1],
     })
-    expect(cuerpo.numero).toBeUndefined()
   })
 
   it('sin vencimiento de pago una FCE no se puede facturar', async () => {
     await elegirFce()
     fireEvent.change(screen.getByLabelText('Vencimiento de pago'), { target: { value: '' } })
 
-    expect(screen.getByText('Facturar')).toBeDisabled()
+    expect(screen.getByText('Generar pre factura')).toBeDisabled()
     expect(screen.getByText('Falta el vencimiento de pago.')).toBeInTheDocument()
   })
 
@@ -227,74 +267,95 @@ describe('Facturar pendientes', () => {
     fireEvent.change(screen.getByLabelText('Fecha', { selector: '#n-fecha' }),
                      { target: { value: '2026-12-01' } })
 
-    expect(screen.getByText('Facturar')).toBeDisabled()
+    expect(screen.getByText('Generar pre factura')).toBeDisabled()
     expect(screen.getByText('El vencimiento de pago no puede ser anterior a la fecha del comprobante.'))
       .toBeInTheDocument()
   })
 
-  it('una factura común no manda vencimiento, y al volver a ella vuelve el número', async () => {
+  it('una factura común no manda vencimiento, y al volver a ella desaparece el campo', async () => {
     await elegirFce()
     fireEvent.change(screen.getByLabelText('Tipo', { selector: '#n-tipo' }),
                      { target: { value: 'factura_a' } })
-    fireEvent.change(screen.getByLabelText('Número'), { target: { value: '7' } })
-    fireEvent.click(screen.getByText('Facturar'))
+    expect(screen.queryByLabelText('Vencimiento de pago')).toBeNull()
+    fireEvent.click(screen.getByText('Generar pre factura'))
 
     await waitFor(() => expect(post).toHaveBeenCalled())
     const cuerpo = post.mock.calls[0][1]
-    expect(cuerpo).toMatchObject({ tipo: 'factura_a', numero: 7 })
+    expect(cuerpo).toMatchObject({ tipo: 'factura_a' })
     expect(cuerpo.fecha_vencimiento_pago).toBeUndefined()
   })
 
-  // ── El ensayo contra homologación ────────────────────────────────────────
+  // ── Editar una pre factura ───────────────────────────────────────────────
   //
-  // Con el ambiente de ARCA en homologación el backend corre el alta entera y
-  // la revierte, así que contesta algo que **no tiene `id`**. Lo que se prueba
-  // acá es que la pantalla lo muestre en vez de navegar: un `navigate` con un
-  // id `undefined` deja al operador en el listado, sin su comprobante y sin
-  // ninguna explicación — que parece que no funcionó.
+  // La misma pantalla sobre una pre factura que ya existe (`/pre-facturas/:id/editar`): el cliente es el de
+  // la pre factura y no se cambia, sus órdenes ya están elegidas, y a las libres del cliente se suman las
+  // que ya tiene reservadas.
 
-  const ENSAYO = {
-    ensayo: true, ambiente: 'homologacion', tipo: 'factura_a',
-    punto_venta: 5, numero: 42, total: '1210.00',
-    cae: '75123456789012', cae_vencimiento: '2026-12-31',
+  function preFactura(extra: Record<string, unknown> = {}) {
+    return {
+      id: 7, numero_interno: 'PF-0007', estado: 'pendiente', cliente_id: 1, cliente_razon: 'Agro Norte',
+      cliente_cuit: '', razon_social_id: 5, razon_social: 'Suitrans', tipo_comprobante: 6,
+      fecha_sugerida: '2026-08-20', fecha_vencimiento_pago: null, observaciones: '', items: [],
+      orden_ids: [1], total: '1210.00', ...extra,
+    }
   }
 
-  async function facturarConRespuesta(respuesta: unknown) {
-    responder([orden(1)])
-    post.mockResolvedValue(respuesta)
-    await abrir()
+  async function editar(pf: Record<string, unknown>, libres: unknown[], propias: unknown[]) {
+    responder(libres, propias)
+    get.mockImplementation(((previa) => (ruta?: string) => (
+      ruta === '/api/pre-facturas/7' ? Promise.resolve(pf) : previa(ruta)
+    ))(get.getMockImplementation()!))
+    render(
+      <MemoryRouter initialEntries={['/pre-facturas/7/editar']}>
+        <Routes>
+          <Route path="/pre-facturas/:id/editar" element={<EditarPreFactura />} />
+          <Route path="/pre-facturas/:id" element={<p>Pantalla de la pre factura</p>} />
+        </Routes>
+      </MemoryRouter>)
     await waitFor(() => expect(casilla(1)).toBeInTheDocument())
-    fireEvent.click(casilla(1))
-    fireEvent.change(screen.getByLabelText('Número'), { target: { value: '123' } })
-    fireEvent.click(screen.getByText('Facturar'))
-    await waitFor(() => expect(post).toHaveBeenCalled())
   }
 
-  it('un ensayo se muestra en la pantalla, con su número y su CAE', async () => {
-    await facturarConRespuesta(ENSAYO)
+  it('al editar carga la pre factura: cliente fijo, datos puestos y sus órdenes elegidas', async () => {
+    await editar(preFactura(), [orden(2, { total: '500.00' })], [orden(1, { total: '1210.00' })])
 
-    const panel = await screen.findByRole('status', { name: 'Resultado del ensayo' })
-    expect(panel).toHaveTextContent('no se guardó nada')
-    expect(panel).toHaveTextContent('0005-00000042')
-    expect(panel).toHaveTextContent('75123456789012')
+    expect(screen.getByRole('heading', { name: 'Editar pre factura PF-0007' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Cliente')).toBeDisabled()
+    expect((screen.getByLabelText('Tipo', { selector: '#n-tipo' }) as HTMLSelectElement).value).toBe('factura_b')
+    expect(screen.getByLabelText('Fecha', { selector: '#n-fecha' })).toHaveValue('2026-08-20')
+    expect((screen.getByLabelText('Razón social', { selector: '#n-razon' }) as HTMLSelectElement).value).toBe('5')
+    // Las suyas, ya elegidas; las libres, para sumar.
+    expect(casilla(1)).toBeChecked()
+    expect(casilla(2)).not.toBeChecked()
+    expect(screen.getByText('Total: $ 1.210,00')).toBeInTheDocument()
   })
 
-  it('un ensayo NO navega: la pantalla se queda donde está', async () => {
-    // El control de lo de arriba. Sin esto, "se ve el panel" pasaría igual con
-    // una pantalla que además se fue a otro lado.
-    await facturarConRespuesta(ENSAYO)
+  it('al guardar manda los cambios con PUT y vuelve a la pre factura', async () => {
+    put.mockResolvedValue(preFactura())
+    await editar(preFactura(), [orden(2, { total: '500.00' })], [orden(1)])
 
-    expect(screen.getByRole('heading', { name: 'Facturar pendientes' }))
-      .toBeInTheDocument()
-    expect(screen.getByText('Facturar')).not.toBeDisabled()
+    fireEvent.click(casilla(2))
+    fireEvent.click(screen.getByText('Guardar cambios'))
+
+    await waitFor(() => expect(put).toHaveBeenCalled())
+    expect(put.mock.calls[0][0]).toBe('/api/pre-facturas/7')
+    expect(put.mock.calls[0][1]).toMatchObject({
+      razon_social_id: 5, tipo: 'factura_b', fecha: '2026-08-20',
+    })
+    // El orden lo da la lista (la más nueva primero) y al servidor no le importa.
+    expect([...put.mock.calls[0][1].orden_ids].sort()).toEqual([1, 2])
+    expect(post).not.toHaveBeenCalled()
+    expect(await screen.findByText('Pantalla de la pre factura')).toBeInTheDocument()
   })
 
-  it('un comprobante de verdad no muestra el panel del ensayo', async () => {
-    // La otra dirección: si el panel apareciera siempre, los dos tests de
-    // arriba pasarían y la pantalla mentiría en el caso normal.
-    await facturarConRespuesta({ id: 9 })
+  it('una pre factura enviada o aceptada avisa que al guardar vuelve a pendiente', async () => {
+    await editar(preFactura({ estado: 'aceptado' }), [], [orden(1)])
+    expect(screen.getByRole('status')).toHaveTextContent('vuelve a Pendiente')
+  })
 
-    expect(screen.queryByRole('status', { name: 'Resultado del ensayo' })).toBeNull()
+  it('una pre factura facturada o anulada no se edita', async () => {
+    await editar(preFactura({ estado: 'facturado' }), [], [orden(1)])
+    expect(screen.getByRole('alert')).toHaveTextContent('PF-0007 está facturada: no se edita.')
+    expect(screen.getByText('Guardar cambios')).toBeDisabled()
   })
 
   describe('el aviso de FCE', () => {
@@ -353,11 +414,10 @@ describe('Facturar pendientes', () => {
       const preguntas = conAviso(respuesta)
       await abrir()
       await waitFor(() => expect(casilla(1)).toBeInTheDocument())
-      fireEvent.change(screen.getByLabelText('Número'), { target: { value: '7' } })
       fireEvent.click(casilla(1))
       await waitFor(() => expect(preguntas.length).toBeGreaterThan(0), { timeout: 2000 })
       expect(screen.queryByRole('status', { name: 'Aviso de FCE' })).toBeNull()
-      expect(screen.getByText('Facturar')).toBeEnabled()
+      expect(screen.getByText('Generar pre factura')).toBeEnabled()
     })
   })
 })

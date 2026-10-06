@@ -8,7 +8,7 @@
 // distinguir y hay que leer el texto igual.
 import { createLayout } from 'libra-ui/Layout'
 import {
-  BarChart3, BookOpen, ClipboardList, LayoutDashboard, Receipt, ReceiptText, ScrollText,
+  BarChart3, BookOpen, ClipboardList, FileText, LayoutDashboard, Receipt, ReceiptText, ScrollText,
   Settings, UserCog, Wallet,
 } from 'lucide-react'
 
@@ -48,6 +48,8 @@ export const NAV_SECCIONES = [
         { to: '/cuentas', label: 'Cuenta corriente', icon: BookOpen },
         { to: '/caja', label: 'Caja', icon: Wallet },
         { to: '/comprobantes', label: 'Comprobantes', icon: Receipt },
+        // La pre factura que se manda al cliente antes de facturar (ADR-032): va pegada a Comprobantes.
+        { to: '/pre-facturas', label: 'Pre facturas', icon: FileText },
         // La etiqueta es la palabra del cliente. El modelo es un gasto
         // -ver ADR-021-, pero en el menu del sistema viejo esto se
         // llamaba asi y es como lo pide.

@@ -54,6 +54,7 @@ from app.routers import (
     gastos,
     maestros,
     ordenes,
+    pre_facturas,
     reportes,
     salud,
 )
@@ -335,6 +336,10 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     # en una sola transacción.
     app.include_router(gastos.router)
     app.include_router(comprobantes.router)
+    # La pre factura (ADR-032): el documento que se manda al cliente antes de facturar, y desde donde se
+    # factura por ARCA. Es el router del motor con el gate, el SMTP y el emisor de este producto; sus
+    # rutas de crear y editar son propias porque la pre factura se arma desde órdenes.
+    app.include_router(pre_facturas.construir_router())
     app.include_router(usuarios_router.router)
     app.include_router(reportes.router)
     app.include_router(auditoria.router)
