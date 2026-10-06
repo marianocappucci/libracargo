@@ -96,7 +96,9 @@ jobs:
           ENV: development
           DATA_DIR: ${{ github.workspace }}/smoke-data
           LIBRACARGO_DATABASE_URL: postgresql+psycopg://libracargo:libracargo-ci@localhost:5432/libracargo
-          LIBRACARGO_LIBRACORE_DATABASE_URL: postgresql+psycopg://libracargo:libracargo-ci@localhost:5432/libracargo_core
+          # Una sola base, como nace un alta nueva y como quedan las instancias unidas
+          # (ADR-029): desde la 0016 el comprobante vive en `facturas` del motor.
+          LIBRACARGO_LIBRACORE_DATABASE_URL: postgresql+psycopg://libracargo:libracargo-ci@localhost:5432/libracargo
           DATABASE_URL: postgresql+psycopg://libracargo:libracargo-ci@localhost:5432/libracargo
           SECRET_KEY: smoke-de-navegador-no-es-un-secreto-real-0123456789
           DOCS_AUTH_SECRET: smoke-docs
@@ -107,7 +109,6 @@ jobs:
           LIBRACARGO_ADMIN_PASSWORD: smoke-admin-1234
         run: |
           mkdir -p "$DATA_DIR"
-          PGPASSWORD=libracargo-ci psql -h localhost -U libracargo -d libracargo -c 'CREATE DATABASE libracargo_core'
           # Las migraciones son LAS QUE DECLARA scripts/panel_admin.py, en su orden,
           # y no una copia: el mismo snippet que usa scripts/reset_demo.sh. Hasta el
           # 2026-09-17 esta lista era a mano y le faltaba libraauth-migrar (y
