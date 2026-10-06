@@ -170,9 +170,10 @@ general = crear("/api/tipos-carga", {"nombre": "Carga general", "unidad_default"
 suitrans = crear("/api/razones-sociales", {
     "nombre": "Suitrans SRL", "cuit": "30-11223344-5",
     "condicion_iva": "responsable_inscripto", "punto_venta": 1}, "razon social Suitrans SRL")
-mauricio = crear("/api/razones-sociales", {
-    "nombre": "Mauricio Cappucci", "cuit": "20-22334455-6",
-    "condicion_iva": "monotributo", "punto_venta": 2}, "razon social Mauricio Cappucci")
+# Ficticia, como todo lo de la demo: nunca el nombre de una persona real.
+monotributista = crear("/api/razones-sociales", {
+    "nombre": "Juan Pérez", "cuit": "20-22334455-6",
+    "condicion_iva": "monotributo", "punto_venta": 2}, "razon social Juan Pérez")
 
 # ---- órdenes --------------------------------------------------------------
 print("ordenes de carga")
@@ -196,7 +197,7 @@ o2 = ordenar(16, agro, suipacha, bahia, "1120000.00", fletero_id=aguirre,
 o3 = ordenar(14, molinos, mercedes, rosario, "610500.50", fletero_id=aguirre,
              chofer_id=ramon, vehiculo_id=scania, tipo_carga_id=general,
              cantidad="140", unidad="bultos", remito="0001-00012347",
-             comision="61050.05", razon_social_id=mauricio)
+             comision="61050.05", razon_social_id=monotributista)
 # Estas quedan PENDIENTES: son las que se ven en "facturar pendientes".
 o4 = ordenar(9, agro, suipacha, mercedes, "398000.00", fletero_id=aguirre,
              chofer_id=julio, tipo_carga_id=cereal, cantidad="12000", unidad="kg",
@@ -229,7 +230,7 @@ def facturar(dias_atras, razon, cliente, numero, ordenes, punto_venta, etiqueta)
 # Una factura que agrupa DOS órdenes: es lo que en el legado hacía "facturar
 # pendientes".
 c1 = facturar(11, suitrans, agro, 1041, [o1, o2], 1, "Factura A 0001-00001041")
-c2 = facturar(10, mauricio, molinos, 388, [o3], 2, "Factura A 0002-00000388")
+c2 = facturar(10, monotributista, molinos, 388, [o3], 2, "Factura A 0002-00000388")
 # Y una anulada, para que se vea el estado y la reversión en la cuenta.
 c3 = facturar(8, suitrans, cerealera, 1042, [o6], 1, "Factura A 0001-00001042")
 codigo, _ = pedir("DELETE", f"/api/comprobantes/{c3}")
