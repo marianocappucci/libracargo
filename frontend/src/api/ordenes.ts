@@ -34,7 +34,7 @@ export type Orden = {
   origen_legado: string | null
 }
 
-/** Los doce filtros del listado. `undefined` es "sin filtrar", y para
+/** Los filtros del listado. `undefined` es "sin filtrar", y para
  *  `facturada` eso es distinto de `false`. */
 export type Filtros = {
   desde?: string
@@ -49,6 +49,10 @@ export type Filtros = {
   razon_social_id?: number
   estado?: string
   facturada?: boolean
+  /** Reservada en una pre factura abierta. `false` son las que se pueden incluir en una pre factura nueva. */
+  reservada?: boolean
+  /** Sólo las reservadas en esa pre factura. */
+  pre_factura_id?: number
   q?: string
   /** Paginación. La grilla no la usa —muestra la primera página— pero la hoja
    *  impresa sí: pide de a mil hasta traer el listado entero. */

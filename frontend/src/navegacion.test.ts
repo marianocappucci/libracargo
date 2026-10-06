@@ -55,6 +55,12 @@ describe('destinoDelLog', () => {
     expect(destinoDelLog('gasto_de_proveedor', 5)).toBe('/gastos?ver=5')
   })
 
+  it('la pre factura lleva a su pantalla, que no es un diálogo sobre la lista', () => {
+    expect(destinoDelLog('pre_factura', 7)).toBe('/pre-facturas/7')
+    expect(irA.preFactura(7)).toBe('/pre-facturas/7')
+    expect(destinoDelLog('pre_factura', null)).toBeNull()
+  })
+
   it('🔑 los maestros se auditan en PLURAL, que es el prefijo del ABM', () => {
     // El backend registra con el `prefijo` del router generico, asi que en la
     // base dice `localidades` y no `localidad`. Un mapa escrito en singular

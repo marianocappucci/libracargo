@@ -17,11 +17,11 @@ from app.models import RazonSocial, Tercero, TipoComprobante
 from app.models.enums import CondicionIVA
 from app.servicios import comprobantes, emision_arca
 from tests.conftest import _crear
-from tests.test_comprobantes import orden
+from tests.test_comprobantes import facturar, orden, pre_factura
 from tests.test_emision_arca import CUIT, _arca_responde, _configurar_arca
 
 CBU = "0123456789012345678901"          # 22 dígitos
-CUIT_DEL_RECEPTOR = "30-70933285-2"
+CUIT_DEL_RECEPTOR = "30-12345678-1"
 # Fechas **relativas a hoy**: ARCA compara el vencimiento de pago contra hoy, y el
 # backend también, así que con fechas fijas estos tests se romperían con el tiempo.
 HOY = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).date()
@@ -30,14 +30,8 @@ VENCIMIENTO = (HOY + timedelta(days=30)).isoformat()
 
 
 def _facturar(cliente, datos, ordenes, razon, *, tipo="fce_a", vencimiento=VENCIMIENTO):
-    cuerpo = {
-        "fecha": FECHA, "razon_social_id": razon, "cliente_id": datos["cliente"],
-        "tipo": tipo, "punto_venta": 5,
-        "orden_ids": [o["id"] if isinstance(o, dict) else o for o in ordenes],
-    }
-    if vencimiento is not None:
-        cuerpo["fecha_vencimiento_pago"] = vencimiento
-    return cliente.post("/api/comprobantes", json=cuerpo)
+    """Genera la pre factura y la factura por ARCA; devuelve la respuesta de lo último que se hizo."""
+    return facturar(cliente, datos, ordenes, razon=razon, tipo=tipo, fecha=FECHA, vencimiento=vencimiento)
 
 
 def _receptor_con_cuit(cliente, datos):
@@ -87,7 +81,7 @@ def test_una_fce_viaja_a_arca_con_su_codigo_y_lo_que_exige(cliente, datos, razon
     assert factura["fch_vto_pago"] == VENCIMIENTO
     assert factura["fce_cbu"] == CBU
     assert factura["fce_transmision"] == "SCA"
-    assert arca_wsfe.cuit_del_receptor(factura) == "30709332852"
+    assert arca_wsfe.cuit_del_receptor(factura) == "30123456781"
 
 
 def test_la_fce_guarda_con_que_salio(cliente, datos, razon_con_fce, monkeypatch):
@@ -147,7 +141,7 @@ def test_la_fce_entra_en_los_totales_y_en_la_cuenta_corriente(cliente, datos, ra
     assert concepto == "Factura de credito electronica A 0005-00000042", concepto
 
 
-@pytest.mark.parametrize("cuit", ["30-70933285-2", "30.70933285.2", "30 70933285 2", "30709332852"])
+@pytest.mark.parametrize("cuit", ["30-12345678-1", "30.12345678.1", "30 12345678 1", "30123456781"])
 def test_el_cuit_viaja_a_arca_en_digitos_sea_cual_sea_como_se_cargo(
         cliente, datos, razon_con_fce, monkeypatch, cuit):
     """El CUIT llega a ARCA en dígitos sea cual sea como se cargó (con guiones, puntos o espacios).
@@ -165,7 +159,7 @@ def test_el_cuit_viaja_a_arca_en_digitos_sea_cual_sea_como_se_cargo(
 
     assert _facturar(cliente, datos, [a], razon_con_fce).status_code == 201
     (factura,) = [p[1] for p in pedidos if p[0] == "cae"]
-    assert arca_wsfe.cuit_del_receptor(factura) == "30709332852"
+    assert arca_wsfe.cuit_del_receptor(factura) == "30123456781"
 
 
 # ── Lo que se rechaza, y dónde ──────────────────────────────────────────────
@@ -196,14 +190,10 @@ def test_el_vencimiento_no_puede_estar_ya_vencido_aunque_la_fecha_sea_atrasada(
     el número, no como un 502."""
     pedidos = _arca_responde(monkeypatch)
     a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
-    cuerpo = {
-        "fecha": (HOY - timedelta(days=3)).isoformat(), "razon_social_id": razon_con_fce,
-        "cliente_id": datos["cliente"], "tipo": "fce_a", "punto_venta": 5,
-        "orden_ids": [a["id"]],
-        "fecha_vencimiento_pago": (HOY - timedelta(days=1)).isoformat(),
-    }
 
-    r = cliente.post("/api/comprobantes", json=cuerpo)
+    r = pre_factura(cliente, datos, [a], razon=razon_con_fce, tipo="fce_a",
+                    fecha=(HOY - timedelta(days=3)).isoformat(),
+                    vencimiento=(HOY - timedelta(days=1)).isoformat())
 
     assert r.status_code == 422, r.text
     assert "anterior a hoy" in r.text
@@ -244,20 +234,18 @@ def test_una_fce_a_un_cliente_sin_un_cuit_valido_se_rechaza_antes_de_ir_a_arca(
     assert pedidos == [], "no tenía que ir a ARCA"
 
 
-def test_una_fce_sin_arca_habilitado_no_se_puede_registrar_a_mano(cliente, datos):
-    """Una FCE sin CAE no existe: no hay camino de «registrar con el número que tengo»."""
+def test_una_fce_sin_arca_habilitado_no_se_factura(cliente, datos):
+    """Una FCE sin CAE no existe: sin certificado de ARCA la pre factura se genera y espera, y no hay camino
+    de «registrar con el número que tengo»."""
     _receptor_con_cuit(cliente, datos)
     a = orden(cliente, datos, "1000.00")
 
-    r = cliente.post("/api/comprobantes", json={
-        "fecha": FECHA, "razon_social_id": datos["razon"], "cliente_id": datos["cliente"],
-        "tipo": "fce_a", "punto_venta": 1, "numero": 7, "orden_ids": [a["id"]],
-        "fecha_vencimiento_pago": VENCIMIENTO,
-    })
+    r = _facturar(cliente, datos, [a], datos["razon"])
 
-    assert r.status_code == 422, r.text
-    assert "solo se emite por ARCA" in r.text
+    assert r.status_code == 409, r.text
+    assert "no tiene configurado el certificado de ARCA" in r.text
     assert cliente.get("/api/comprobantes").json() == []
+    assert cliente.get("/api/pre-facturas").json()["counts"]["pendiente"] == 1
 
 
 def test_si_arca_rechaza_la_fce_no_queda_comprobante(cliente, datos, razon_con_fce, monkeypatch):

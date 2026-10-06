@@ -20,6 +20,8 @@ import type { FilaDeCuenta } from '@/api/cuentas'
 export const irA = {
   orden: (id: number) => `/ordenes?ver=${id}`,
   comprobante: (id: number) => `/comprobantes?ver=${id}`,
+  /** La pre factura es una pantalla y no un diálogo: tiene sus acciones (enviar, aceptar, facturar). */
+  preFactura: (id: number) => `/pre-facturas/${id}`,
   caja: (id: number) => `/caja?ver=${id}`,
   cuenta: (rol: string, terceroId: number) => `/cuentas?rol=${rol}&tercero=${terceroId}`,
   /** Sin rol: la pantalla elige el primero que el tercero tenga. Es todo lo que
@@ -67,6 +69,7 @@ export function destinoDelLog(entidad: string, entidadId: number | null): string
   if (entidadId !== null) {
     if (entidad === 'orden_carga') return irA.orden(entidadId)
     if (entidad === 'comprobante') return irA.comprobante(entidadId)
+    if (entidad === 'pre_factura') return irA.preFactura(entidadId)
     if (entidad === 'movimiento_caja') return irA.caja(entidadId)
     if (entidad === 'gasto_de_proveedor') return irA.gasto(entidadId)
   }

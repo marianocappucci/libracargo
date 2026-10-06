@@ -1,10 +1,15 @@
-"""Comprobantes: registrar la factura de un grupo de órdenes pendientes.
+"""Comprobantes: lo facturado, sus totales, la anulación de lo que no tiene CAE y las notas de crédito.
 
-**"Facturar pendientes" es una operación sola, no tres pasos.** En el legado el
-alta de una orden insertaba en `orden_carga`, después en `facturas` y después en
-la cuenta corriente, con `INSERT` sueltos y sin transacción: si el segundo
-fallaba, el primero ya estaba grabado. Acá el comprobante, el estado de las
-órdenes y el movimiento de la cuenta del cliente entran o no entran juntos.
+**Acá no se crean comprobantes.** Hasta ADR-032 `POST /api/comprobantes` facturaba un grupo de órdenes, y si
+la razón social no tenía certificado de ARCA, **registraba a mano** el punto de venta y el número que alguien
+tipeaba. Ya no: el comprobante sale siempre de una pre factura que el cliente pudo ver
+(`POST /api/pre-facturas/{id}/facturar`, en `app/routers/pre_facturas.py`), y el número y el punto de venta
+los pone ARCA. Lo que se registró a mano antes y lo migrado del legado sigue ahí, y se anula como siempre.
+
+**La operación es una sola, no tres pasos.** En el legado el alta de una orden insertaba en `orden_carga`,
+después en `facturas` y después en la cuenta corriente, con `INSERT` sueltos y sin transacción: si el segundo
+fallaba, el primero ya estaba grabado. Acá el comprobante, el estado de las órdenes y el movimiento de la
+cuenta del cliente entran o no entran juntos (ver `app/servicios/pre_facturas.py`).
 """
 
 import asyncio
@@ -32,11 +37,9 @@ from app.models.maestros import RazonSocial, Tercero
 from app.models.operacion import Comprobante, OrdenCarga
 from app.routers.maestros import traducir_integridad
 from app.schemas.comprobantes import (
-    TIPOS_FACTURA,
     TIPOS_FCE,
     ComprobanteConOrdenes,
     ComprobanteOut,
-    FacturarIn,
     NotaDeCreditoIn,
     TotalDeRazonSocial,
 )
@@ -193,240 +196,6 @@ def _respuesta_de_ensayo(comprobante: Comprobante, cfg: dict) -> JSONResponse:
         "cae_vencimiento": (comprobante.cae_vencimiento.isoformat()
                             if comprobante.cae_vencimiento else None),
     })
-
-
-@router.post("", response_model=ComprobanteOut, status_code=201)
-# 🔴 **`def` y no `async def`, a propósito.** Casi todo lo que hace esta ruta
-# es sincrónico —la `Session`, y adentro de la emisión `openssl` por
-# subproceso para firmar el TRA— y uvicorn corre con **un solo proceso**:
-# como `async def`, cada consulta frenaba el loop entero, y mientras se
-# facturaba la instancia no le contestaba a nadie, `/health` incluido. Como
-# `def`, FastAPI la corre en el threadpool. Lo único asincrónico de verdad
-# —WSAA y WSFE— va con `asyncio.run` en un loop propio de este hilo.
-def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
-             actual: dict = Depends(get_current_user)):
-    """Agrupa órdenes pendientes en un comprobante, en una sola transacción.
-
-    🔑 **Hay dos caminos, y los decide la razón social**, no el que llama:
-
-    - **Emite** si tiene ARCA habilitado: el número lo da ARCA
-      (`FECompUltimoAutorizado + 1`), el punto de venta sale de la razón social,
-      y el comprobante nace con CAE. Un `numero` en el payload se ignora — ARCA
-      rechaza cualquiera que no sea el que sigue.
-    - **Registra** si no: el número lo tipea una persona, como hasta ahora. Es
-      el camino de lo que todavía no tiene certificado cargado, y el que sostiene
-      la instancia del cliente mientras tanto.
-
-    ⚠️ **Si ARCA rechaza, no queda comprobante.** El pedido de CAE va adentro de
-    la misma transacción: o existe con CAE, o no existe. Un comprobante con un
-    número que ARCA no autorizó dejaría el correlativo tomado del lado de acá y
-    libre del lado de ellos.
-
-    La unicidad la garantiza la base con `(razon_social, tipo, punto_venta,
-    numero)` — el legado tenía `(numero, razon_social)` y no contemplaba ni el
-    tipo ni el punto de venta, así que dos comprobantes distintos con el mismo
-    número entraban sin que nada los frenara.
-    """
-    if datos.tipo not in TIPOS_FACTURA:
-        raise HTTPException(
-            422,
-            "una nota de credito no agrupa ordenes pendientes: "
-            "para revertir un comprobante hay que anularlo",
-        )
-    if sesion.get(RazonSocial, datos.razon_social_id) is None:
-        raise HTTPException(404, f"no existe la razon social {datos.razon_social_id}")
-    cliente = sesion.get(Tercero, datos.cliente_id)
-    if cliente is None:
-        raise HTTPException(404, f"no existe el tercero {datos.cliente_id}")
-    es_fce = datos.tipo in TIPOS_FCE
-    if es_fce and len("".join(c for c in (cliente.cuit or "") if c.isdigit())) != 11:
-        # Una FCE se emite a una empresa, y ARCA rechaza el receptor sin CUIT (10015).
-        # Se exigen los 11 dígitos y no «algún dígito»: un CUIT a medio cargar llegaría
-        # a ARCA y volvería como un 502. Se dice acá, y dice qué hacer.
-        raise HTTPException(
-            422,
-            "la factura de credito electronica se emite a un receptor con CUIT de 11 "
-            "digitos: cargalo en la ficha del cliente",
-        )
-
-    ordenes = list(sesion.scalars(
-        select(OrdenCarga).where(OrdenCarga.id.in_(datos.orden_ids))
-    ))
-    faltan = sorted(set(datos.orden_ids) - {o.id for o in ordenes})
-    if faltan:
-        raise HTTPException(404, f"no existen las ordenes {faltan}")
-
-    for orden in ordenes:
-        if orden.cliente_id != datos.cliente_id:
-            raise HTTPException(
-                422, f"la orden {orden.id} es de otro cliente: un comprobante "
-                     "es de un solo cliente")
-        if orden.estado is not EstadoOrden.PENDIENTE or orden.comprobante_id is not None:
-            raise HTTPException(
-                409, f"la orden {orden.id} no esta pendiente (esta {orden.estado.value})")
-        if (orden.razon_social_id is not None
-                and orden.razon_social_id != datos.razon_social_id):
-            # No se pisa en silencio: la razón social de la orden es la que
-            # después suma del lado de las órdenes en el gate de totales, y
-            # cambiarla sin decirlo movería plata de una razón social a otra.
-            raise HTTPException(
-                422, f"la orden {orden.id} tiene otra razon social: "
-                     "cambiarla primero, o facturar con la suya")
-
-    suma = sumar_ordenes(ordenes)
-    if suma.total <= 0:
-        # Sin esto el rechazo llega igual, pero de la base: la contrapartida en
-        # la cuenta corriente tiene un CHECK que exige que el asiento mueva el
-        # debe o el haber, y un total en cero no mueve ninguno. Eso saldría como
-        # un 409 con el nombre de una restricción, que no explica nada.
-        raise HTTPException(422, "las ordenes elegidas suman cero: no hay nada que facturar")
-
-    # ── El número: de ARCA si emite, del payload si registra ───────────────
-    # 🔴 Envuelto porque `emite_por_arca` puede **negarse a decidir**: con dos
-    # configuraciones de ARCA activas no hay forma de saber con qué CUIT
-    # firmar, y elegir una es facturar por otro contribuyente sin fallar. Sin
-    # este `except` sale como un 500 sin texto, que manda a leer un traceback
-    # en vez de a arreglar la configuración.
-    try:
-        emite = emision_arca.emite_por_arca(sesion, datos.razon_social_id)
-    except emision_arca.ArcaAmbiguo as e:
-        raise HTTPException(409, str(e)) from None
-    if es_fce and not emite:
-        # Una FCE sin CAE no tiene sentido: es el documento que ARCA registra y que
-        # el comprador acepta o rechaza. No hay camino de «registrar a mano».
-        raise HTTPException(
-            422,
-            "la factura de credito electronica solo se emite por ARCA: esta razon "
-            "social no lo tiene habilitado (cargá el certificado y la clave en "
-            "Configuracion, con el CUIT de esta razon social)",
-        )
-    if emite:
-        # Antes de pedirle el número a ARCA: un CUIT que no sirve se dice acá, con
-        # el nombre del cliente y qué hacer, en vez de volver como un 502 de ARCA.
-        problema = emision_arca.problema_del_cuit_del_cliente(cliente, datos.tipo)
-        if problema:
-            raise HTTPException(422, problema)
-    ta = cfg_arca = razon = None
-    if emite:
-        try:
-            # 🔑 `asyncio.run` en este hilo, y no un `await` en el loop de
-            # uvicorn: la corrutina es `async` sólo en los bordes —la red—, y
-            # entre medio lee la base y firma con `openssl`, todo sincrónico.
-            # Acá eso bloquea a este hilo y a nadie más. La firma de
-            # `emision_arca` no cambia: el arreglo va del lado de quien llama.
-            numero, ta, cfg_arca, razon = asyncio.run(emision_arca.numero_que_sigue(
-                sesion, datos.razon_social_id, datos.tipo,
-            ))
-        except emision_arca.ArcaNoConfigurado as e:
-            raise HTTPException(409, str(e)) from None
-        except emision_arca.ArcaRechazo as e:
-            raise HTTPException(502, f"ARCA no pudo dar el numero: {e}") from None
-        punto_venta = razon.punto_venta
-    else:
-        if datos.numero is None:
-            raise HTTPException(
-                422,
-                "falta el numero: esta razon social no tiene ARCA habilitado, "
-                "asi que el comprobante se registra con el numero que tenga",
-            )
-        numero, punto_venta = datos.numero, datos.punto_venta
-
-    try:
-        # Lo crea el motor en `facturas`, en esta misma transacción (ADR-030): hace
-        # falta el id para las órdenes y para el movimiento de cuenta, pero no hay
-        # `commit` hasta el final. Con uno acá, un fallo más abajo dejaría el
-        # comprobante grabado sin órdenes.
-        try:
-            comprobante = comprobantes.crear(
-                sesion, razon_social_id=datos.razon_social_id, tipo=datos.tipo,
-                punto_venta=punto_venta, numero=numero, fecha=datos.fecha,
-                cliente_id=datos.cliente_id, neto=suma.neto, iva=suma.iva, total=suma.total,
-                items=comprobantes.items_de(ordenes),
-                # Si emite, en el ambiente de la configuración con la que se numeró.
-                ambiente=cfg_arca["ambiente"] if emite else None,
-                fch_vto_pago=datos.fecha_vencimiento_pago,
-                # La FCE sale con el CBU y la modalidad de la configuración de hoy, y
-                # quedan en el comprobante aunque la configuración cambie después.
-                fce_cbu=(cfg_arca.get("fce_cbu") or None) if es_fce and emite else None,
-                fce_transmision=((cfg_arca.get("fce_transmision") or "").upper() or None)
-                if es_fce and emite else None,
-            )
-        except comprobantes.NumeroRepetido as e:
-            sesion.rollback()
-            raise HTTPException(409, str(e)) from None
-        except emision_arca.ArcaAmbiguo as e:
-            sesion.rollback()
-            raise HTTPException(409, str(e)) from None
-        for orden in ordenes:
-            orden.comprobante_id = comprobante.id
-            orden.estado = EstadoOrden.FACTURADA
-            # Las órdenes sin razón social heredan la del comprobante; las que
-            # ya tenían una, la conservan — el chequeo de arriba garantiza que
-            # es la misma.
-            orden.razon_social_id = datos.razon_social_id
-        cuentas.asentar(
-            sesion,
-            fecha=datos.fecha, tercero_id=datos.cliente_id, rol=RolCuenta.CLIENTE,
-            # El numero REAL, no el del payload: cuando emite ARCA el del
-            # payload viene vacio, y la cuenta corriente nombraria un
-            # comprobante inexistente.
-            concepto=etiqueta(datos.tipo, punto_venta, numero),
-            descripcion="Ordenes " + ", ".join(str(o.id) for o in ordenes),
-            debe=suma.total, haber=0, comprobante_id=comprobante.id,
-        )
-        if emite:
-            # Adentro de la transaccion a proposito: si ARCA rechaza, el
-            # `commit` NUNCA ocurre y el comprobante no existe --- las ordenes
-            # siguen pendientes. No queda un numero tomado de este lado y libre
-            # del otro.
-            #
-            # ⚠️ La garantia es esa, no el `rollback` de abajo: `obtener_sesion`
-            # cierra la sesion en su `finally` y SQLAlchemy descarta la
-            # transaccion abierta al cerrar. Medido: sacar el rollback no cambia
-            # el resultado. Se deja igual porque hace explicita la intencion y
-            # no depende de la semantica de `close()`.
-            try:
-                # Mismo criterio que el número: loop propio de este hilo. La
-                # transacción no se mueve —la `sesion` es la misma y el hilo
-                # también—, así que un rechazo sigue sin dejar comprobante.
-                asyncio.run(emision_arca.pedir_cae(sesion, comprobante, ta, cfg_arca, razon))
-            except emision_arca.ArcaRechazo as e:
-                sesion.rollback()
-                raise HTTPException(502, f"ARCA rechazo el comprobante: {e}") from None
-
-            # ── El ensayo: se corrió todo, y no se guarda nada ─────────────
-            #
-            # 🔑 Contra homologación el CAE y el número son del WSFE de prueba.
-            # En otro producto alcanzaría con marcar la fila y filtrarla; acá
-            # **el comprobante no es sólo un papel fiscal**: mueve la cuenta
-            # corriente del cliente y cierra las órdenes de carga, que después
-            # no se pueden volver a facturar. Filtrar eso es frágil —la cuenta
-            # corriente es un libro con saldos acumulados— y dejarlo entrar es
-            # peor.
-            #
-            # Se revierte **acá y no antes** a propósito: el valor del ensayo es
-            # justamente haber recorrido el camino entero contra ARCA —número
-            # correlativo, armado del pedido, CAE— y no una simulación local.
-            #
-            # La respuesta se arma ANTES del rollback: después, `comprobante`
-            # queda expirado y leerle un atributo dispararía un SELECT sobre una
-            # transacción que ya no existe.
-            if emision_arca.es_ensayo(cfg_arca):
-                respuesta = _respuesta_de_ensayo(comprobante, cfg_arca)
-                sesion.rollback()
-                return respuesta
-        # 🔑 El asiento de auditoría NO se escribe para un ensayo, y el `return`
-        # de arriba es lo que lo evita: registrar un alta que se revirtió sería
-        # un log que miente en la dirección más cara — dice que existe un
-        # comprobante que nadie va a encontrar.
-        auditoria.registrar(sesion, actual, "comprobante", comprobante.id,
-                            AccionAuditoria.ALTA, despues=comprobante)
-        sesion.commit()
-    except IntegrityError as err:
-        sesion.rollback()
-        raise traducir_integridad(err) from None
-    sesion.refresh(comprobante)
-    return comprobante
 
 
 @router.delete("/{id_}", response_model=ComprobanteOut)

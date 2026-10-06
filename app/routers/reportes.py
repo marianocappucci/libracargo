@@ -333,7 +333,7 @@ def listado_ordenes(sesion: Session = Depends(obtener_sesion),
         chofer_id=None, vehiculo_id=None,
         origen_id=origen_id, destino_id=destino_id,
         tipo_carga_id=None, razon_social_id=None,
-        estado=None, facturada=None, q=None,
+        estado=None, facturada=None, reservada=None, pre_factura_id=None, q=None,
         limite=limite, desplazamiento=desplazamiento)
 
 

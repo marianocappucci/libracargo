@@ -147,7 +147,8 @@ def test_upgrade_downgrade_upgrade(base_limpia):
         # sigue, como `movimientos_cuenta_legado`).
         # Y volvió a 15 con la `0018`, que borra `comprobantes_legado` y
         # `movimientos_cuenta_legado`.
-        assert tablas - del_motor == 15
+        # Y subió a 17 con la `0019` (`pre_facturas_cargo` y `pre_factura_ordenes`).
+        assert tablas - del_motor == 17
         eng.dispose()
     finally:
         if original:

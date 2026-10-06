@@ -59,9 +59,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 #: Un CUIT de receptor con dígito verificador válido, para las facturas A.
-CUIT_DEL_RECEPTOR = "30-70933285-2"
+CUIT_DEL_RECEPTOR = "30-12345678-1"
 #: Otro, para el monotributista: tiene que ser distinto del emisor.
-CUIT_MONOTRIBUTISTA = "20-28993360-4"
+CUIT_MONOTRIBUTISTA = "20-12345678-6"
 
 
 def _cargar_par_real(cliente):
@@ -124,9 +124,13 @@ def _hoy() -> str:
 
 def _ensayar(cliente, datos, instancia, tipo, **extra):
     a = orden(cliente, datos, "1000.00", razon_social_id=instancia, fecha=_hoy())
-    r = cliente.post("/api/comprobantes", json={
+    # Pre factura y después ARCA, como en producción: el punto de venta es el de la razón social.
+    pf = cliente.post("/api/pre-facturas", json={
         "fecha": _hoy(), "razon_social_id": instancia, "cliente_id": datos["cliente"],
-        "tipo": tipo, "punto_venta": PUNTO_VENTA, "orden_ids": [a["id"]], **extra})
+        "tipo": tipo, "orden_ids": [a["id"]], **extra})
+    if pf.status_code != 201:
+        return a, pf
+    r = cliente.post(f"/api/pre-facturas/{pf.json()['id']}/facturar")
     if r.status_code == 502 and "alreadyAuthenticated" in r.text:
         pytest.skip("ARCA ya tiene un ticket vigente de este certificado: "
                     "pasá ARCA_HOMO_TICKET con ese ticket y reintentá")

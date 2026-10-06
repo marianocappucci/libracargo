@@ -10,7 +10,7 @@ export type TipoComprobante =
   | 'fce_a' | 'fce_b' | 'fce_c'
   | 'nota_credito_fce_a' | 'nota_credito_fce_b' | 'nota_credito_fce_c'
 
-/** Lo que devuelve facturar cuando el ambiente de ARCA es homologación.
+/** Lo que devuelve facturar una pre factura (`preFacturas.facturar`) cuando el ambiente de ARCA es homologación.
  *
  *  🔴 **No es un `Comprobante` incompleto: no existe.** El backend corre el
  *  alta entera contra ARCA —número, pedido, CAE— y la revierte, porque acá un
@@ -155,12 +155,6 @@ export const comprobantes = {
     const qs = p.toString()
     return api.get<TotalDeRazonSocial[]>(`/api/comprobantes/totales${qs ? `?${qs}` : ''}`)
   },
-  // 🔑 La unión no es cosmética: obliga a quien llame a **decidir cuál de
-  // los dos recibió** antes de tocar `.id`. Con `Comprobante` a secas,
-  // TypeScript deja leer el id de un ensayo —que no lo tiene— y el error
-  // aparece recién en pantalla, como una navegación a la nada.
-  facturar: (datos: unknown) =>
-    api.post<Comprobante | Ensayo>('/api/comprobantes', datos),
   // ¿A este comprobante le corresponde ser FCE? Lo contesta el registro de ARCA a través del motor. Es un
   // aviso: nunca falla por ARCA (`disponible: false` y el motivo).
   fceCorresponde: (p: { razon_social_id: number; cliente_id: number; total: string; fecha: string }) =>

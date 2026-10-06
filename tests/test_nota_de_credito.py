@@ -22,7 +22,7 @@ from app.models import Comprobante, MovimientoCuenta, TipoComprobante
 from app.models.enums import EstadoOrden
 from app.models.operacion import OrdenCarga
 from tests.conftest import comprobante_de_prueba
-from tests.test_comprobantes import facturar, orden
+from tests.test_comprobantes import facturado_a_mano, facturar, orden
 from tests.test_emision_arca import _arca_responde, _configurar_arca, razon_con_arca  # noqa: F401
 
 
@@ -31,7 +31,7 @@ def factura(cliente, datos, razon_con_arca, monkeypatch):  # noqa: F811
     """Una Factura A emitida por ARCA (CAE, número 42) con una orden, y el registro de lo que se le pidió."""
     pedidos = _arca_responde(monkeypatch, ultimo=41)
     a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
-    r = facturar(cliente, datos, [a], razon=razon_con_arca, numero=None)
+    r = facturar(cliente, datos, [a], razon=razon_con_arca)
     assert r.status_code == 201, r.text
     return {"comprobante": r.json(), "orden": a, "pedidos": pedidos, "razon": razon_con_arca}
 
@@ -85,7 +85,7 @@ def test_la_factura_queda_anulada_y_sus_ordenes_vuelven_a_pendientes(cliente, da
 
     # Y se puede volver a facturar: ARCA ya tiene la factura *y* su nota, no hay dos facturas vigentes.
     _arca_responde(monkeypatch, ultimo=42)
-    otra = facturar(cliente, datos, [factura["orden"]], razon=factura["razon"], numero=None)
+    otra = facturar(cliente, datos, [factura["orden"]], razon=factura["razon"])
     assert otra.status_code == 201, otra.text
 
 
@@ -174,7 +174,7 @@ def test_un_cuit_que_no_cierra_no_impide_acreditar(cliente, datos, factura):
     """🔴 Medido el 2026-10-04: ARCA autoriza la nota A a un CUIT que no cierra, igual que la factura (aviso
     `10238`). Si el producto frenara acá, un error de CUIT en una factura **no tendría arreglo**."""
     r = cliente.put(f"/api/terceros/{datos['cliente']}", json={
-        "razon_social": "Agro Norte", "es_cliente": True, "cuit": "30-70933285-3"})
+        "razon_social": "Agro Norte", "es_cliente": True, "cuit": "30-12345678-3"})
     assert r.status_code == 200, r.text
     assert _nota(cliente, factura["comprobante"]["id"]).status_code == 201
 
@@ -188,13 +188,13 @@ def test_una_nota_no_se_acredita(cliente, datos, factura):
 
 # ── Lo que el producto decide antes de llamar al motor ─────────────────────
 
-def test_un_comprobante_sin_cae_se_anula_como_siempre_y_no_pide_nota(cliente, datos):
+def test_un_comprobante_sin_cae_se_anula_como_siempre_y_no_pide_nota(cliente, datos, sesion):
     a = orden(cliente, datos, "1000.00")
-    comp = facturar(cliente, datos, [a], numero=7).json()
-    r = _nota(cliente, comp["id"])
+    comp = facturado_a_mano(sesion, datos, [a], numero=7)
+    r = _nota(cliente, comp.id)
     assert r.status_code == 409
     assert "no tiene CAE" in r.json()["detail"]
-    assert cliente.delete(f"/api/comprobantes/{comp['id']}").status_code == 200
+    assert cliente.delete(f"/api/comprobantes/{comp.id}").status_code == 200
 
 
 def test_el_mensaje_de_anular_con_cae_apunta_a_la_nota(cliente, datos, factura):

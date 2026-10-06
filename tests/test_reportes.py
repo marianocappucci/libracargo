@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from libraauth.testing import crear_schema_de_auth
 
 from app.main import crear_app
-from tests.conftest import config_de_prueba, vaciar_auth
+from tests.conftest import CUIT_EMISOR, arca_responde, config_de_prueba, configurar_arca, vaciar_auth
 
 USUARIO, CLAVE = "admin", "clave-de-prueba"
 
@@ -39,7 +39,7 @@ def crear(c, ruta, datos):
 
 
 @pytest.fixture
-def escenario(cliente):
+def escenario(cliente, monkeypatch):
     """Dos clientes, dos fleteros, y órdenes repartidas en dos meses.
 
     Los importes están elegidos para que cada total del reporte sea distinguible:
@@ -74,11 +74,17 @@ def escenario(cliente):
     d["anulada"] = orden("2026-07-15", d["cliente_b"], "9999.00", "999.00", "suipacha", "rosario")
     assert cliente.delete(f"/api/ordenes/{d['anulada']['id']}").status_code == 200
 
-    # Una factura de julio sobre las dos órdenes del cliente A.
-    d["comprobante"] = cliente.post("/api/comprobantes", json={
+    # Una factura de julio sobre las dos órdenes del cliente A: pre factura y después ARCA (simulada).
+    # Es Factura B porque el cliente A no tiene CUIT: una A exige el del receptor.
+    assert cliente.put(f"/api/razones-sociales/{d['razon']}", json={
+        "nombre": "Suitrans", "cuit": CUIT_EMISOR, "punto_venta": 1}).status_code == 200
+    configurar_arca(cliente, cuit=CUIT_EMISOR, punto_venta=1)
+    arca_responde(monkeypatch)
+    pf = cliente.post("/api/pre-facturas", json={
         "fecha": "2026-07-31", "razon_social_id": d["razon"], "cliente_id": d["cliente_a"],
-        "tipo": "factura_a", "punto_venta": 1, "numero": 1,
-        "orden_ids": [d["o1"]["id"], d["o2"]["id"]]}).json()
+        "tipo": "factura_b", "orden_ids": [d["o1"]["id"], d["o2"]["id"]]})
+    assert pf.status_code == 201, pf.text
+    d["comprobante"] = cliente.post(f"/api/pre-facturas/{pf.json()['id']}/facturar").json()
 
     # Caja: un cobro del cliente A y un pago al fletero, los dos en julio.
     cliente.post("/api/caja", json={

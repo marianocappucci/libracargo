@@ -64,7 +64,7 @@ def _cargar(engine):
                   "codigo_legado, activa) VALUES (1, 'Suitrans', 'responsable_inscripto', 1, 1, true)")
         _sql(con, "INSERT INTO terceros (id, razon_social, cuit, condicion_iva, es_cliente, "
                   "es_fletero, es_proveedor, direccion, activo) VALUES "
-                  "(1, 'ACOPIO SUR SA', '30-70933285-2', 'responsable_inscripto', true, false, "
+                  "(1, 'ACOPIO SUR SA', '30-12345678-1', 'responsable_inscripto', true, false, "
                   "false, 'Ruta 9 km 300', true)")
         _sql(con, "INSERT INTO localidades (id, nombre, activa) VALUES (1, 'Suipacha', true), "
                   "(2, 'Rosario', true)")
@@ -150,7 +150,7 @@ def test_la_0016_pasa_los_comprobantes_a_facturas_sin_mover_nada(base_de_antes, 
             Decimal("1000.00"), Decimal("210.00"), Decimal("1210.00"))
         assert f10["ambiente"] == "produccion" and f10["emisor_id"] is None
         assert (f10["cliente_cuit"], f10["cliente_razon"], f10["cliente_iva_cond"]) == (
-            "30-70933285-2", "ACOPIO SUR SA", 1)
+            "30-12345678-1", "ACOPIO SUR SA", 1)
         items = json.loads(f10["items"])
         assert [i["unit_price"] for i in items] == [600.0, 400.0]
         assert items[0]["detalle"] == "Orden 1 del 30/07/2026, remito R-1"

@@ -20,7 +20,7 @@ const { default: Comprobantes } = await import('./Comprobantes')
 const TERCEROS = [{ id: 1, razon_social: 'Agro Norte', es_cliente: true }]
 const RAZONES = [
   { id: 5, nombre: 'Suitrans' },
-  { id: 6, nombre: 'Mauricio' },
+  { id: 6, nombre: 'Juan Pérez' },
 ]
 
 type Respuestas = {
@@ -218,6 +218,13 @@ describe('Comprobantes', () => {
 
     expect(await screen.findByText('Anular comprobante')).toBeInTheDocument()
     expect(screen.queryByRole('note')).toBeNull()
+  })
+
+  it('hay un acceso a las pre facturas, de donde sale todo comprobante', async () => {
+    responder({})
+    render(<MemoryRouter><Comprobantes /></MemoryRouter>)
+    const boton = await screen.findByText('Pre facturas')
+    expect(boton.closest('a')).toHaveAttribute('href', '/pre-facturas')
   })
 
   it('el boton de facturar lleva a la pantalla, no abre un modal', async () => {

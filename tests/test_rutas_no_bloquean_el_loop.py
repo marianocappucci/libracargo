@@ -32,9 +32,9 @@ import httpx
 import pytest
 
 from app.routers import configuracion
-from app.servicios import emision_arca
+from app.servicios import emision_arca, pre_facturas
 from tests.conftest import _crear
-from tests.test_comprobantes import facturar, orden
+from tests.test_comprobantes import facturar, orden, pre_factura
 from tests.test_configuracion import EMPRESA, PNG
 from tests.test_emision_arca import CUIT, _configurar_arca
 
@@ -99,7 +99,7 @@ def _no_bloqueo(lento: _Lento, health, health_termino: float):
     )
 
 
-# ── POST /api/comprobantes ─────────────────────────────────────────────────
+# ── POST /api/pre-facturas y /api/pre-facturas/{id}/facturar ─────────────────────────────────────────────
 
 
 def _arca_con(monkeypatch, lento: _Lento, donde: str):
@@ -127,19 +127,22 @@ def _arca_con(monkeypatch, lento: _Lento, donde: str):
     monkeypatch.setattr(emision_arca.arca_wsfe, "solicitar_cae", solicitar_cae)
 
 
-@pytest.mark.parametrize("donde", ["registra", "numera", "pide-cae"])
+@pytest.mark.parametrize("donde", ["decide", "numera", "pide-cae"])
 def test_facturar_no_frena_el_loop(cliente, datos, monkeypatch, donde):
-    """🔑 Tres lugares, porque la ruta tiene tres tramos que bloquean:
+    """🔑 Tres lugares, porque `POST /api/pre-facturas/{id}/facturar` tiene tres tramos que bloquean:
 
-    - `registra`: sin ARCA, lo lento es la base (`emite_por_arca`, que lee la
-      razón social y `arca_config`). Una ruta `async` la hace en el loop.
-    - `numera` y `pide-cae`: con ARCA, lo lento va ADENTRO de las corrutinas
-      de `emision_arca`. Es el caso que un `await` desde el loop no resuelve
+    - `decide`: lo lento es la base (`emite_por_arca`, que lee la razón social y
+      `arca_config`). Una ruta `async` la hace en el loop.
+    - `numera` y `pide-cae`: lo lento va ADENTRO de las corrutinas de
+      `emision_arca`. Es el caso que un `await` desde el loop no resuelve
       aunque la ruta fuera `def`.
     """
     lento = _Lento()
-    if donde == "registra":
-        razon, numero = datos["razon"], 7
+    razon = _crear(cliente, "/api/razones-sociales", {
+        "nombre": "Suitrans SA", "cuit": CUIT, "punto_venta": 5,
+    })
+    _configurar_arca(cliente)
+    if donde == "decide":
         real = emision_arca.emite_por_arca
 
         def emite_lento(sesion, razon_social_id):
@@ -147,29 +150,40 @@ def test_facturar_no_frena_el_loop(cliente, datos, monkeypatch, donde):
             return real(sesion, razon_social_id)
 
         monkeypatch.setattr(emision_arca, "emite_por_arca", emite_lento)
+        _arca_con(monkeypatch, _Lento(), "nunca")
     else:
-        razon = _crear(cliente, "/api/razones-sociales", {
-            "nombre": "Suitrans SA", "cuit": CUIT, "punto_venta": 5,
-        })
-        _configurar_arca(cliente)
-        numero = None
         _arca_con(monkeypatch, lento, donde)
     a = orden(cliente, datos, "1000.00", razon_social_id=razon)
+    pf = pre_factura(cliente, datos, [a], razon=razon)
+    assert pf.status_code == 201, pf.text
 
     respuesta, health, fin = _mientras_duerme(
-        cliente, lento, lambda c: c.post("/api/comprobantes", json={
-            "fecha": "2026-08-15", "razon_social_id": razon,
-            "cliente_id": datos["cliente"], "tipo": "factura_a",
-            "punto_venta": 1, "numero": numero, "orden_ids": [a["id"]],
-        }))
+        cliente, lento, lambda c: c.post(f"/api/pre-facturas/{pf.json()['id']}/facturar"))
 
     assert respuesta.status_code == 201, respuesta.text
     comp = respuesta.json()
-    if donde == "registra":
-        assert comp["numero"] == 7
-    else:
-        assert comp["numero"] == 42, "tenía que ser el último autorizado + 1"
-        assert comp["cae"] == "75123456789012"
+    assert comp["numero"] == 42, "tenía que ser el último autorizado + 1"
+    assert comp["cae"] == "75123456789012"
+    _no_bloqueo(lento, health, fin)
+
+
+def test_generar_la_pre_factura_no_frena_el_loop(cliente, datos, monkeypatch):
+    """Generarla lee las órdenes, la razón social y el emisor, y escribe en la base: todo sincrónico."""
+    lento = _Lento()
+    real = pre_facturas.cargar_ordenes
+
+    def cargar_lento(*args, **kwargs):
+        lento.dormir()
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(pre_facturas, "cargar_ordenes", cargar_lento)
+    a = orden(cliente, datos, "1000.00")
+
+    respuesta, health, fin = _mientras_duerme(cliente, lento, lambda c: c.post("/api/pre-facturas", json={
+        "fecha": "2026-08-15", "razon_social_id": datos["razon"], "cliente_id": datos["cliente"],
+        "tipo": "factura_a", "orden_ids": [a["id"]]}))
+
+    assert respuesta.status_code == 201, respuesta.text
     _no_bloqueo(lento, health, fin)
 
 
@@ -196,7 +210,7 @@ def test_si_arca_rechaza_sigue_sin_quedar_comprobante(cliente, datos, monkeypatc
     monkeypatch.setattr(emision_arca.arca_wsfe, "solicitar_cae", solicitar_cae)
     a = orden(cliente, datos, "1000.00", razon_social_id=razon)
 
-    r = facturar(cliente, datos, [a], razon=razon, numero=None)
+    r = facturar(cliente, datos, [a], razon=razon)
     assert r.status_code == 502, r.text
     assert "ya fue autorizado" in r.json()["detail"]
     assert cliente.get("/api/comprobantes").json() == [], "no puede haber quedado comprobante"
