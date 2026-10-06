@@ -16,7 +16,7 @@ import { ArrowLeft, Receipt } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
-import type { Ensayo } from '@/api/comprobantes'
+import type { AvisoFce, Ensayo } from '@/api/comprobantes'
 import { comprobantes, sumarImportes } from '@/api/comprobantes'
 import type { Opciones, Orden } from '@/api/ordenes'
 import { cargarOpciones, ordenes as apiOrdenes } from '@/api/ordenes'
@@ -137,6 +137,31 @@ export default function FacturarPendientes() {
 
   const set = (c: Partial<Borrador>) => setBorrador((b) => ({ ...b, ...c }))
   const fce = esFce(borrador.tipo)
+
+  // ── El aviso de FCE ──────────────────────────────────────────────────────
+  // ARCA no frena una factura común a un receptor obligado a recibir FCE, y una
+  // factura emitida no se cambia: el aviso tiene que llegar **antes** de emitir.
+  // La regla es del motor; acá sólo se pregunta con lo que se está por facturar.
+  // Es un aviso y no un bloqueo: si no se puede preguntar, no se muestra nada.
+  const [avisoFce, setAvisoFce] = useState<AvisoFce | null>(null)
+  const clienteNumero = clienteId ? Number(clienteId) : null
+  useEffect(() => {
+    setAvisoFce(null)
+    if (clienteNumero == null || razon == null || fce || totalPrevio === '0.00') return
+    let vigente = true
+    // Un respiro: marcar diez órdenes seguidas no tiene que ser diez consultas a ARCA.
+    const espera = setTimeout(() => {
+      comprobantes
+        .fceCorresponde({ razon_social_id: razon, cliente_id: clienteNumero,
+                          total: totalPrevio, fecha: borrador.fecha })
+        .then((r) => {
+          if (vigente && r && typeof r === 'object' && 'disponible' in r) setAvisoFce(r)
+        })
+        .catch(() => { /* es un aviso: si falla, se factura como siempre */ })
+    }, 400)
+    return () => { vigente = false; clearTimeout(espera) }
+  }, [clienteNumero, razon, fce, totalPrevio, borrador.fecha])
+  const correspondeFce = !fce && avisoFce?.disponible === true && avisoFce.corresponde === true
 
   const alternar = (id: number) => setElegidas((previas) => (
     previas.includes(id) ? previas.filter((i) => i !== id) : [...previas, id]
@@ -260,6 +285,34 @@ export default function FacturarPendientes() {
             <dd>{ensayo.cae_vencimiento
                  ? formatearFecha(ensayo.cae_vencimiento) : '—'}</dd>
           </dl>
+        </section>
+      )}
+
+      {correspondeFce && avisoFce && (
+        <section role="status" aria-label="Aviso de FCE"
+                 className="mb-4 rounded border border-amber-500/50 p-4 text-sm">
+          <h2 className="mb-1 font-semibold">
+            A este comprobante le corresponde ser una factura de crédito electrónica
+          </h2>
+          <p className="mb-2 text-muted-foreground">
+            El cliente está obligado a recibir FCE
+            {avisoFce.monto_desde ? ` desde ${formatearImporte(avisoFce.monto_desde)}` : ''}, y
+            este total lo supera. ARCA no frena una factura común, pero una vez emitida no se
+            cambia.
+          </p>
+          {avisoFce.fce_habilitada ? (
+            <Button variant="outline" size="sm" onClick={() => set({
+              tipo: `fce_${borrador.tipo.slice(-1)}`,
+              vencimiento: borrador.vencimiento || masDias(borrador.fecha, 30),
+            })}>
+              Pasar a factura de crédito electrónica
+            </Button>
+          ) : (
+            <p>
+              Esta razón social todavía no puede emitirla: cargá el CBU y la modalidad de
+              transmisión en Configuración → ARCA.
+            </p>
+          )}
         </section>
       )}
 

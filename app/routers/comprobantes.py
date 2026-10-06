@@ -9,9 +9,11 @@ fallaba, el primero ya estaba grabado. Acá el comprobante, el estado de las
 
 import asyncio
 from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
+from libracore import arca_wsfecred
 from libracore.notas_de_credito import NotaNoPermitida
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -112,6 +114,38 @@ def listar(
         .limit(limite).offset(desplazamiento)
     )
     return list(sesion.scalars(consulta))
+
+
+@router.get("/fce/corresponde")
+def fce_corresponde(
+    razon_social_id: int,
+    cliente_id: int,
+    total: Decimal = Query(..., gt=0, description="total del comprobante, con IVA"),
+    fecha: date | None = Query(default=None, description="fecha de emisión; hoy si no viene"),
+    sesion: Session = Depends(obtener_sesion),
+):
+    """¿A este comprobante le corresponde ser FCE? Lo pregunta «Facturar pendientes» **antes de emitir**.
+
+    La regla es del motor (`libracore.arca_wsfecred.corresponde_fce`, ADR-019 de allá): consulta el registro de FCE
+    de ARCA, que no frena una factura común a un receptor obligado. Lo propio de acá es **con qué configuración**:
+    la de la razón social elegida (`configuracion_activa`, que sólo devuelve una si esa razón social emite por ARCA con
+    su CUIT) y el CUIT del cliente. Es un aviso: nunca falla por ARCA (`disponible: false` y el motivo).
+    `fce_habilitada` dice si esta razón social ya puede emitir FCE (emite por ARCA y tiene CBU y modalidad cargados).
+    """
+    if sesion.get(RazonSocial, razon_social_id) is None:
+        raise HTTPException(404, f"no existe la razon social {razon_social_id}")
+    cliente = sesion.get(Tercero, cliente_id)
+    if cliente is None:
+        raise HTTPException(404, f"no existe el tercero {cliente_id}")
+    try:
+        cfg = emision_arca.configuracion_activa(sesion, razon_social_id)
+    except emision_arca.ArcaAmbiguo as e:
+        return {"disponible": False, "motivo": str(e), "fce_habilitada": False}
+    if not "".join(c for c in (cliente.cuit or "") if c.isdigit()):
+        return {"disponible": False, "motivo": "el cliente no tiene CUIT cargado", "fce_habilitada": False}
+    resultado = asyncio.run(arca_wsfecred.corresponde_fce(cfg, cliente.cuit, total, fecha or tiempo.hoy()))
+    habilitada = bool(cfg and cfg.get("fce_cbu") and cfg.get("fce_transmision"))
+    return resultado | {"fce_habilitada": habilitada}
 
 
 @router.get("/{id_}", response_model=ComprobanteConOrdenes)
