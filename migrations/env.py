@@ -42,6 +42,19 @@ target_metadata = Base.metadata
 VERSION_TABLE = "alembic_version_libracargo"
 
 
+def _es_de_este_producto(objeto, nombre, tipo, reflejado, comparado) -> bool:
+    """Lo que `alembic check` y el autogenerate comparan: sólo las tablas de este producto.
+
+    Desde la base unida (ADR-029) en la misma base viven las tablas del motor y las
+    de `libraauth`, que migran sus propias cadenas, y desde la `0016` también
+    `comprobantes_legado`, que ya no tiene modelo (ADR-030). Una tabla que está en
+    la base y no en los modelos de acá no es «un cambio sin migrar»: es de otro.
+    """
+    if tipo == "table" and reflejado and comparado is None:
+        return nombre in target_metadata.tables
+    return True
+
+
 def run_migrations_offline() -> None:
     context.configure(
         url=url,
@@ -64,6 +77,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             version_table=VERSION_TABLE,
+            include_object=_es_de_este_producto,
         )
         with context.begin_transaction():
             context.run_migrations()

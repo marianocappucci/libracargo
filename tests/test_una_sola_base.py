@@ -44,6 +44,15 @@ def test_una_base_de_antes_se_une_y_el_motor_migra_adentro(engine):
     # sin la cadena del motor (la suite crea su schema con el DDL, sin Alembic).
     # Primero se saca la del motor: si otro test ya corrió su cadena, su clave
     # ocupa justo el nombre que hay que recrear.
+    # La base de antes no tiene la `0016` (los comprobantes en `facturas`): se baja
+    # de verdad, porque el rebobinado a mano de abajo sólo cambia el número.
+    previo = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = URL
+    try:
+        command.downgrade(_alembic(), "0015")
+    finally:
+        if previo is not None:
+            os.environ["DATABASE_URL"] = previo
     with engine.begin() as con:
         con.execute(text("DROP TABLE IF EXISTS alembic_version"))
         con.execute(text("ALTER TABLE alembic_version_libracargo "

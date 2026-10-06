@@ -341,21 +341,28 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
         destino, "tipos_carga", ["id", "nombre", "unidad_default", "activo"], filas_tipos)
 
     # ------------------------------------------------------------ comprobantes
+    # Desde la revisión `0016` el comprobante vive en `facturas` del motor, con lo
+    # propio de acá en `comprobantes_cargo` (ADR-030). Los datos fiscales del
+    # cliente y los ítems se completan al final, en SQL, cuando ya están las
+    # órdenes (`completar_facturas`).
     comprobante_de: dict[tuple[str, str], int] = {}
-    filas_comprobantes = []
+    filas_facturas, filas_cargo = [], []
     for f in leer(origen, "facturas"):
-        nuevo = id_de("comprobantes")
+        nuevo = id_de("facturas")
         comprobante_de[(f["factura_nro"], f["factura_razonsocial"])] = nuevo
-        filas_comprobantes.append((
-            nuevo, razon_social_id, "factura_a", 1, int(f["factura_nro"]),
-            fecha(f["factura_fecha"], inferidas, f"factura:{f['factura_nro']}"),
-            tercero_de[("cliente", f["factura_cliente_id"])],
-            importe(f["factura_neto"]), importe(f["factura_iva"]),
-            importe(f["factura_total"]), False,
+        filas_facturas.append((
+            nuevo, 1, 1, int(f["factura_nro"]),
+            fecha(f["factura_fecha"], inferidas, f"factura:{f['factura_nro']}").isoformat(),
+            "[]", importe(f["factura_neto"]), importe(f["factura_iva"]),
+            importe(f["factura_total"]), "produccion"))
+        filas_cargo.append((
+            nuevo, razon_social_id,
+            tercero_de[("cliente", f["factura_cliente_id"])], False,
             f"factura:{f['factura_nro']}:{f['factura_razonsocial']}"))
 
     # ADR-010: las 17 órdenes de agosto 2023 marcadas facturadas y sin factura
-    # entran bajo un comprobante de apertura, con la numeración en cero.
+    # entran bajo un comprobante de apertura. **No es fiscal**, así que no va a
+    # `facturas`: tiene su tabla (decisión 5 del diseño del modelo normalizado).
     huerfanas = origen.execute("""
         SELECT o.carga_id, o.carga_cliente_id, o.carga_importe, o.carga_iva, o.carga_total,
                o.carga_fecha
@@ -367,18 +374,22 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
         ORDER BY o.carga_id::int""").fetchall()
     apertura_id = None
     if huerfanas:
-        apertura_id = id_de("comprobantes")
-        filas_comprobantes.append((
-            apertura_id, razon_social_id, "factura_a", 0, 0,
-            min(date.fromisoformat(h[5][:10]) for h in huerfanas),
-            tercero_de[("cliente", huerfanas[0][1])],
-            sum(importe(h[2]) for h in huerfanas), sum(importe(h[3]) for h in huerfanas),
-            sum(importe(h[4]) for h in huerfanas), False, "apertura"))
+        apertura_id = id_de("comprobante_de_apertura")
+        copiar(destino, "comprobante_de_apertura",
+               ["id", "razon_social_id", "cliente_id", "fecha", "neto", "iva", "total",
+                "origen_legado"],
+               [(apertura_id, razon_social_id, tercero_de[("cliente", huerfanas[0][1])],
+                 min(date.fromisoformat(h[5][:10]) for h in huerfanas),
+                 sum(importe(h[2]) for h in huerfanas), sum(importe(h[3]) for h in huerfanas),
+                 sum(importe(h[4]) for h in huerfanas), "apertura")])
     apertura_de = {h[0] for h in huerfanas}
     conteos["comprobantes"] = copiar(
-        destino, "comprobantes",
-        ["id", "razon_social_id", "tipo", "punto_venta", "numero", "fecha", "cliente_id",
-         "neto", "iva", "total", "anulado", "origen_legado"], filas_comprobantes)
+        destino, "facturas",
+        ["id", "tipo", "punto_venta", "numero", "fecha", "items", "subtotal", "iva_amount",
+         "total", "ambiente"], filas_facturas) + (1 if apertura_id else 0)
+    copiar(destino, "comprobantes_cargo",
+           ["factura_id", "razon_social_id", "cliente_id", "anulado", "origen_legado"],
+           filas_cargo)
 
     # ------------------------------------------------------------------ órdenes
     orden_de: dict[str, int] = {}
@@ -387,8 +398,7 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
         nuevo = id_de("orden_carga")
         orden_de[f["carga_id"]] = nuevo
         comprobante = comprobante_de.get((f.get("carga_factura"), f.get("carga_razonsocial")))
-        if comprobante is None and f["carga_id"] in apertura_de:
-            comprobante = apertura_id
+        apertura = apertura_id if comprobante is None and f["carga_id"] in apertura_de else None
         # ADR-014: la cantidad que no es un número va a `cantidad_legado`, con
         # `cantidad` en nulo. Interpretar "832.23 x 6988.46" sería adivinar.
         cantidad = numero(f.get("carga_cantidad"))
@@ -405,17 +415,19 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
             None if cantidad is not None else texto(f.get("carga_cantidad"), 40),
             importe(f["carga_importe"]), Decimal("21.00"), importe(f["carga_iva"]),
             importe(f["carga_total"]), importe(f["carga_comision"]),
-            "facturada" if comprobante else "pendiente",
+            "facturada" if (comprobante or apertura) else "pendiente",
             # ADR-013: el `0` no crea una segunda razón social. Las que no están
             # facturadas y lo llevan entran sin razón social, que el modelo admite.
-            razon_social_id if (f.get("carga_razonsocial") == "1" or comprobante) else None,
-            comprobante, None, f"carga:{f['carga_id']}"))
+            razon_social_id if (f.get("carga_razonsocial") == "1" or comprobante or apertura)
+            else None,
+            comprobante, apertura, None, f"carga:{f['carga_id']}"))
     conteos["orden_carga"] = copiar(
         destino, "ordenes_carga",
         ["id", "fecha", "cliente_id", "origen_id", "destino_id", "fletero_id", "chofer_id",
          "vehiculo_id", "tipo_carga_id", "remito", "cantidad", "unidad", "cantidad_legado",
          "tarifa", "alicuota_iva", "iva", "total", "comision", "estado", "razon_social_id",
-         "comprobante_id", "observaciones", "origen_legado"], filas_ordenes)
+         "comprobante_id", "apertura_id", "observaciones", "origen_legado"], filas_ordenes)
+    completar_facturas(destino)
 
     # --------------------------------------------------------------------- caja
     # El tercero de cada novedad **no se adivina por el tipo**: sale de la fila
@@ -514,12 +526,41 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
     # Los ids los puso el contador, así que la secuencia sigue en 1: el primer
     # alta del sistema nuevo chocaría contra la clave primaria de la fila 1.
     for tabla in ("razones_sociales", "terceros", "localidades", "choferes", "vehiculos",
-                  "tipos_carga", "comprobantes", "ordenes_carga", "movimientos_caja",
+                  "tipos_carga", "facturas", "comprobante_de_apertura", "ordenes_carga",
+                  "movimientos_caja",
                   "movimientos_cuenta", "auditoria"):
         destino.execute(
             f"SELECT setval(pg_get_serial_sequence('{tabla}', 'id'), "
             f"coalesce((SELECT max(id) FROM {tabla}), 1))")
     return conteos
+
+
+def completar_facturas(destino) -> None:
+    """Lo que cada fila de `facturas` necesita y sólo se sabe con las órdenes cargadas.
+
+    - Los datos fiscales del receptor, copiados de `terceros` como hace el motor al emitir.
+    - Los ítems, uno por orden, con la forma de ítem de la familia (la que lee el PDF del
+      motor). Es la misma que arma `app.servicios.comprobantes.items_de`.
+    """
+    destino.execute("""
+        UPDATE facturas f SET
+            cliente_cuit = coalesce(t.cuit, ''), cliente_razon = t.razon_social,
+            cliente_domicilio = coalesce(t.direccion, ''),
+            cliente_iva_cond = CASE t.condicion_iva::text
+                WHEN 'responsable_inscripto' THEN 1 WHEN 'monotributo' THEN 6
+                WHEN 'exento' THEN 4 WHEN 'consumidor_final' THEN 5 ELSE 0 END
+        FROM comprobantes_cargo cc JOIN terceros t ON t.id = cc.cliente_id
+        WHERE cc.factura_id = f.id""")
+    destino.execute("""
+        UPDATE facturas f SET items = coalesce((
+            SELECT json_agg(json_build_object(
+                       'description', 'Flete',
+                       'detalle', 'Orden ' || o.id || ' del ' || to_char(o.fecha, 'DD/MM/YYYY')
+                                  || coalesce(', remito ' || o.remito, ''),
+                       'qty', 1, 'unit_price', o.tarifa, 'subtotal', o.tarifa,
+                       'iva_pct', o.alicuota_iva) ORDER BY o.fecha, o.id)::text
+            FROM ordenes_carga o WHERE o.comprobante_id = f.id), '[]')
+        WHERE EXISTS (SELECT 1 FROM comprobantes_cargo cc WHERE cc.factura_id = f.id)""")
 
 
 def fechas_inferidas(origen) -> dict[str, date]:

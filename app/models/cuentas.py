@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -22,6 +23,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Auditable, Base
 from app.models.enums import MedioPago, RolCuenta, TipoMovimientoCaja
+from app.models.operacion import facturas
 
 
 class MovimientoCaja(Base, Auditable):
@@ -114,8 +116,12 @@ class MovimientoCuenta(Base, Auditable):
     orden_id: Mapped[int | None] = mapped_column(
         ForeignKey("ordenes_carga.id", ondelete="RESTRICT"), nullable=True
     )
+    #: El comprobante del asiento, que desde la revisión `0016` es una fila de
+    #: `facturas` del motor (ver `app/models/operacion.py`).
     comprobante_id: Mapped[int | None] = mapped_column(
-        ForeignKey("comprobantes.id", ondelete="RESTRICT"), nullable=True
+        BigInteger, ForeignKey(facturas.c.id, ondelete="RESTRICT",
+                               name="fk_movimientos_cuenta_comprobante"),
+        nullable=True,
     )
     movimiento_caja_id: Mapped[int | None] = mapped_column(
         ForeignKey("movimientos_caja.id", ondelete="RESTRICT"), nullable=True

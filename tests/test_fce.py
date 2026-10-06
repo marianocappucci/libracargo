@@ -12,11 +12,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from libracore import arca_wsfe
-from sqlalchemy.exc import IntegrityError
 
-from app.models import Comprobante, RazonSocial, Tercero, TipoComprobante
+from app.models import RazonSocial, Tercero, TipoComprobante
 from app.models.enums import CondicionIVA
-from app.servicios import emision_arca
+from app.servicios import comprobantes, emision_arca
 from tests.conftest import _crear
 from tests.test_comprobantes import orden
 from tests.test_emision_arca import CUIT, _arca_responde, _configurar_arca
@@ -330,6 +329,7 @@ def test_una_fce_sin_cbu_cargado_dice_que_cargar(cliente, datos, monkeypatch):
 # ── La base ─────────────────────────────────────────────────────────────────
 
 def _comprobante(sesion, **campos):
+    """Un comprobante creado por la única puerta que tiene (`servicios.comprobantes.crear`)."""
     razon = RazonSocial(nombre="Suitrans", punto_venta=1, codigo_legado=1)
     cli = Tercero(razon_social="ACOPIO SUR SA", es_cliente=True,
                   condicion_iva=CondicionIVA.RESPONSABLE_INSCRIPTO)
@@ -337,24 +337,24 @@ def _comprobante(sesion, **campos):
     sesion.commit()
     base = dict(razon_social_id=razon.id, tipo=TipoComprobante.FCE_A, punto_venta=1,
                 numero=1, fecha=date(2026, 8, 15), cliente_id=cli.id,
-                neto=Decimal("100"), iva=Decimal("21"), total=Decimal("121"))
-    return Comprobante(**{**base, **campos})
+                neto=Decimal("100"), iva=Decimal("21"), total=Decimal("121"), items=[])
+    return comprobantes.crear(sesion, **{**base, **campos})
 
 
-def test_la_base_no_admite_una_fce_sin_vencimiento_de_pago(sesion):
-    sesion.add(_comprobante(sesion))
-    with pytest.raises(IntegrityError, match="ck_comprobantes_fce_vencimiento"):
-        sesion.commit()
+def test_no_se_crea_una_fce_sin_vencimiento_de_pago(sesion):
+    """Era un CHECK de la tabla propia; `facturas` no lo tiene, así que lo dice `crear` (ADR-030)."""
+    with pytest.raises(ValueError, match="vencimiento de pago"):
+        _comprobante(sesion)
 
 
-def test_la_base_admite_una_fce_con_vencimiento_y_una_factura_comun_sin_el(sesion):
+def test_se_crea_una_fce_con_vencimiento_y_una_factura_comun_sin_el(sesion):
     fce = _comprobante(sesion, fch_vto_pago=date(2026, 9, 14), fce_cbu=CBU, fce_transmision="SCA")
-    sesion.add(fce)
     sesion.commit()
-    sesion.add(Comprobante(
-        razon_social_id=fce.razon_social_id, tipo=TipoComprobante.FACTURA_A, punto_venta=1,
+    assert (fce.fch_vto_pago, fce.fce_cbu, fce.fce_transmision) == (date(2026, 9, 14), CBU, "SCA")
+    comprobantes.crear(
+        sesion, razon_social_id=fce.razon_social_id, tipo=TipoComprobante.FACTURA_A, punto_venta=1,
         numero=2, fecha=date(2026, 8, 15), cliente_id=fce.cliente_id,
-        neto=Decimal("1"), iva=Decimal("0.21"), total=Decimal("1.21")))
+        neto=Decimal("1"), iva=Decimal("0.21"), total=Decimal("1.21"), items=[])
     sesion.commit()
 
 
