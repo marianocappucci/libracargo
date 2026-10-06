@@ -296,4 +296,68 @@ describe('Facturar pendientes', () => {
 
     expect(screen.queryByRole('status', { name: 'Resultado del ensayo' })).toBeNull()
   })
+
+  describe('el aviso de FCE', () => {
+    /** Las respuestas de siempre, más la del aviso. Anota con qué se preguntó. */
+    function conAviso(aviso: unknown, ordenes: unknown[] = [orden(1, { total: '5000000.00' })]) {
+      const preguntas: string[] = []
+      get.mockImplementation((ruta?: string) => {
+        if (!ruta) return Promise.resolve([])
+        if (ruta.startsWith('/api/comprobantes/fce/corresponde')) {
+          preguntas.push(ruta)
+          return Promise.resolve(aviso)
+        }
+        if (ruta.startsWith('/api/ordenes')) return Promise.resolve(ordenes)
+        if (ruta.startsWith('/api/terceros')) return Promise.resolve(TERCEROS)
+        if (ruta.startsWith('/api/razones-sociales')) return Promise.resolve(RAZONES)
+        return Promise.resolve([])
+      })
+      return preguntas
+    }
+
+    it('avisa antes de emitir, con lo que se está por facturar, y ofrece pasar a FCE', async () => {
+      const preguntas = conAviso({ disponible: true, corresponde: true, obligado: true,
+                                   monto_desde: '3958316', fce_habilitada: true })
+      await abrir()
+      await waitFor(() => expect(casilla(1)).toBeInTheDocument())
+      fireEvent.click(casilla(1))
+
+      const aviso = await screen.findByRole('status', { name: 'Aviso de FCE' }, { timeout: 2000 })
+      expect(aviso).toHaveTextContent('le corresponde ser una factura de crédito electrónica')
+      const pregunta = new URLSearchParams(preguntas.at(-1)!.split('?')[1])
+      expect(Object.fromEntries(pregunta)).toMatchObject(
+        { razon_social_id: '5', cliente_id: '1', total: '5000000.00' })
+
+      fireEvent.click(screen.getByText('Pasar a factura de crédito electrónica'))
+      expect((screen.getByLabelText('Tipo') as HTMLSelectElement).value).toBe('fce_a')
+      // Ya es FCE: el aviso se va, y aparece el vencimiento de pago propuesto.
+      expect(screen.queryByRole('status', { name: 'Aviso de FCE' })).toBeNull()
+      expect(screen.getByLabelText('Vencimiento de pago')).toBeInTheDocument()
+    })
+
+    it('si la razón social no puede emitir FCE, dice qué cargar', async () => {
+      conAviso({ disponible: true, corresponde: true, monto_desde: '3958316', fce_habilitada: false })
+      await abrir()
+      await waitFor(() => expect(casilla(1)).toBeInTheDocument())
+      fireEvent.click(casilla(1))
+
+      const aviso = await screen.findByRole('status', { name: 'Aviso de FCE' }, { timeout: 2000 })
+      expect(aviso).toHaveTextContent('cargá el CBU y la modalidad')
+      expect(screen.queryByText('Pasar a factura de crédito electrónica')).toBeNull()
+    })
+
+    it.each([
+      ['no corresponde', { disponible: true, corresponde: false, fce_habilitada: true }],
+      ['no se pudo preguntar', { disponible: false, motivo: 'ARCA no contestó', fce_habilitada: false }],
+    ])('si %s, no muestra nada y no frena', async (_caso, respuesta) => {
+      const preguntas = conAviso(respuesta)
+      await abrir()
+      await waitFor(() => expect(casilla(1)).toBeInTheDocument())
+      fireEvent.change(screen.getByLabelText('Número'), { target: { value: '7' } })
+      fireEvent.click(casilla(1))
+      await waitFor(() => expect(preguntas.length).toBeGreaterThan(0), { timeout: 2000 })
+      expect(screen.queryByRole('status', { name: 'Aviso de FCE' })).toBeNull()
+      expect(screen.getByText('Facturar')).toBeEnabled()
+    })
+  })
 })
