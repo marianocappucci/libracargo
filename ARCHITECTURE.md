@@ -38,8 +38,11 @@ sistema legado tenía cero FK y dos índices fuera de las claves primarias.
   CUIT de la razón social. El comprobante de apertura del legado, que no es
   fiscal, está en `comprobante_de_apertura`. La tabla vieja quedó como
   `comprobantes_legado`, de sólo lectura.
-- **`movimientos_cuenta`** — las tres cuentas corrientes, con `debe`/`haber` y
-  descripción sin límite de largo. Sin saldo materializado: se suma con índice.
+- **La cuenta corriente vive en `cc_asientos`**, el libro de terceros del motor
+  (ADR-031): las tres cuentas —cliente, fletero, proveedor— con `debe`/`haber` y
+  descripción sin límite de largo, y lo propio (orden, cobro, gasto) en
+  `movimientos_cuenta_cargo`. Sin saldo materializado: se suma con índice. La
+  tabla vieja quedó como `movimientos_cuenta_legado`, de sólo lectura.
 - **`movimientos_caja`** — cobros y pagos, con contrapartida en la misma
   transacción.
 - **`auditoria`** — qué cambió, en `JSONB`, no sólo que algo pasó.

@@ -100,7 +100,21 @@ def test_upgrade_downgrade_upgrade(base_limpia):
             )).scalar_one()
         eng.dispose()
         cfg = _alembic(base_limpia)
+        # Hasta la `0017`: la `0018` borra las tablas viejas y no tiene vuelta atrás
+        # (se vuelve restaurando el respaldo, como en el motor). Que se niegue a bajar
+        # también se mide, abajo.
         command.upgrade(cfg, "head")
+        with pytest.raises(NotImplementedError, match="restaurar el respaldo"):
+            command.downgrade(cfg, "0017")
+        eng_vacia = create_engine(base_limpia)
+        with eng_vacia.begin() as con:
+            con.execute(text("DROP SCHEMA public CASCADE"))
+            con.execute(text("CREATE SCHEMA public"))
+        eng_vacia.dispose()
+        with conectar(base_limpia) as conn:
+            init_core_schema(conn)
+            conn.commit()
+        command.upgrade(cfg, "0017")
         command.downgrade(cfg, "base")
 
         eng = create_engine(base_limpia)
@@ -129,7 +143,11 @@ def test_upgrade_downgrade_upgrade(base_limpia):
         # y no son de esta cadena: se cuentan aparte. Subió a 16 con la `0016`
         # (`comprobantes_cargo` y `comprobante_de_apertura`; `comprobantes` sigue,
         # como `comprobantes_legado`).
-        assert tablas - del_motor == 16
+        # Y a 17 con la `0017` (`movimientos_cuenta_cargo`; `movimientos_cuenta`
+        # sigue, como `movimientos_cuenta_legado`).
+        # Y volvió a 15 con la `0018`, que borra `comprobantes_legado` y
+        # `movimientos_cuenta_legado`.
+        assert tablas - del_motor == 15
         eng.dispose()
     finally:
         if original:
@@ -441,7 +459,9 @@ def test_la_0009_convierte_el_gasto_del_legado_sin_mover_el_saldo(base_limpia):
                     "from movimientos_cuenta group by tercero_id")).all())
 
         antes = saldos()
-        command.upgrade(cfg, "head")
+        # Hasta la `0016`: desde la `0017` la cuenta vive en `cc_asientos` del motor,
+        # y lo que se mide acá es la conversión de la `0009`.
+        command.upgrade(cfg, "0016")
         despues = saldos()
 
         # Lo que importa: los saldos, idénticos.

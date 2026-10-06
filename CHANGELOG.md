@@ -6,6 +6,10 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Agregado
 
+- **La cuenta corriente vive en el libro de terceros del motor** (ADR-031). Cada asiento es una fila de `cc_asientos` de LibraCore, y lo propio (orden, cobro, gasto) va en `movimientos_cuenta_cargo`. Asienta, corrige y borra el motor, en la misma transacción que el documento.
+  - **Revisión `0017`**: copia `movimientos_cuenta` a `cc_asientos` con el mismo id, pone la FK del tercero y deja la tabla vieja como `movimientos_cuenta_legado`. Pide libracore v1.136.0 o posterior.
+  - La API, las pantallas y los saldos no cambian.
+
 - **Aviso de FCE en «Facturar pendientes».** Antes de emitir, la pantalla pregunta si a ese comprobante le corresponde ser una factura de crédito electrónica (`GET /api/comprobantes/fce/corresponde`). Consulta el registro de FCE de ARCA con la regla del motor (`arca_wsfecred.corresponde_fce`, ADR-019 de LibraCore) y la configuración de la razón social elegida. Si corresponde, avisa y ofrece pasar a FCE, o dice qué cargar si la razón social todavía no puede emitirla. Es un aviso: nunca frena ni falla por ARCA.
 
 - **El comprobante vive en `facturas` del motor** (ADR-030). Deja de haber un modelo de comprobantes propio: cada comprobante es una fila de `facturas`, con lo propio del producto en `comprobantes_cargo`. Lo crea y le guarda el CAE el motor, dentro de la misma transacción que las órdenes y la cuenta corriente.

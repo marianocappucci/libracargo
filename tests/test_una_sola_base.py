@@ -21,7 +21,7 @@ from alembic import command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import text
 
-from tests.conftest import URL
+from tests.conftest import URL, rearmar_en
 
 RAIZ = Path(__file__).resolve().parents[1]
 
@@ -49,7 +49,8 @@ def test_una_base_de_antes_se_une_y_el_motor_migra_adentro(engine):
     previo = os.environ.get("DATABASE_URL")
     os.environ["DATABASE_URL"] = URL
     try:
-        command.downgrade(_alembic(), "0015")
+        # Desde la `0018` bajar no tiene vuelta: la base «de antes» se arma de cero.
+        rearmar_en("0015")
     finally:
         if previo is not None:
             os.environ["DATABASE_URL"] = previo
@@ -93,7 +94,7 @@ def test_la_0015_no_hace_nada_si_la_clave_ya_tiene_su_nombre(engine):
     previo = os.environ.get("DATABASE_URL")
     os.environ["DATABASE_URL"] = URL
     try:
-        command.downgrade(_alembic(), "0014")
+        rearmar_en("0014")
         command.upgrade(_alembic(), "head")
     finally:
         if previo is not None:

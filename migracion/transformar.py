@@ -473,7 +473,10 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
          "medio_pago", "recibo", "origen_legado"], filas_caja)
 
     # ---------------------------------------------------------- cuentas corrientes
-    filas_cuenta = []
+    # Desde la revisión `0017` la cuenta vive en `cc_asientos`, el libro de terceros
+    # del motor, con lo propio de acá (orden y cobro) en `movimientos_cuenta_cargo`
+    # (ADR-031). El comprobante es una fila de `facturas` (`factura_id`).
+    filas_cuenta, filas_cuenta_cargo = [], []
     cuentas = [
         ("clientectacte", "clientectacte", "cliente", "clientectacte_cliente_id"),
         ("fleteroctacte", "fletectacte", "fletero", "fletectacte_fletero_id"),
@@ -484,22 +487,26 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
             debe, haber, nota = asiento(f.get(f"{prefijo}_importe1"), f.get(f"{prefijo}_importe2"))
             partes = [texto(f.get(f"{prefijo}_descripcion")), nota]
             id_legado = f[f"{prefijo}_id"]
+            nuevo = id_de("cc_asientos")
             filas_cuenta.append((
-                id_de("movimientos_cuenta"),
-                fecha(f[f"{prefijo}_fecha"], inferidas, f"{tabla}:{id_legado}"),
+                nuevo,
+                fecha(f[f"{prefijo}_fecha"], inferidas, f"{tabla}:{id_legado}").isoformat(),
                 tercero_de[(rol, f[columna_tercero])], rol,
                 texto(f.get(f"{prefijo}_tipo_mov") or f.get(f"{prefijo}_tipo"), 120)
                 or "Movimiento",
                 " · ".join(p for p in partes if p) or None,
                 debe, haber,
-                orden_de.get(f.get(f"{prefijo}_carga_id")),
                 comprobante_de.get((f.get(f"{prefijo}_factura"), "1")),
-                caja_de.get(f.get(f"{prefijo}_novedad_id")),
                 f"{tabla}:{id_legado}"))
+            filas_cuenta_cargo.append((
+                nuevo, orden_de.get(f.get(f"{prefijo}_carga_id")),
+                caja_de.get(f.get(f"{prefijo}_novedad_id"))))
     conteos["movimientos_cuenta"] = copiar(
-        destino, "movimientos_cuenta",
+        destino, "cc_asientos",
         ["id", "fecha", "tercero_id", "rol", "concepto", "descripcion", "debe", "haber",
-         "orden_id", "comprobante_id", "movimiento_caja_id", "origen_legado"], filas_cuenta)
+         "factura_id", "origen_legado"], filas_cuenta)
+    copiar(destino, "movimientos_cuenta_cargo",
+           ["asiento_id", "orden_id", "movimiento_caja_id"], filas_cuenta_cargo)
 
     # --------------------------------------------------------------- auditoría
     filas_auditoria = []
@@ -528,7 +535,7 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
     for tabla in ("razones_sociales", "terceros", "localidades", "choferes", "vehiculos",
                   "tipos_carga", "facturas", "comprobante_de_apertura", "ordenes_carga",
                   "movimientos_caja",
-                  "movimientos_cuenta", "auditoria"):
+                  "cc_asientos", "auditoria"):
         destino.execute(
             f"SELECT setval(pg_get_serial_sequence('{tabla}', 'id'), "
             f"coalesce((SELECT max(id) FROM {tabla}), 1))")

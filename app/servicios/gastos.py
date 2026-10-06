@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.models.cuentas import MovimientoCuenta
 from app.models.enums import RolCuenta
 from app.models.operacion import GastoDeProveedor
+from app.servicios import cuentas
 
 CERO = Decimal("0.00")
 
@@ -53,31 +54,29 @@ def sincronizar(sesion: Session, gasto: GastoDeProveedor) -> None:
 
     proveedor = existentes.get(RolCuenta.PROVEEDOR)
     if proveedor is None:
-        sesion.add(MovimientoCuenta(
+        cuentas.asentar(
+            sesion,
             fecha=gasto.fecha, tercero_id=gasto.proveedor_id, rol=RolCuenta.PROVEEDOR,
             concepto=_concepto(gasto), descripcion=gasto.descripcion,
             debe=gasto.importe, haber=CERO, gasto_id=gasto.id,
-        ))
+        )
     else:
-        proveedor.fecha = gasto.fecha
-        proveedor.tercero_id = gasto.proveedor_id
-        proveedor.concepto = _concepto(gasto)
-        proveedor.descripcion = gasto.descripcion
-        proveedor.debe = gasto.importe
+        cuentas.corregir(sesion, proveedor, fecha=gasto.fecha, tercero_id=gasto.proveedor_id,
+                         concepto=_concepto(gasto), descripcion=gasto.descripcion,
+                         debe=gasto.importe)
 
     fletero = existentes.get(RolCuenta.FLETERO)
     if fletero is None:
-        sesion.add(MovimientoCuenta(
+        cuentas.asentar(
+            sesion,
             fecha=gasto.fecha, tercero_id=gasto.fletero_id, rol=RolCuenta.FLETERO,
             concepto=_concepto(gasto), descripcion=gasto.descripcion,
             debe=CERO, haber=gasto.importe, gasto_id=gasto.id,
-        ))
+        )
     else:
-        fletero.fecha = gasto.fecha
-        fletero.tercero_id = gasto.fletero_id
-        fletero.concepto = _concepto(gasto)
-        fletero.descripcion = gasto.descripcion
-        fletero.haber = gasto.importe
+        cuentas.corregir(sesion, fletero, fecha=gasto.fecha, tercero_id=gasto.fletero_id,
+                         concepto=_concepto(gasto), descripcion=gasto.descripcion,
+                         haber=gasto.importe)
 
 
 def revertir(sesion: Session, gasto: GastoDeProveedor) -> None:
@@ -92,8 +91,9 @@ def revertir(sesion: Session, gasto: GastoDeProveedor) -> None:
     for movimiento in asientos_de(sesion, gasto):
         # Se invierten las columnas: el debe del proveedor se cancela con un
         # haber, y el haber del fletero con un debe.
-        sesion.add(MovimientoCuenta(
+        cuentas.asentar(
+            sesion,
             fecha=gasto.fecha, tercero_id=movimiento.tercero_id, rol=movimiento.rol,
             concepto=f"Anulación gasto {gasto.id}", descripcion=movimiento.descripcion,
             debe=movimiento.haber, haber=movimiento.debe, gasto_id=gasto.id,
-        ))
+        )
