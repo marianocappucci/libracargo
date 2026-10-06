@@ -26,11 +26,10 @@ from libracore import notas_de_credito as motor
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.cuentas import MovimientoCuenta
 from app.models.enums import CODIGO_ARCA, TIPO_DE_CODIGO, EstadoOrden, RolCuenta
 from app.models.maestros import Tercero
 from app.models.operacion import Comprobante, OrdenCarga
-from app.servicios import comprobantes, emision_arca
+from app.servicios import comprobantes, cuentas, emision_arca
 from app.servicios.comprobantes import etiqueta
 
 log = logging.getLogger(__name__)
@@ -179,14 +178,15 @@ def cerrar_lo_propio(sesion: Session, original: Comprobante, nota: Comprobante) 
             orden.comprobante_id = None
             orden.estado = EstadoOrden.PENDIENTE
         original.anulado = True
-    sesion.add(MovimientoCuenta(
+    cuentas.asentar(
+        sesion,
         fecha=nota.fecha, tercero_id=nota.cliente_id, rol=RolCuenta.CLIENTE,
         concepto=f"{etiqueta(nota.tipo, nota.punto_venta, nota.numero)} s/ "
                  f"{etiqueta(original.tipo, original.punto_venta, original.numero)}",
         descripcion=("Ordenes " + ", ".join(str(o.id) for o in ordenes)) if ordenes
                     else (nota.motivo or "Nota de credito parcial"),
         debe=0, haber=nota.total, comprobante_id=nota.id,
-    ))
+    )
     return ordenes
 
 

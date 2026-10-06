@@ -11,6 +11,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from libracore.db.libro_de_terceros import AsientoInvalido
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
@@ -25,7 +26,7 @@ from app.models import (
     Tercero,
     TipoComprobante,
 )
-from app.servicios import comprobantes
+from app.servicios import comprobantes, cuentas
 
 
 def _cliente(sesion, nombre="ACOPIO SUR SA"):
@@ -69,10 +70,11 @@ def test_un_importe_realista_se_guarda_exacto(sesion, importe):
     """
     valor = Decimal(importe)
     cliente = _cliente(sesion)
-    sesion.add(MovimientoCuenta(
+    cuentas.asentar(
+        sesion,
         fecha=date(2026, 1, 1), tercero_id=cliente.id, rol=RolCuenta.CLIENTE,
         concepto="flete", debe=valor, haber=Decimal("0"),
-    ))
+    )
     sesion.commit()
 
     guardado = sesion.execute(select(MovimientoCuenta.debe)).scalar_one()
@@ -94,10 +96,11 @@ def test_la_suma_de_una_cuenta_corriente_no_deriva(sesion):
     """
     cliente = _cliente(sesion)
     for _ in range(1000):
-        sesion.add(MovimientoCuenta(
+        cuentas.asentar(
+            sesion,
             fecha=date(2026, 1, 1), tercero_id=cliente.id, rol=RolCuenta.CLIENTE,
             concepto="prueba", debe=Decimal("0.10"), haber=Decimal("0"),
-        ))
+        )
     sesion.commit()
 
     total = sesion.execute(
@@ -116,35 +119,43 @@ def test_la_suma_de_una_cuenta_corriente_no_deriva(sesion):
 
 
 def test_un_asiento_mueve_debe_o_haber_pero_no_los_dos(sesion):
+    """Desde la `0017` lo dice el libro del motor, y su base lo sostiene (ADR-031)."""
     cliente = _cliente(sesion)
-    sesion.add(MovimientoCuenta(
-        fecha=date(2026, 1, 1), tercero_id=cliente.id, rol=RolCuenta.CLIENTE,
-        concepto="mal", debe=Decimal("10"), haber=Decimal("10"),
-    ))
-    with pytest.raises(IntegrityError, match="ck_cuenta_debe_o_haber"):
-        sesion.commit()
+    with pytest.raises(AsientoInvalido):
+        cuentas.asentar(
+            sesion,
+            fecha=date(2026, 1, 1), tercero_id=cliente.id, rol=RolCuenta.CLIENTE,
+            concepto="mal", debe=Decimal("10"), haber=Decimal("10"),
+        )
+    with pytest.raises(IntegrityError, match="cc_asientos_check"):
+        sesion.execute(text(
+            "INSERT INTO cc_asientos (fecha, tercero_id, rol, concepto, debe, haber) "
+            "VALUES ('2026-01-01', :t, 'cliente', 'mal', 10, 10)"), {"t": cliente.id})
 
 
 def test_un_asiento_en_cero_tampoco_entra(sesion):
     cliente = _cliente(sesion)
-    sesion.add(MovimientoCuenta(
-        fecha=date(2026, 1, 1), tercero_id=cliente.id, rol=RolCuenta.CLIENTE,
-        concepto="vacio", debe=Decimal("0"), haber=Decimal("0"),
-    ))
-    with pytest.raises(IntegrityError, match="ck_cuenta_debe_o_haber"):
-        sesion.commit()
+    with pytest.raises(AsientoInvalido):
+        cuentas.asentar(
+            sesion,
+            fecha=date(2026, 1, 1), tercero_id=cliente.id, rol=RolCuenta.CLIENTE,
+            concepto="vacio", debe=Decimal("0"), haber=Decimal("0"),
+        )
 
 
 # ------------------------------------------------- integridad referencial
 
 def test_un_movimiento_no_puede_quedar_huerfano(sesion):
-    """El legado no tenía una sola FK: nada impedía un movimiento sin tercero."""
-    sesion.add(MovimientoCuenta(
-        fecha=date(2026, 1, 1), tercero_id=99999, rol=RolCuenta.CLIENTE,
-        concepto="huerfano", debe=Decimal("10"), haber=Decimal("0"),
-    ))
-    with pytest.raises(IntegrityError):
-        sesion.commit()
+    """El legado no tenía una sola FK: nada impedía un movimiento sin tercero.
+
+    El motor no la declara (el tercero es del producto): la pone la `0017` sobre
+    `cc_asientos.tercero_id` (`fk_cc_asientos_tercero_libracargo`)."""
+    with pytest.raises(Exception, match="fk_cc_asientos_tercero_libracargo"):
+        cuentas.asentar(
+            sesion,
+            fecha=date(2026, 1, 1), tercero_id=99999, rol=RolCuenta.CLIENTE,
+            concepto="huerfano", debe=Decimal("10"), haber=Decimal("0"),
+        )
 
 
 def test_un_tercero_necesita_al_menos_un_rol(sesion):
@@ -160,10 +171,11 @@ def test_el_mismo_tercero_puede_ser_fletero_y_proveedor(sesion):
     sesion.commit()
 
     for rol in (RolCuenta.FLETERO, RolCuenta.PROVEEDOR):
-        sesion.add(MovimientoCuenta(
+        cuentas.asentar(
+            sesion,
             fecha=date(2026, 1, 1), tercero_id=t.id, rol=rol,
             concepto="flete", debe=Decimal("0"), haber=Decimal("1000.50"),
-        ))
+        )
     sesion.commit()
 
     saldos = dict(sesion.execute(
@@ -263,11 +275,12 @@ def test_la_descripcion_no_se_trunca(sesion):
     larga = "SUIPACHA - BAHIA BLANCA - 30000 - CEREAL A GRANEL - 0001-00012345"
     assert len(larga) > 50
 
-    sesion.add(MovimientoCuenta(
+    cuentas.asentar(
+        sesion,
         fecha=date(2026, 1, 1), tercero_id=cliente.id, rol=RolCuenta.CLIENTE,
         concepto="flete", descripcion=larga,
         debe=Decimal("0"), haber=Decimal("1"),
-    ))
+    )
     sesion.commit()
 
     guardada = sesion.execute(select(MovimientoCuenta.descripcion)).scalar_one()

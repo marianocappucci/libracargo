@@ -22,7 +22,6 @@ from sqlalchemy.orm import Session
 from app import tiempo
 from app.auth import get_current_user, require_staff
 from app.db import obtener_sesion
-from app.models.cuentas import MovimientoCuenta
 from app.models.enums import (
     AccionAuditoria,
     EstadoOrden,
@@ -41,7 +40,7 @@ from app.schemas.comprobantes import (
     NotaDeCreditoIn,
     TotalDeRazonSocial,
 )
-from app.servicios import auditoria, comprobantes, emision_arca, notas_de_credito
+from app.servicios import auditoria, comprobantes, cuentas, emision_arca, notas_de_credito
 from app.servicios.comprobantes import (
     TIPOS_NOTA,
     etiqueta,
@@ -365,7 +364,8 @@ def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
             # ya tenían una, la conservan — el chequeo de arriba garantiza que
             # es la misma.
             orden.razon_social_id = datos.razon_social_id
-        sesion.add(MovimientoCuenta(
+        cuentas.asentar(
+            sesion,
             fecha=datos.fecha, tercero_id=datos.cliente_id, rol=RolCuenta.CLIENTE,
             # El numero REAL, no el del payload: cuando emite ARCA el del
             # payload viene vacio, y la cuenta corriente nombraria un
@@ -373,7 +373,7 @@ def facturar(datos: FacturarIn, sesion: Session = Depends(obtener_sesion),
             concepto=etiqueta(datos.tipo, punto_venta, numero),
             descripcion="Ordenes " + ", ".join(str(o.id) for o in ordenes),
             debe=suma.total, haber=0, comprobante_id=comprobante.id,
-        ))
+        )
         if emite:
             # Adentro de la transaccion a proposito: si ARCA rechaza, el
             # `commit` NUNCA ocurre y el comprobante no existe --- las ordenes
@@ -473,14 +473,15 @@ def anular(id_: int, sesion: Session = Depends(obtener_sesion),
     # El rastro lo deja el motor, que además lo saca del libro IVA (ADR-022 de LibraCore).
     usuario_id = int(actual["id"]) if str(actual.get("id", "")).isdigit() else None
     comprobantes.anular(sesion, comprobante, usuario_id=usuario_id)
-    sesion.add(MovimientoCuenta(
+    cuentas.asentar(
+        sesion,
         fecha=comprobante.fecha, tercero_id=comprobante.cliente_id,
         rol=RolCuenta.CLIENTE,
         concepto="Anulacion " + etiqueta(
             comprobante.tipo, comprobante.punto_venta, comprobante.numero),
         descripcion="Ordenes " + ", ".join(str(o.id) for o in ordenes),
         debe=0, haber=comprobante.total, comprobante_id=comprobante.id,
-    ))
+    )
     auditoria.registrar(sesion, actual, "comprobante", comprobante.id,
                         AccionAuditoria.BAJA, antes=antes, despues=comprobante)
     try:

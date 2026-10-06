@@ -362,13 +362,13 @@ def test_el_signo_negativo_cambia_de_columna_y_el_saldo_no(migrado):
     """
     con, _, _ = migrado
     debe, haber, descripcion = con.execute(
-        "SELECT debe, haber, descripcion FROM movimientos_cuenta "
+        "SELECT debe, haber, descripcion FROM cc_asientos "
         "WHERE origen_legado = 'clientectacte:4'").fetchone()
     assert (debe, haber) == (Decimal("5000.00"), Decimal("0.00"))
     assert "signo normalizado" in descripcion
 
     saldo = con.execute("""
-        SELECT sum(debe) - sum(haber) FROM movimientos_cuenta m
+        SELECT sum(debe) - sum(haber) FROM cc_asientos m
         JOIN terceros t ON t.id = m.tercero_id
         WHERE t.origen_legado = 'cliente:1' AND m.rol = 'cliente'""").fetchone()[0]
     assert saldo == Decimal("1028450.00")
@@ -383,9 +383,10 @@ def test_la_fecha_en_cero_sale_de_la_contrapartida_y_no_del_vecino(migrado):
     con, _, inferidas = migrado
     assert inferidas["clientectacte:5"] == date(2026, 8, 15)
     fecha_migrada = con.execute(
-        "SELECT fecha FROM movimientos_cuenta WHERE origen_legado = 'clientectacte:5'"
+        "SELECT fecha FROM cc_asientos WHERE origen_legado = 'clientectacte:5'"
     ).fetchone()[0]
-    assert fecha_migrada == date(2026, 8, 15)
+    # En el libro del motor la fecha va como texto ISO (`0017`, ADR-031).
+    assert fecha_migrada == "2026-08-15"
 
 
 def test_la_orden_sin_factura_entra_con_el_comprobante_de_apertura(migrado):
@@ -453,7 +454,7 @@ def test_la_cantidad_que_no_es_numero_se_guarda_como_texto(migrado):
 def test_las_secuencias_quedan_adelantadas(migrado):
     """Los ids los puso el script: si la secuencia sigue en 1, el primer alta choca."""
     con, _, _ = migrado
-    for tabla in ("terceros", "ordenes_carga", "movimientos_cuenta", "facturas",
+    for tabla in ("terceros", "ordenes_carga", "cc_asientos", "facturas",
                   "comprobante_de_apertura"):
         filas = con.execute(f"SELECT count(*) FROM {tabla}").fetchone()[0]
         siguiente = con.execute(
@@ -475,13 +476,13 @@ def test_el_gate_da_cero_y_sabe_dar_distinto_de_cero(migrado):
     assert limpio is True
     assert "Cuentas con alguna diferencia: **0**" in texto
 
-    con.execute("UPDATE movimientos_cuenta SET debe = debe + 0.01 "
+    con.execute("UPDATE cc_asientos SET debe = debe + 0.01 "
                 "WHERE origen_legado = 'clientectacte:1'")
     texto_roto, limpio_roto = reporte.diferencias(_conexion_staging(con), con)
     assert limpio_roto is True, "un centavo no dispara la alarma de orden de magnitud"
     assert "Cuentas con alguna diferencia: **1**" in texto_roto
     assert "0.01" in texto_roto
-    con.execute("UPDATE movimientos_cuenta SET debe = debe - 0.01 "
+    con.execute("UPDATE cc_asientos SET debe = debe - 0.01 "
                 "WHERE origen_legado = 'clientectacte:1'")
 
 

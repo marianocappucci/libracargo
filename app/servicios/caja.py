@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.models.cuentas import MovimientoCaja, MovimientoCuenta
 from app.models.enums import RolCuenta, TipoMovimientoCaja
+from app.servicios import cuentas
 
 CERO = Decimal("0.00")
 
@@ -65,7 +66,7 @@ def sincronizar_contrapartida(sesion: Session, movimiento: MovimientoCaja,
 
     if movimiento.tercero_id is None or rol is None:
         if existente is not None:
-            sesion.delete(existente)
+            cuentas.borrar(sesion, existente)
         return
 
     al_haber = va_al_haber(rol, movimiento.tipo)
@@ -73,20 +74,17 @@ def sincronizar_contrapartida(sesion: Session, movimiento: MovimientoCaja,
     haber = movimiento.importe if al_haber else CERO
 
     if existente is None:
-        sesion.add(MovimientoCuenta(
+        cuentas.asentar(
+            sesion,
             fecha=movimiento.fecha, tercero_id=movimiento.tercero_id, rol=rol,
             concepto=movimiento.concepto, descripcion=movimiento.descripcion,
             debe=debe, haber=haber, movimiento_caja_id=movimiento.id,
-        ))
+        )
         return
 
-    existente.fecha = movimiento.fecha
-    existente.tercero_id = movimiento.tercero_id
-    existente.rol = rol
-    existente.concepto = movimiento.concepto
-    existente.descripcion = movimiento.descripcion
-    existente.debe = debe
-    existente.haber = haber
+    cuentas.corregir(sesion, existente, fecha=movimiento.fecha, tercero_id=movimiento.tercero_id,
+                     rol=rol, concepto=movimiento.concepto, descripcion=movimiento.descripcion,
+                     debe=debe, haber=haber)
 
 
 def revertir(sesion: Session, movimiento: MovimientoCaja) -> None:
@@ -100,11 +98,12 @@ def revertir(sesion: Session, movimiento: MovimientoCaja) -> None:
     existente = contrapartida_de(sesion, movimiento)
     if existente is None:
         return
-    sesion.add(MovimientoCuenta(
+    cuentas.asentar(
+        sesion,
         fecha=movimiento.fecha, tercero_id=existente.tercero_id, rol=existente.rol,
         concepto=f"Anulación {movimiento.concepto}"[:120],
         descripcion=existente.descripcion,
         # Invertidas: lo que sumó al debe se cancela con un haber, y al revés.
         debe=existente.haber, haber=existente.debe,
         movimiento_caja_id=movimiento.id,
-    ))
+    )

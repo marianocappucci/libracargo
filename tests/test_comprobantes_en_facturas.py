@@ -19,21 +19,22 @@ from sqlalchemy import text
 
 from app.models import Comprobante
 from app.servicios.comprobantes import totales_por_razon_social
-from tests.conftest import URL
+from tests.conftest import URL, rearmar_en
 
 RAIZ = Path(__file__).resolve().parents[1]
 
 
-def _alembic(destino: str) -> None:
+def _alembic(destino: str, *, subir: bool = False) -> None:
     cfg = AlembicConfig(str(RAIZ / "alembic.ini"))
     cfg.set_main_option("script_location", str(RAIZ / "migrations"))
     previo = os.environ.get("DATABASE_URL")
     os.environ["DATABASE_URL"] = URL
     try:
-        if destino == "head":
-            command.upgrade(cfg, "head")
+        if destino == "head" or subir:
+            command.upgrade(cfg, destino)
         else:
-            command.downgrade(cfg, destino)
+            # Una base «de antes» se arma de cero: desde la `0018` bajar no tiene vuelta.
+            rearmar_en(destino)
     finally:
         if previo is not None:
             os.environ["DATABASE_URL"] = previo
@@ -116,23 +117,23 @@ def _cargar(engine):
 
 def _volver_a_head(engine):
     with engine.begin() as con:
-        for tabla in ("movimientos_cuenta", "ordenes_carga", "comprobantes_cargo",
+        for tabla in ("movimientos_cuenta", "movimientos_cuenta_cargo", "cc_asientos",
+                      "movimientos_cuenta_legado", "ordenes_carga", "comprobantes_cargo",
                       "comprobante_de_apertura", "facturas", "comprobantes_legado", "localidades",
                       "terceros", "razones_sociales"):
             if con.execute(text("SELECT to_regclass(:t)"), {"t": tabla}).scalar():
                 _sql(con, f"TRUNCATE TABLE {tabla} RESTART IDENTITY CASCADE")
     # Si el test se cortó en la `0015`, el resto de la suite necesita `head`.
-    with engine.connect() as con:
-        version = _sql(con, "SELECT version_num FROM alembic_version_libracargo").scalar()
-    if version != "0016":
-        _alembic("head")
+    # Siempre de vuelta a `head` (no hace nada si ya está).
+    _alembic("head")
 
 
 def test_la_0016_pasa_los_comprobantes_a_facturas_sin_mover_nada(base_de_antes, sesion):
     with base_de_antes.connect() as con:
         movimientos_antes = _sql(con, "SELECT id, comprobante_id, debe, haber FROM movimientos_cuenta "
                                       "ORDER BY id").all()
-    _alembic("head")
+    # Hasta la `0016`: la `0018` borra `comprobantes_legado`, que acá se mira.
+    _alembic("0016", subir=True)
 
     with base_de_antes.connect() as con:
         # La tabla vieja queda, renombrada; la apertura no entra a `facturas`.

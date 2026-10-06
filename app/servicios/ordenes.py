@@ -47,6 +47,7 @@ from app.models.cuentas import MovimientoCuenta
 from app.models.enums import EstadoOrden, RolCuenta
 from app.models.maestros import Localidad, TipoCarga
 from app.models.operacion import OrdenCarga
+from app.servicios import cuentas
 
 CERO = Decimal("0.00")
 
@@ -123,11 +124,12 @@ def sincronizar_comision(sesion: Session, orden: OrdenCarga) -> None:
             # Se borra y no se pone en cero: el CHECK `ck_cuenta_debe_o_haber`
             # rechaza un asiento con las dos columnas en cero, y con razón —
             # una línea de $0 en una cuenta corriente no significa nada.
-            sesion.delete(existente)
+            cuentas.borrar(sesion, existente)
         return
 
     if existente is None:
-        sesion.add(MovimientoCuenta(
+        cuentas.asentar(
+            sesion,
             fecha=orden.fecha,
             tercero_id=orden.fletero_id,
             rol=RolCuenta.FLETERO,
@@ -136,13 +138,11 @@ def sincronizar_comision(sesion: Session, orden: OrdenCarga) -> None:
             debe=orden.comision,
             haber=CERO,
             orden_id=orden.id,
-        ))
+        )
         return
 
-    existente.fecha = orden.fecha
-    existente.tercero_id = orden.fletero_id
-    existente.descripcion = describir(sesion, orden)
-    existente.debe = orden.comision
+    cuentas.corregir(sesion, existente, fecha=orden.fecha, tercero_id=orden.fletero_id,
+                     descripcion=describir(sesion, orden), debe=orden.comision)
 
 
 def revertir_comision(sesion: Session, orden: OrdenCarga) -> None:
@@ -155,7 +155,8 @@ def revertir_comision(sesion: Session, orden: OrdenCarga) -> None:
     existente = cargo_de(sesion, orden)
     if existente is None or existente.debe <= CERO:
         return
-    sesion.add(MovimientoCuenta(
+    cuentas.asentar(
+        sesion,
         fecha=orden.fecha,
         tercero_id=existente.tercero_id,
         rol=RolCuenta.FLETERO,
@@ -164,4 +165,4 @@ def revertir_comision(sesion: Session, orden: OrdenCarga) -> None:
         debe=CERO,
         haber=existente.debe,
         orden_id=orden.id,
-    ))
+    )
