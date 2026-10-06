@@ -262,8 +262,10 @@ def sesion(engine):
     s.rollback()
     for tabla in reversed(Base.metadata.sorted_tables):
         s.execute(text(f'TRUNCATE TABLE "{tabla.name}" RESTART IDENTITY CASCADE'))
-    # Las del motor que escribe este producto: el comprobante vive en `facturas`.
+    # Las del motor que escribe este producto: el comprobante vive en `facturas`, y la pre factura en
+    # la bandeja de comprobantes por facturar (ADR-032: su número interno `PF-0001` arranca de cero).
     s.execute(text("TRUNCATE TABLE facturas RESTART IDENTITY CASCADE"))
+    s.execute(text("TRUNCATE TABLE comprobantes_pendientes RESTART IDENTITY CASCADE"))
     # Y la cuenta corriente vive en el libro de terceros del motor (`0017`).
     s.execute(text("TRUNCATE TABLE cc_asientos RESTART IDENTITY CASCADE"))
     s.commit()
@@ -425,14 +427,109 @@ def datos(cliente):
                           {"razon_social": "Agro Norte", "es_cliente": True,
                            # Un CUIT con dígito verificador válido: emitir por ARCA una
                            # clase A a un receptor sin CUIT no sale (ver `emision_arca`).
-                           "cuit": "30-70933285-2"}),
+                           "cuit": "30-12345678-1"}),
         "otro_cliente": _crear(cliente, "/api/terceros",
                                {"razon_social": "Molino Sur", "es_cliente": True}),
         "origen": _crear(cliente, "/api/localidades", {"nombre": "Suipacha"}),
         "destino": _crear(cliente, "/api/localidades", {"nombre": "Rosario"}),
         "razon": _crear(cliente, "/api/razones-sociales", {"nombre": "Suitrans"}),
-        "otra_razon": _crear(cliente, "/api/razones-sociales", {"nombre": "Mauricio"}),
+        "otra_razon": _crear(cliente, "/api/razones-sociales", {"nombre": "Juan Pérez"}),
     }
+
+
+# ── Facturar: pre factura → ARCA ────────────────────────────────────────────
+#
+# Desde ADR-032 no hay forma de registrar un comprobante a mano: se genera una pre factura y se la factura
+# por ARCA. Los tests que necesitan «un comprobante» lo hacen así, con ARCA simulada.
+
+#: El CUIT de la razón social que emite en los tests. Ficticio, con dígito verificador válido.
+CUIT_EMISOR = "20-12345678-6"
+
+
+def configurar_arca(cliente, *, cuit, punto_venta=5, ambiente="produccion", empresa=None):
+    """Deja la instancia lista para emitir: el par en disco y el CUIT cargado.
+
+    Es **una configuración por instancia**, no una por razón social: así la guarda el motor. Cuál de las
+    razones sociales emite lo dice el CUIT.
+
+    ⚠️ **El `PUT` va primero, y no es indistinto.** El upload también crea la fila si no existe, pero con
+    el slug por defecto del producto; un `PUT` posterior con otro `empresa` crea una **segunda** fila en vez
+    de renombrar la primera. Guardando primero, el upload encuentra la fila activa y escribe en ésa.
+    """
+    from app.servicios import emision_arca
+
+    r = cliente.put("/api/arca", json={
+        "empresa": empresa or emision_arca.EMPRESA_ARCA, "cuit": cuit, "punto_venta": punto_venta,
+        "ambiente": ambiente, "alias": "",
+    })
+    assert r.status_code == 200, r.text
+    certificado, clave = par_de_arca()
+    for tramo, archivo in (("certificado", certificado), ("clave", clave)):
+        r = cliente.post(f"/api/arca/{tramo}", params={"ambiente": ambiente},
+                         files={"archivo": (f"c.{tramo}", archivo, "text/plain")})
+        assert r.status_code == 200, r.text
+
+
+def arca_responde(monkeypatch, *, ultimo=0, cae="75123456789012", cae_vto="20261231",
+                  falla_numero=None, falla_cae=None):
+    """Simula a ARCA: da el número que sigue por (punto de venta, tipo) y autoriza. Devuelve lo que se le pidió.
+
+    A diferencia de un doble que contesta siempre lo mismo, **lleva la cuenta**: cada CAE autorizado
+    adelanta el último número de su (punto de venta, tipo), como el WSFE. Dos facturas seguidas no chocan.
+    """
+    from app.servicios import emision_arca
+
+    pedidos = []
+    ultimos: dict[tuple[int, int], int] = {}
+
+    async def autenticar(cert, key, ambiente, servicio="wsfe"):
+        pedidos.append(("autenticar", ambiente, cert, key))
+        return {"token": "TKN", "sign": "SGN"}
+
+    async def ultimo_numero(pv, tipo, cuit, token, sign, ambiente):
+        pedidos.append(("ultimo", pv, tipo, cuit))
+        if falla_numero:
+            raise RuntimeError(falla_numero)
+        return ultimos.get((pv, tipo), ultimo)
+
+    async def solicitar_cae(factura, cuit, token, sign, ambiente):
+        pedidos.append(("cae", factura))
+        if falla_cae:
+            raise RuntimeError(falla_cae)
+        ultimos[(factura["punto_venta"], factura["tipo"])] = factura["numero"]
+        return {"cae": cae, "cae_vto": cae_vto}
+
+    monkeypatch.setattr(emision_arca.arca_wsaa, "autenticar", autenticar)
+    monkeypatch.setattr(emision_arca.arca_wsfe, "ultimo_numero_autorizado", ultimo_numero)
+    monkeypatch.setattr(emision_arca.arca_wsfe, "solicitar_cae", solicitar_cae)
+    return pedidos
+
+
+@pytest.fixture
+def emisor(cliente, datos, monkeypatch):
+    """`datos["razon"]` lista para emitir por ARCA, con ARCA simulada (punto de venta 1, el último número es 0).
+
+    Devuelve la lista de lo que se le pidió a ARCA. Los tests que usan sólo `facturar()` la piden con la marca
+    `con_emisor` (ver `_emisor_listo`) en vez de declararla en cada firma.
+    """
+    r = cliente.put(f"/api/razones-sociales/{datos['razon']}", json={
+        "nombre": "Suitrans", "cuit": CUIT_EMISOR, "punto_venta": 1})
+    assert r.status_code == 200, r.text
+    configurar_arca(cliente, cuit=CUIT_EMISOR, punto_venta=1)
+    return arca_responde(monkeypatch)
+
+
+@pytest.fixture(autouse=True)
+def _emisor_listo(request, _terminos_ya_aceptados, _captcha_aprobado, _secreto_de_sesion):
+    """Los tests marcados `con_emisor` arrancan con la razón social lista para emitir.
+
+    Pide **a mano** las autouse que `cliente` necesita (términos, captcha y secreto de sesión): entre
+    autouse el orden no es el de definición, y sin esto el login de `cliente` corre antes que ellas.
+    """
+    # Sólo si el test usa `cliente`: uno que mide el 401 de una app sin sesión no la necesita.
+    if request.node.get_closest_marker("con_emisor") and "cliente" in request.fixturenames:
+        request.getfixturevalue("emisor")
+    yield
 
 
 def comprobante_de_prueba(sesion, *, cae: str | None = None, comprobante_asociado_id: int | None = None,

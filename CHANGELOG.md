@@ -4,11 +4,13 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ## [Unreleased]
 
-### Quitado
-
-- **`postgres-init/10-bases-extra.sql`**, que creaba la base `libracargo_core` al inicializar el volumen de dev, y su montaje en `docker-compose.yml`. Desde la base unida (ADR-029) el core vive en la del dominio, y las `libracargo_core` de dev, demo y Suitrans se borraron el 2026-10-06.
-
 ### Agregado
+
+- **Pre factura** (ADR-032). Antes de facturar se genera una pre factura: un documento **sin valor fiscal** que se manda al cliente (PDF por correo desde la app, o se descarga) para que confirme los datos, y desde la que se **factura por ARCA**.
+  - **«Facturar pendientes» ahora genera la pre factura.** Se elige cliente, razón social, tipo, fecha y órdenes (y el vencimiento de pago si es FCE). **Ya no pide punto de venta ni número.** Las órdenes quedan reservadas: no entran en otra pre factura.
+  - **Pantalla nueva «Pre facturas»** (en el menú, junto a Comprobantes): lista con estado y filtros, y el detalle con el PDF, **Enviar por correo** (con el email del cliente prellenado), **Editar** (órdenes, razón social, tipo y fecha), **Marcar aceptada**, **Anular** (con motivo) y **Facturar por ARCA** (confirma, y muestra la factura o el error). Estados: Pendiente, Enviada, Aceptada, Facturada, Anulada.
+  - **API**: `POST /api/pre-facturas`, `PUT /api/pre-facturas/{id}`, `POST /api/pre-facturas/{id}/facturar`, y las del motor (`GET`, `/pdf`, `/enviar-email`, `/aceptar`, `/anular`). Las órdenes tienen los filtros `reservada` y `pre_factura_id`.
+  - **Migración `0019`** (aditiva: `pre_facturas_cargo` y `pre_factura_ordenes`, vacías). Pide libracore **v1.140.0** o posterior, y que `libracore-migrar` corra antes.
 
 - **La cuenta corriente vive en el libro de terceros del motor** (ADR-031). Cada asiento es una fila de `cc_asientos` de LibraCore, y lo propio (orden, cobro, gasto) va en `movimientos_cuenta_cargo`. Asienta, corrige y borra el motor, en la misma transacción que el documento.
   - **Revisión `0017`**: copia `movimientos_cuenta` a `cc_asientos` con el mismo id, pone la FK del tercero y deja la tabla vieja como `movimientos_cuenta_legado`. Pide libracore v1.136.0 o posterior.
@@ -38,6 +40,13 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
   cliente recibe el abono. La lógica es la del motor (`libracore.notas_de_credito`): este producto sólo guarda la nota y cierra lo suyo. La
   pantalla de comprobantes ofrece «Emitir nota de crédito» (pide el motivo). **Migración `0013`, aditiva** (`comprobante_asociado_id`, `motivo`).
   Las notas no suman en los totales ni en los reportes. Una FCE todavía no tiene nota.
+
+### Quitado
+
+- **`postgres-init/10-bases-extra.sql`**, que creaba la base `libracargo_core` al inicializar el volumen de dev, y su montaje en `docker-compose.yml`. Desde la base unida (ADR-029) el core vive en la del dominio, y las `libracargo_core` de dev, demo y Suitrans se borraron el 2026-10-06.
+- **El registro de comprobantes a mano** (ADR-032): punto de venta y número tipeados, sin ARCA. `POST /api/comprobantes` ya no existe, y las pantallas no los piden. **Una razón social sin certificado de ARCA no puede facturar**: su pre factura queda lista para cuando lo tenga (hoy, Suitrans). Lo registrado a mano y lo migrado del legado sigue ahí y se anula como siempre.
+- **Una orden reservada en una pre factura no se edita ni se anula** hasta que se la quita de ahí o se anula la pre factura.
+- **La demo no trae comprobantes sembrados** (no tiene certificado de ARCA): el seed deja tres pre facturas de ejemplo.
 
 ### Cambiado
 

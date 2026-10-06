@@ -25,13 +25,15 @@ from app.models.operacion import (
     ComprobanteDeApertura,
     GastoDeProveedor,
     OrdenCarga,
+    PreFacturaCargo,
+    PreFacturaOrden,
 )
 
 __all__ = [
     "AccionAuditoria", "Base", "Chofer", "Comprobante", "ComprobanteCargo",
     "ComprobanteDeApertura", "CondicionIVA",
     "EstadoOrden", "GastoDeProveedor", "Localidad", "MedioPago", "MovimientoCaja",
-    "MovimientoCuenta", "OrdenCarga", "RazonSocial", "ConfiguracionEmpresa",
+    "MovimientoCuenta", "OrdenCarga", "PreFacturaCargo", "PreFacturaOrden", "RazonSocial", "ConfiguracionEmpresa",
     "RegistroAuditoria",
     "RolCuenta", "Tercero", "TipoCarga", "TipoComprobante",
     "TipoMovimientoCaja", "Vehiculo",

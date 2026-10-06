@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext'
 import Inicio from '@/pages/Inicio'
 import Caja from '@/pages/Caja'
 import Comprobantes from '@/pages/Comprobantes'
+import EditarPreFactura from '@/pages/EditarPreFactura'
 import FacturarPendientes from '@/pages/FacturarPendientes'
 import Gastos from '@/pages/Gastos'
 import Configuracion from '@/pages/Configuracion'
@@ -14,6 +15,8 @@ import Login from '@/pages/Login'
 import { ForgotPassword, ResetPassword } from '@/pages/PasswordReset'
 import Logs from '@/pages/Logs'
 import Ordenes from '@/pages/Ordenes'
+import PreFactura from '@/pages/PreFactura'
+import PreFacturas from '@/pages/PreFacturas'
 import Reporte from '@/pages/Reporte'
 import ReportesIndice from '@/pages/ReportesIndice'
 import Usuarios from '@/pages/Usuarios'
@@ -52,6 +55,10 @@ export default function App() {
                 <Route path="/caja" element={<Caja />} />
                 <Route path="/comprobantes" element={<Comprobantes />} />
                 <Route path="/comprobantes/facturar" element={<FacturarPendientes />} />
+                <Route path="/pre-facturas" element={<PreFacturas />} />
+                <Route path="/pre-facturas/:id" element={<PreFactura />} />
+                {/* Editar es la pantalla de facturar pendientes sobre una pre factura que ya existe. */}
+                <Route path="/pre-facturas/:id/editar" element={<EditarPreFactura />} />
                 <Route path="/gastos" element={<Gastos />} />
                 <Route path="/reportes" element={<ReportesIndice />} />
                 <Route path="/reportes/:slug" element={<Reporte />} />

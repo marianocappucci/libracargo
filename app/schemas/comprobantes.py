@@ -1,23 +1,19 @@
 """Esquemas de comprobantes.
 
-> 🔑 **El comprobante no se emite: se registra.** El sistema legado no factura
-> contra ARCA — alguien tipea el número de una factura que ya existe en papel o
-> en el facturador de ARCA. Replicar eso es lo que da **paridad verificable**
-> contra el sistema viejo durante la migración; la emisión real es F8, con su
-> propio alcance. Mezclarlas haría que una diferencia de totales tuviera dos
-> causas posibles y ninguna forma de separarlas.
+> 🔑 **El comprobante no se tipea: lo emite ARCA desde una pre factura** (ADR-032). Hasta entonces, sin
+> certificado, alguien registraba a mano el punto de venta y el número de una factura hecha en otro lado
+> (`FacturarIn`). Ya no hay forma de hacerlo: lo migrado del legado sigue como estaba, y lo nuevo sale de
+> `app/schemas/pre_facturas.py`.
 
-> 🔑 **Los importes tampoco entran por el cuerpo: salen de las órdenes.** Un
-> comprobante es la suma de las órdenes que agrupa. Aceptar un total del cliente
-> permitiría que el comprobante diga un número y sus órdenes otro, que es
-> exactamente la diferencia que el gate de F5 tiene que poder descartar.
+> 🔑 **Los importes no entran por el cuerpo: salen de las órdenes.** Un comprobante es la suma de las
+> órdenes que agrupa. Aceptar un total del cliente permitiría que el comprobante diga un número y sus
+> órdenes otro, que es exactamente la diferencia que el gate de F5 tiene que poder descartar.
 """
 
 from datetime import date, datetime
 from decimal import Decimal
-from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import TipoComprobante
 from app.schemas.ordenes import OrdenOut
@@ -53,63 +49,6 @@ NOMBRES_DE_TIPO = {
     TipoComprobante.NOTA_CREDITO_FCE_B: "Nota de credito FCE B",
     TipoComprobante.NOTA_CREDITO_FCE_C: "Nota de credito FCE C",
 }
-
-
-def _hoy() -> date:
-    """La fecha de hoy en Argentina, que es la que compara ARCA."""
-    return datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).date()
-
-
-class FacturarIn(BaseModel):
-    """"Facturar pendientes": las órdenes elegidas pasan a un comprobante."""
-
-    model_config = ConfigDict(str_strip_whitespace=True)
-
-    fecha: date
-    razon_social_id: int
-    cliente_id: int
-    tipo: TipoComprobante
-    punto_venta: int = Field(default=1, ge=0, le=99999)
-    #: ⚠️ Opcional **sólo porque puede venir de ARCA**. Cuando la razón social
-    #: emite, el número lo da `FECompUltimoAutorizado + 1` y mandarlo desde el
-    #: cliente no tiene sentido: ARCA rechaza cualquier otro. Cuando registra a
-    #: mano sigue siendo obligatorio, y lo exige el endpoint.
-    numero: int | None = Field(default=None, ge=1)
-    orden_ids: list[int] = Field(min_length=1)
-    #: **Sólo la FCE** lo lleva, y toda FCE lo exige: ARCA la rechaza sin él (10163).
-    fecha_vencimiento_pago: date | None = None
-
-    @model_validator(mode="after")
-    def _vencimiento_de_pago(self):
-        if self.tipo in TIPOS_FCE:
-            if self.fecha_vencimiento_pago is None:
-                raise ValueError(
-                    "la factura de credito electronica exige la fecha de vencimiento de pago")
-            if self.fecha_vencimiento_pago < self.fecha:
-                raise ValueError(
-                    "el vencimiento de pago no puede ser anterior a la fecha del comprobante")
-            # ARCA lo compara además contra **hoy** (10164, «posterior o igual a la fecha de
-            # emisión o a la fecha de presentación, la que sea posterior»): una FCE con
-            # fecha atrasada y un vencimiento ya vencido llegaría hasta ARCA y volvería
-            # como un 502 después de pedir el número.
-            if self.fecha_vencimiento_pago < _hoy():
-                raise ValueError("el vencimiento de pago no puede ser anterior a hoy")
-        elif self.fecha_vencimiento_pago is not None:
-            raise ValueError(
-                "solo la factura de credito electronica lleva fecha de vencimiento de pago")
-        return self
-
-    @field_validator("orden_ids")
-    @classmethod
-    def _sin_repetidos(cls, valor: list[int]) -> list[int]:
-        """Una orden repetida sumaría dos veces y la factura quedaría al doble.
-
-        El `IN` de la consulta la trae una sola vez, así que sin este chequeo el
-        pedido no falla: pasa, con un total que no es el de las órdenes.
-        """
-        if len(set(valor)) != len(valor):
-            raise ValueError("hay ordenes repetidas: el importe se contaria dos veces")
-        return valor
 
 
 class NotaDeCreditoIn(BaseModel):

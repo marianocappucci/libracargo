@@ -170,9 +170,10 @@ general = crear("/api/tipos-carga", {"nombre": "Carga general", "unidad_default"
 suitrans = crear("/api/razones-sociales", {
     "nombre": "Suitrans SRL", "cuit": "30-11223344-5",
     "condicion_iva": "responsable_inscripto", "punto_venta": 1}, "razon social Suitrans SRL")
-mauricio = crear("/api/razones-sociales", {
-    "nombre": "Mauricio Cappucci", "cuit": "20-22334455-6",
-    "condicion_iva": "monotributo", "punto_venta": 2}, "razon social Mauricio Cappucci")
+# Ficticia, como todo lo de la demo: nunca el nombre de una persona real.
+monotributista = crear("/api/razones-sociales", {
+    "nombre": "Juan Pérez", "cuit": "20-22334455-6",
+    "condicion_iva": "monotributo", "punto_venta": 2}, "razon social Juan Pérez")
 
 # ---- órdenes --------------------------------------------------------------
 print("ordenes de carga")
@@ -196,8 +197,9 @@ o2 = ordenar(16, agro, suipacha, bahia, "1120000.00", fletero_id=aguirre,
 o3 = ordenar(14, molinos, mercedes, rosario, "610500.50", fletero_id=aguirre,
              chofer_id=ramon, vehiculo_id=scania, tipo_carga_id=general,
              cantidad="140", unidad="bultos", remito="0001-00012347",
-             comision="61050.05", razon_social_id=mauricio)
-# Estas quedan PENDIENTES: son las que se ven en "facturar pendientes".
+             comision="61050.05", razon_social_id=monotributista)
+# Estas quedan PENDIENTES y libres: son las que se ven en "facturar pendientes". (Las tres de arriba también
+# están pendientes, pero reservadas en una pre factura: ver más abajo.)
 o4 = ordenar(9, agro, suipacha, mercedes, "398000.00", fletero_id=aguirre,
              chofer_id=julio, tipo_carga_id=cereal, cantidad="12000", unidad="kg",
              remito="0001-00012348", comision="39800.00")
@@ -215,30 +217,38 @@ o7 = ordenar(5, molinos, mercedes, bahia, "205000.00", tipo_carga_id=general,
 codigo, _ = pedir("DELETE", f"/api/ordenes/{o7}")
 print(f"  ok orden {o7} anulada -> {codigo}")
 
-# ---- comprobantes ---------------------------------------------------------
-print("comprobantes")
+# ---- pre facturas ---------------------------------------------------------
+# 🔴 **La demo no factura: genera pre facturas.** Hasta ADR-032 el seed registraba a mano tres comprobantes
+# (punto de venta y número tipeados), que es justo lo que se sacó de la app: ahora todo comprobante sale de
+# una pre factura y de ARCA, y la demo no tiene certificado (ni debería). Lo que sí se puede mostrar sin
+# ARCA es el circuito entero hasta el último paso: generar, aceptar y anular. Enviar por correo necesita un
+# SMTP, así que ninguna queda «enviada».
+print("pre facturas")
 
 
-def facturar(dias_atras, razon, cliente, numero, ordenes, punto_venta, etiqueta):
-    return crear("/api/comprobantes", {
+def pre_factura(dias_atras, razon, cliente, ordenes, etiqueta, tipo="factura_a"):
+    return crear("/api/pre-facturas", {
         "fecha": hace(dias_atras), "razon_social_id": razon, "cliente_id": cliente,
-        "tipo": "factura_a", "punto_venta": punto_venta, "numero": numero,
-        "orden_ids": ordenes}, etiqueta)
+        "tipo": tipo, "orden_ids": ordenes}, etiqueta)
 
 
-# Una factura que agrupa DOS órdenes: es lo que en el legado hacía "facturar
-# pendientes".
-c1 = facturar(11, suitrans, agro, 1041, [o1, o2], 1, "Factura A 0001-00001041")
-c2 = facturar(10, mauricio, molinos, 388, [o3], 2, "Factura A 0002-00000388")
-# Y una anulada, para que se vea el estado y la reversión en la cuenta.
-c3 = facturar(8, suitrans, cerealera, 1042, [o6], 1, "Factura A 0001-00001042")
-codigo, _ = pedir("DELETE", f"/api/comprobantes/{c3}")
-print(f"  ok comprobante {c3} anulado -> {codigo}")
+# Una pre factura que agrupa DOS órdenes: es lo que en el legado hacía "facturar pendientes". Con la
+# conformidad del cliente ya marcada, lista para facturar cuando haya certificado.
+pf1 = pre_factura(11, suitrans, agro, [o1, o2], "PF-0001 Agro del Oeste, dos ordenes")
+codigo, _ = pedir("POST", f"/api/pre-facturas/{pf1}/aceptar")
+print(f"  ok pre factura {pf1} aceptada -> {codigo}")
+# Otra, de la razón social monotributista, todavía sin respuesta del cliente. Factura C: sin IVA discriminado.
+pf2 = pre_factura(10, monotributista, molinos, [o3], "PF-0002 Molinos Suipacha, una orden",
+                  tipo="factura_c")
+# Y una anulada, para que se vea el estado y que sus órdenes quedan libres para otra pre factura.
+pf3 = pre_factura(8, suitrans, cerealera, [o6], "PF-0003 Cerealera del Sur")
+codigo, _ = pedir("POST", f"/api/pre-facturas/{pf3}/anular", {"motivo": "El cliente cambio el pedido"})
+print(f"  ok pre factura {pf3} anulada -> {codigo}")
 
 # ---- caja -----------------------------------------------------------------
 print("caja")
 crear("/api/caja", {"fecha": hace(7), "tipo": "ingreso",
-                    "concepto": "Cobro factura 0001-00001041", "tercero_id": agro,
+                    "concepto": "Cobro a cuenta", "tercero_id": agro,
                     "rol": "cliente", "importe": "1500000.00",
                     "medio_pago": "transferencia", "recibo": "R-000210"}, "cobro a Agro")
 crear("/api/caja", {"fecha": hace(6), "tipo": "egreso",
@@ -259,6 +269,8 @@ for ruta, nombre in (("/api/terceros", "terceros"), ("/api/ordenes", "ordenes"),
                      ("/api/comprobantes", "comprobantes"), ("/api/caja", "caja")):
     _, filas = pedir("GET", ruta)
     print(f"  {nombre}: {len(filas)}")
+_, pre_facturas = pedir("GET", "/api/pre-facturas")
+print(f"  pre facturas: {len(pre_facturas['items'])} . {pre_facturas['counts']}")
 _, pendientes = pedir("GET", "/api/ordenes?facturada=false&estado=pendiente")
 print(f"  ordenes pendientes de facturar: {len(pendientes)}")
 

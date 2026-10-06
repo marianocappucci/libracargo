@@ -40,7 +40,7 @@ def test_pregunta_con_la_razon_social_que_emite_y_el_cuit_del_cliente(cliente, d
     assert r.status_code == 200, r.text
     assert r.json() == {"disponible": True, "corresponde": True, "obligado": True, "monto_desde": "3958316",
                         "fce_habilitada": False}
-    assert registro == [{"cuit_emisor": CUIT, "cuit": "30-70933285-2", "total": Decimal("4840000.00"),
+    assert registro == [{"cuit_emisor": CUIT, "cuit": "30-12345678-1", "total": Decimal("4840000.00"),
                          "fecha": date(2026, 10, 5)}]
 
 
