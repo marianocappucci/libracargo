@@ -52,7 +52,7 @@ EQUIVALENCIAS = [
     ("órdenes de carga", ["orden_carga"], "ordenes_carga"),
     ("movimientos de caja", ["novedades"], "movimientos_caja"),
     ("movimientos de cuenta", ["clientectacte", "fleteroctacte", "ctacteprov"],
-     "movimientos_cuenta"),
+     "cc_asientos"),
     ("auditoría", ["sucesos"], "auditoria"),
 ]
 
@@ -81,7 +81,7 @@ def saldos_nuevos(nuevo) -> dict[tuple[str, str], tuple[Decimal, int, str]]:
     filas = nuevo.execute("""
         SELECT t.origen_legado, m.rol::text, count(*),
                coalesce(sum(m.debe), 0) - coalesce(sum(m.haber), 0), t.razon_social
-        FROM movimientos_cuenta m
+        FROM cc_asientos m
         JOIN terceros t ON t.id = m.tercero_id
         GROUP BY 1, 2, 5""").fetchall()
     salida = {}

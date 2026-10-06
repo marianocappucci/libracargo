@@ -264,6 +264,8 @@ def sesion(engine):
         s.execute(text(f'TRUNCATE TABLE "{tabla.name}" RESTART IDENTITY CASCADE'))
     # Las del motor que escribe este producto: el comprobante vive en `facturas`.
     s.execute(text("TRUNCATE TABLE facturas RESTART IDENTITY CASCADE"))
+    # Y la cuenta corriente vive en el libro de terceros del motor (`0017`).
+    s.execute(text("TRUNCATE TABLE cc_asientos RESTART IDENTITY CASCADE"))
     s.commit()
     s.close()
 
@@ -456,3 +458,33 @@ def comprobante_de_prueba(sesion, *, cae: str | None = None, comprobante_asociad
         comprobantes.guardar_cae(sesion, comp, cae, vto.strftime("%Y%m%d"))
     sesion.commit()
     return comp
+
+
+def rearmar_en(revision: str) -> None:
+    """La base de la suite, rearmada de cero hasta `revision` de esta cadena.
+
+    🔑 **Para mirar una base «de antes» no se baja la cadena**: desde la `0018` (que
+    borra las tablas viejas) bajar no tiene vuelta atrás. Se tira el schema, se
+    crea el del motor —como en el deploy— y se sube hasta la revisión pedida.
+    Después, `rearmar_en("head")` o un `upgrade` la deja como estaba.
+    """
+    eng = create_engine(URL)
+    with eng.begin() as con:
+        con.execute(text("DROP SCHEMA public CASCADE"))
+        con.execute(text("CREATE SCHEMA public"))
+    eng.dispose()
+    libracore_core.configure(URL_CORE)
+    with libracore_core.get_connection() as conn:
+        init_core_schema(conn)
+        conn.commit()
+    previo = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = URL
+    try:
+        cfg = AlembicConfig(str(RAIZ / "alembic.ini"))
+        cfg.set_main_option("script_location", str(RAIZ / "migrations"))
+        command.upgrade(cfg, revision)
+    finally:
+        if previo is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = previo

@@ -9,6 +9,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Column,
     Date,
     Enum,
     ForeignKey,
@@ -16,14 +17,17 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Table,
     Text,
+    TypeDecorator,
     false,
+    join,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, column_property, mapped_column
 
 from app.models.base import Auditable, Base
 from app.models.enums import MedioPago, RolCuenta, TipoMovimientoCaja
-from app.models.operacion import facturas
+from app.models.operacion import MOTOR, _Dinero, _Fecha
 
 
 class MovimientoCaja(Base, Auditable):
@@ -80,48 +84,58 @@ class MovimientoCaja(Base, Auditable):
     )
 
 
-class MovimientoCuenta(Base, Auditable):
-    """Las tres cuentas corrientes, en una sola tabla.
+# ── La cuenta corriente vive en el libro de terceros del motor ─────────────
+#
+# Hasta la revisión `0017` este producto tenía su propia tabla
+# `movimientos_cuenta`. Desde ahí cada asiento es una fila de `cc_asientos`, el
+# libro de cuenta corriente de terceros de LibraCore (su ADR-026), con lo propio
+# de acá —de qué orden, cobro o gasto salió— en `movimientos_cuenta_cargo`, con
+# el **mismo id** (ADR-031). `MovimientoCuenta` sigue siendo la clase que leen los
+# saldos y los reportes, mapeada sobre la unión de las dos tablas. **Escribe el
+# motor**, desde `app/servicios/cuentas.py`.
 
-    El legado tenía `clientectacte`, `fleteroctacte` y `ctacteprov`, con la
-    misma forma. Acá la cuenta es el par **(tercero, rol)**.
 
-    Sin saldo materializado: con el índice sobre `(tercero_id, rol, fecha)`,
-    sumar 22.588 filas en PostgreSQL es instantáneo, y una cache de saldo es
-    una cosa más que se puede desincronizar.
-    """
+class _Rol(TypeDecorator):
+    """El rol de la cuenta: en el motor es texto, acá el enum de siempre."""
 
-    __tablename__ = "movimientos_cuenta"
+    impl = Text
+    cache_ok = True
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    fecha: Mapped[date] = mapped_column(Date, nullable=False)
-    tercero_id: Mapped[int] = mapped_column(
-        ForeignKey("terceros.id", ondelete="RESTRICT"), nullable=False
+    def process_bind_param(self, value, dialect):
+        return None if value is None else RolCuenta(value).value
+
+    def process_result_value(self, value, dialect):
+        return None if value is None else RolCuenta(value)
+
+
+cc_asientos = Table(
+    "cc_asientos", MOTOR,
+    Column("id", BigInteger, primary_key=True),
+    Column("fecha", _Fecha, nullable=False),
+    Column("tercero_id", Integer, nullable=False),
+    Column("rol", _Rol, nullable=False),
+    Column("concepto", Text, nullable=False),
+    Column("descripcion", Text),
+    Column("debe", _Dinero, nullable=False),
+    Column("haber", _Dinero, nullable=False),
+    Column("factura_id", BigInteger),
+    Column("contrapartida_de", BigInteger),
+    Column("origen_legado", Text),
+)
+
+
+class MovimientoCuentaCargo(Base, Auditable):
+    """De qué documento de este producto salió cada asiento del libro del motor."""
+
+    __tablename__ = "movimientos_cuenta_cargo"
+
+    asiento_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(cc_asientos.c.id, ondelete="RESTRICT", name="fk_movimientos_cuenta_cargo_asiento"),
+        primary_key=True, autoincrement=False,
     )
-    rol: Mapped[RolCuenta] = mapped_column(
-        Enum(RolCuenta, name="rol_cuenta",
-             values_callable=lambda e: [m.value for m in e]),
-        nullable=False,
-    )
-    concepto: Mapped[str] = mapped_column(String(120), nullable=False)
-
-    # `Text`, sin límite. En el legado esta columna era `varchar(50)` y
-    # guardaba "origen - destino - cantidad - tipo - remito" concatenado:
-    # MySQL la truncaba en silencio.
-    descripcion: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    debe: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
-    haber: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
-
     orden_id: Mapped[int | None] = mapped_column(
         ForeignKey("ordenes_carga.id", ondelete="RESTRICT"), nullable=True
-    )
-    #: El comprobante del asiento, que desde la revisión `0016` es una fila de
-    #: `facturas` del motor (ver `app/models/operacion.py`).
-    comprobante_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey(facturas.c.id, ondelete="RESTRICT",
-                               name="fk_movimientos_cuenta_comprobante"),
-        nullable=True,
     )
     movimiento_caja_id: Mapped[int | None] = mapped_column(
         ForeignKey("movimientos_caja.id", ondelete="RESTRICT"), nullable=True
@@ -131,23 +145,35 @@ class MovimientoCuenta(Base, Auditable):
     gasto_id: Mapped[int | None] = mapped_column(
         ForeignKey("gastos_de_proveedor.id", ondelete="RESTRICT"), nullable=True
     )
-    origen_legado: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     __table_args__ = (
-        CheckConstraint("debe >= 0 AND haber >= 0", name="ck_cuenta_signos"),
-        # Un asiento mueve una columna o la otra, nunca las dos ni ninguna.
-        # El escape por `origen_legado` es para el histórico: el legado tiene 36
-        # asientos con las dos en cero, y ponerles un importe sería inventarlo.
-        # Ver ADR-015 y la migración 0003.
-        CheckConstraint(
-            "((debe > 0 AND haber = 0) OR (haber > 0 AND debe = 0)) "
-            "OR origen_legado IS NOT NULL",
-            name="ck_cuenta_debe_o_haber",
-        ),
-        Index("ix_cuenta_saldo", "tercero_id", "rol", "fecha"),
-        Index("ix_cuenta_orden", "orden_id"),
-        Index("ix_cuenta_comprobante", "comprobante_id"),
-        Index("ix_cuenta_caja", "movimiento_caja_id"),
-        Index("ix_cuenta_gasto", "gasto_id"),
-        Index("ix_cuenta_origen_legado", "origen_legado", unique=True),
+        Index("ix_cuenta_cargo_orden", "orden_id"),
+        Index("ix_cuenta_cargo_caja", "movimiento_caja_id"),
+        Index("ix_cuenta_cargo_gasto", "gasto_id"),
     )
+
+
+_cargo_cuenta = MovimientoCuentaCargo.__table__
+
+
+class MovimientoCuenta(Base):
+    """Las tres cuentas corrientes —cliente, fletero y proveedor—, en el libro del motor.
+
+    El legado tenía `clientectacte`, `fleteroctacte` y `ctacteprov`, con la
+    misma forma. Acá la cuenta es el par **(tercero, rol)**.
+
+    Sin saldo materializado: con el índice sobre `(tercero_id, rol, fecha)`,
+    sumar 22.588 filas en PostgreSQL es instantáneo, y una cache de saldo es
+    una cosa más que se puede desincronizar.
+
+    Se **lee** como siempre; se **escribe** por `app/servicios/cuentas.py`, que
+    lo hace con el motor (`libracore.db.libro_de_terceros`).
+    """
+
+    __table__ = join(cc_asientos, _cargo_cuenta, cc_asientos.c.id == _cargo_cuenta.c.asiento_id)
+
+    id = column_property(cc_asientos.c.id, _cargo_cuenta.c.asiento_id)
+    #: El comprobante del asiento, una fila de `facturas` del motor.
+    comprobante_id = column_property(cc_asientos.c.factura_id)
+
+    __mapper_args__ = {"exclude_properties": ["contrapartida_de"]}

@@ -801,3 +801,25 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 - Los CHECK de la tabla vieja que `facturas` no tiene (vencimiento de la FCE, la nota con su asociado, los signos) los dice `crear`.
 - Los totales y reportes de este producto ya no cuentan el comprobante de apertura. Sus órdenes tampoco, así que el F5 sigue coincidiendo.
 - El libro IVA, los PDF y los listados del motor ven los comprobantes de LibraCargo.
+
+## ADR-031 — La cuenta corriente vive en el libro de terceros del motor
+
+**Contexto.** Con el comprobante ya en `facturas` (ADR-030), lo que quedaba propio era la cuenta corriente: `movimientos_cuenta`, un libro de asientos por (tercero, rol) con clientes, fleteros y proveedores. El humano pidió que no haya modelos separados, y eligió la opción A del diseño `cuenta-corriente-de-terceros-diseno` del wiki: un libro de terceros en el motor, opcional (ADR-026 de LibraCore, `cc_asientos`), al que este producto migra primero.
+
+**Decisión.**
+- **Cada asiento es una fila de `cc_asientos`, con el mismo id** (revisión `0017`).
+- **Lo propio va en `movimientos_cuenta_cargo`**, una fila por asiento: la orden, el cobro de caja o el gasto que lo originó.
+- **`MovimientoCuenta` se mapea sobre la unión de las dos tablas**: los saldos, el extracto, los reportes y el control de F4 leen igual que antes.
+- **Escribe el motor** (`libracore.db.libro_de_terceros`), con la conexión de la sesión, en la misma transacción que el documento (ADR-024). La única puerta es `app/servicios/cuentas.py`:
+  - `asentar`, para lo que antes era un alta;
+  - `corregir`, cuando se edita el documento: el gasto, el cobro o la comisión;
+  - `borrar`, cuando el documento editado deja de mover la cuenta;
+  - `contraasentar`, disponible para revertir.
+- **El rol del motor es texto**, y acá se traduce al enum de siempre.
+- **La FK al tercero la pone este producto** sobre `cc_asientos.tercero_id` (`fk_cc_asientos_tercero_libracargo`). El motor no la declara porque el tercero es del producto.
+- `movimientos_cuenta` queda como `movimientos_cuenta_legado`, de sólo lectura, por un ciclo.
+
+**Consecuencias.**
+- Las reglas de los asientos (una sola columna con importe, sin negativos) las dice el motor antes de escribir, y su base las sostiene.
+- El import del legado y su reporte de diferencias escriben y leen `cc_asientos`.
+- Pide libracore v1.136.0 o posterior (migración `0019_libro_de_terceros`).

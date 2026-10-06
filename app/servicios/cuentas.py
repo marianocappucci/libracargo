@@ -17,10 +17,12 @@ sola clave foránea que garantizara qué movimiento pertenecía a qué cuenta.
 from datetime import date
 from decimal import Decimal
 
+from libracore.db import libro_de_terceros as libro
+from libracore.db.migraciones import conexion_libracore
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.cuentas import MovimientoCuenta
+from app.models.cuentas import MovimientoCuenta, MovimientoCuentaCargo
 from app.models.enums import RolCuenta
 
 CERO = Decimal("0.00")
@@ -87,3 +89,75 @@ def saldo_recorriendo(sesion: Session, tercero_id: int, rol: RolCuenta,
     """
     filas = movimientos_con_saldo(sesion, tercero_id, rol, hasta)
     return filas[-1][1] if filas else CERO
+
+
+# ── Escribir la cuenta: lo hace el motor ────────────────────────────────────
+#
+# Desde la revisión `0017` cada asiento es una fila de `cc_asientos`, el libro de
+# cuenta corriente de terceros de LibraCore (ADR-026 del motor, ADR-031 de acá).
+# Este producto no lo escribe con su ORM: asienta, corrige, borra y revierte **el
+# motor**, con la conexión de la sesión (`conn=`), así que el asiento sigue
+# entrando y saliendo junto con su documento —el comprobante, el cobro, el gasto—.
+# Lo único que escribe el ORM es `movimientos_cuenta_cargo`.
+
+
+def _conexion_del_motor(sesion: Session):
+    sesion.flush()
+    return conexion_libracore(sesion.connection())
+
+
+def asentar(sesion: Session, *, fecha: date, tercero_id: int, rol: RolCuenta, concepto: str,
+            descripcion: str | None = None, debe: Decimal = CERO, haber: Decimal = CERO,
+            comprobante_id: int | None = None, orden_id: int | None = None,
+            movimiento_caja_id: int | None = None, gasto_id: int | None = None) -> MovimientoCuenta:
+    """Escribe un asiento en el libro del motor y su fila propia. No hace `commit`."""
+    conn = _conexion_del_motor(sesion)
+    asiento_id = libro.asentar(
+        tercero_id, RolCuenta(rol).value, fecha.isoformat(), concepto, debe=debe, haber=haber,
+        descripcion=descripcion, factura_id=comprobante_id, conn=conn)
+    sesion.add(MovimientoCuentaCargo(asiento_id=asiento_id, orden_id=orden_id,
+                                     movimiento_caja_id=movimiento_caja_id, gasto_id=gasto_id))
+    sesion.flush()
+    return sesion.get(MovimientoCuenta, asiento_id)
+
+
+def corregir(sesion: Session, movimiento: MovimientoCuenta, **campos) -> MovimientoCuenta:
+    """Cambia el asiento en el lugar: lo que se hace al editar el documento que lo originó."""
+    traducidos = {}
+    for clave, valor in campos.items():
+        if clave == "fecha":
+            valor = valor.isoformat()
+        elif clave == "rol":
+            valor = RolCuenta(valor).value
+        traducidos[clave] = valor
+    libro.corregir(movimiento.id, conn=_conexion_del_motor(sesion), **traducidos)
+    sesion.expire(movimiento)
+    return movimiento
+
+
+def borrar(sesion: Session, movimiento: MovimientoCuenta) -> None:
+    """Saca el asiento cuando el documento editado deja de mover la cuenta. No es anular."""
+    conn = _conexion_del_motor(sesion)
+    cargo = sesion.get(MovimientoCuentaCargo, movimiento.id)
+    sesion.expunge(movimiento)
+    if cargo is not None:
+        sesion.delete(cargo)
+        sesion.flush()
+    libro.borrar(movimiento.id, conn=conn)
+
+
+def contraasentar(sesion: Session, movimiento: MovimientoCuenta, *, concepto: str,
+                  fecha: date | None = None) -> MovimientoCuenta:
+    """Revierte un asiento con otro de columnas invertidas, con la misma fila propia."""
+    conn = _conexion_del_motor(sesion)
+    original = sesion.get(MovimientoCuentaCargo, movimiento.id)
+    asiento_id = libro.contraasentar(
+        movimiento.id, fecha=fecha.isoformat() if fecha else None, concepto=concepto, conn=conn)
+    sesion.add(MovimientoCuentaCargo(
+        asiento_id=asiento_id,
+        orden_id=original.orden_id if original else None,
+        movimiento_caja_id=original.movimiento_caja_id if original else None,
+        gasto_id=original.gasto_id if original else None,
+    ))
+    sesion.flush()
+    return sesion.get(MovimientoCuenta, asiento_id)
