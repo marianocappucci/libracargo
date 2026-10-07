@@ -927,3 +927,22 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 - El filtro y la columna «Razón social» de los listados y de «Listado de comprobantes» se quitaron; los asientos viejos del log de actividad sobre `razones-sociales` dejan de ser clickeables.
 - No hay hoy ninguna regla que limite la clase de comprobante (A/B/C) según la condición de IVA del emisor: el operador elige el tipo. Lo que cambia es que la condición ya no puede ser un texto cualquiera y que sale de un solo lugar.
 - La migración del legado (`migracion/transformar.py`) ya no crea ni referencia razones sociales: todo lo migrado pertenece a la empresa, que se carga por la pantalla.
+
+## ADR-036 — Cartas de Porte Electrónicas traídas de ARCA por su CTG, con el CUIT representado elegido en cada pedido
+
+**Contexto.** Suitrans es transportista de granos: el titular emite la Carta de Porte Electrónica (CPE) y Suitrans la ve en ARCA. Necesita los datos de cada CPE —kilos de carga y de descarga, chofer, pagador del flete, origen, destino, tarifa, km— sin tipearlos (plan del wiki `libracargo-ctg-carta-de-porte-plan`, fase 3). El protocolo está en el motor desde libracore v1.143.0 (`libracore.arca_wscpe`, ADR-034 del motor) y el certificado `wscpe` se carga en Configuración → ARCA (ADR-032 del motor). El certificado es de **una persona** que representa a la empresa; por quién se consulta va en cada llamada (`cuitRepresentada`) y ARCA sólo acepta los CUIT que delegaron `wscpe` al alias del certificado. Al 2026-10-07 delegó **un titular** (Agropecuaria Pereiro) y **Suitrans S.A. todavía no**. El servicio **no permite listar** las CPE de un transportista: sólo se consulta por CTG.
+
+**Decisión.**
+1. **Tabla `cartas_porte`** (migración `0021`): lo que el producto usa, tipado (CTG, número, estado, fechas, CUIT de transportista, pagador, chofer, origen, destino y destinatario, dominios, grano, cosecha, kilos de carga y de descarga, códigos de ARCA de provincia y localidad, planta, km, tarifa), **por quién y en qué ambiente se consultó**, la respuesta entera de ARCA **sin el PDF** (`respuesta_arca`) y `consultada_en`. El PDF va en `cartas_porte_pdf`. `nro_ctg` es único, y también `(tipo_cpe, sucursal, nro_orden)`.
+2. **Los CUIT se guardan como vienen, no como FK.** El chofer no tiene CUIT en `choferes` y el pagador puede no estar cargado: el cruce con `terceros` se hace al leer (por dígitos, porque hay CUIT con guiones) y la pantalla muestra el nombre si lo encuentra. Crear o completar maestros desde la CPE queda para otra etapa.
+3. **La orden de carga es opcional y va del lado de la CPE** (`orden_carga_id`, `ON DELETE SET NULL`): una CPE puede llegar antes que su orden y una orden de otra carga no tiene CPE. Se vincula al traerla (sólo con un CTG por pedido) o después; actualizarla desde ARCA no la desvincula.
+4. **El CUIT representado se elige en cada pedido, sin valor por defecto**, entre los que el ticket de WSAA deja operar (`GET /api/cartas-porte/representados`, que lee las relaciones del ticket). Se guarda con la CPE y «Actualizar» lo reusa.
+5. **El ambiente es el del certificado `wscpe` cargado, producción primero.** En homologación no hay CPE reales, pero si sólo hay ese par se consulta ahí (sirve para probar). Cada CPE guarda su ambiente y se actualiza contra ése.
+6. **Ingreso por lote**: hasta 50 CTG por pedido, cada uno en su transacción; un CTG que falla (no existe, el CUIT no interviene) se informa y no se lleva a los demás. Un CUIT sin delegación corta el lote entero, porque falla igual para todos.
+7. **Refresco a pedido**, de una CPE o de **todas las abiertas** (sin kilos de descarga y en un estado que no es final: `AN`, `RE`, `DE`). No hay refresco automático programado: se agrega cuando haya volumen real.
+8. **Rutas `def`**, con ARCA por `asyncio.run` en el hilo del pedido, como la facturación: la firma de WSAA (`openssl`) y la sesión son sincrónicas. Un test lo mide.
+
+**Consecuencias.**
+- Para usarlo en una instancia: libracore v1.143.0, migración `0021`, el certificado `wscpe` cargado y **la delegación hecha en ARCA** por cada CUIT por el que se quiera consultar. Sin la de Suitrans S.A., sólo se leen las CPE en las que interviene un titular que delegó.
+- No cambia la orden ni la facturación: los kilos de la CPE **no** liquidan todavía (fase 5 del plan) ni la orden tiene etapas (fase 2).
+- El grano y las localidades se muestran por su **código de ARCA**; traducirlos (los catálogos de WSCPE) es una mejora aparte.
