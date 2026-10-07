@@ -28,3 +28,14 @@ if (typeof Range !== 'undefined' && !Range.prototype.getBoundingClientRect) {
     [Symbol.iterator]: function* () {},
   }) as unknown as DOMRectList
 }
+
+/**
+ * jsdom no implementa `scrollIntoView`. Lo usa `SelectBuscable` de `libra-ui` para
+ * mantener a la vista la opción resaltada al abrir la lista y al navegar con las
+ * flechas: es comportamiento de navegador, no lógica de este repo, así que se
+ * stubea igual que lo hace `libra-ui/test/setup.ts` (la Cuenta corriente es la
+ * primera pantalla de acá cuyos tests abren esa lista).
+ */
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {}
+}

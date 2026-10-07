@@ -82,7 +82,9 @@ export const ordenes = {
   anular: (id: number) => api.del<Orden>(`/api/ordenes/${id}`),
 }
 
-export type Opcion = { id: number; etiqueta: string }
+/** `detalle` es un texto secundario (el CUIT de un tercero): `Elegir` muestra sólo la etiqueta; los campos que buscan
+ *  escribiendo (Cuenta corriente) lo ven atenuado al lado del nombre, y también entra en la búsqueda. */
+export type Opcion = { id: number; etiqueta: string; detalle?: string }
 
 /** Trae **todas** las filas de un maestro, paginando.
  *
@@ -120,20 +122,28 @@ export async function cargarOpciones() {
     traerTodo('vehiculos'),
     traerTodo('tipos-carga'),
   ])
-  const mapear = (filas: Record<string, unknown>[], campo: string): Opcion[] =>
-    filas.map((f) => ({ id: f.id as number, etiqueta: String(f[campo] ?? '') }))
+  const mapear = (filas: Record<string, unknown>[], campo: string, detalle?: string): Opcion[] =>
+    filas.map((f) => {
+      const extra = detalle ? f[detalle] : undefined
+      return {
+        id: f.id as number, etiqueta: String(f[campo] ?? ''),
+        // Sólo si lo hay: un tercero sin CUIT no lleva `detalle: ''`.
+        ...(extra ? { detalle: String(extra) } : {}),
+      }
+    })
+  // De los terceros, el CUIT va como `detalle`: la cuenta corriente busca por nombre o por CUIT.
   return {
-    clientes: mapear(terceros.filter((t) => t.es_cliente), 'razon_social'),
-    fleteros: mapear(terceros.filter((t) => t.es_fletero), 'razon_social'),
+    clientes: mapear(terceros.filter((t) => t.es_cliente), 'razon_social', 'cuit'),
+    fleteros: mapear(terceros.filter((t) => t.es_fletero), 'razon_social', 'cuit'),
     // 🔴 Faltaba, y con ella la cuenta corriente de proveedores era
     // inalcanzable: la pantalla ofrecía el rol "Proveedor" y mostraba la lista
     // de CLIENTES. Los 15 proveedores de la instancia del cliente son
     // proveedor-puro, así que ninguno se podía elegir.
-    proveedores: mapear(terceros.filter((t) => t.es_proveedor), 'razon_social'),
+    proveedores: mapear(terceros.filter((t) => t.es_proveedor), 'razon_social', 'cuit'),
     // Todos, sin repetir. Un tercero con dos roles aparecía dos veces en los
     // lugares que concatenaban las listas —caja y el filtro de los reportes—,
     // y elegir cualquiera de las dos filas hacía lo mismo.
-    terceros: mapear(terceros, 'razon_social'),
+    terceros: mapear(terceros, 'razon_social', 'cuit'),
     localidades: mapear(localidades, 'nombre'),
     choferes: mapear(choferes, 'nombre'),
     vehiculos: mapear(vehiculos, 'patente_chasis'),
