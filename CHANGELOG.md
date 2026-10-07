@@ -2,6 +2,12 @@
 
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
+
+## [Unreleased] — Configuración → ARCA muestra el CTG y la Carta de Porte
+
+- La pantalla de ARCA tiene un bloque por servicio: **Facturación** y **CTG y Carta de Porte** (`wscpe`). Cada uno con su certificado y clave por ambiente, a nombre de qué CUIT está el certificado, cuándo vence y «Probar» contra ARCA para ese servicio (libracore v1.142.0, ADR-032; libra-ui v0.120.0, ADR-030).
+- Pines: libracore v1.142.0 (migración 0022 del motor: tabla nueva), libra-ui v0.120.0.
+
 ## [Unreleased]
 
 ### Cambiado

@@ -386,6 +386,11 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
         build_arca_router(
             prefix="/api/arca",
             empresa_por_defecto=EMPRESA_ARCA,
+            # Además de la facturación, el CTG y la Carta de Porte (`wscpe`): su propio par por
+            # ambiente, su estado y su «Probar» en la misma pantalla (libracore ADR-032, libra-ui
+            # ADR-030). El certificado de `wscpe` puede estar a nombre de la persona que representa
+            # a la empresa; la delegación va en cada llamada.
+            servicios=("wsfe", "wscpe"),
             usuario_actual=get_current_user,
             al_cambiar=auditoria_arca.construir_hook(db.fabrica_de_sesiones()),
         ),
