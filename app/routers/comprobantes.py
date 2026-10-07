@@ -347,5 +347,7 @@ def nota_de_credito(id_: int, datos: NotaDeCreditoIn, sesion: Session = Depends(
     except IntegrityError as err:
         sesion.rollback()
         raise traducir_integridad(err) from None
+    # La nota ya está autorizada y guardada: su PDF va después, y si no sale queda igual (ver `guardar_pdf`).
+    comprobantes.guardar_pdf(sesion, nota)
     sesion.refresh(nota)
     return nota

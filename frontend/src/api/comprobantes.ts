@@ -162,6 +162,12 @@ export const comprobantes = {
       razon_social_id: String(p.razon_social_id), cliente_id: String(p.cliente_id),
       total: p.total, fecha: p.fecha,
     })}`),
+  /** El PDF del comprobante (ADR-034): se abre y se baja por un enlace común, la sesión viaja en la cookie.
+   *  Sólo existe para un comprobante con CAE: sin CAE el servidor contesta 404. */
+  urlDelPdf: (id: number) => `/api/comprobantes/${id}/pdf`,
+  /** Manda ese mismo PDF por correo. El servidor contesta `{ ok: true }`, o dice dónde falta configurar el SMTP. */
+  enviarPorCorreo: (id: number, email: string) =>
+    api.post<{ ok: boolean }>(`/api/comprobantes/${id}/enviar-email`, { email }),
   anular: (id: number) => api.del<Comprobante>(`/api/comprobantes/${id}`),
   // La nota de crédito de un comprobante con CAE: **total** sin `importe`, **parcial** con él (con IVA, como
   // texto: no pasa por un float). Sin fecha ni tipo: la nota es de hoy y de la letra del original; los decide el
