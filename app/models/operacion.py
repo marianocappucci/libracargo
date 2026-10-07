@@ -16,18 +16,20 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     MetaData,
     Numeric,
     String,
     Table,
     Text,
     TypeDecorator,
+    func,
     join,
 )
 from sqlalchemy.orm import Mapped, column_property, mapped_column
 
 from app.models.base import Anotable, Auditable, Base
-from app.models.enums import CODIGO_ARCA, TIPO_DE_CODIGO, EstadoOrden, TipoComprobante
+from app.models.enums import CODIGO_ARCA, TIPO_DE_CODIGO, EstadoOrden, EtapaOrden, TipoComprobante
 
 # ── El comprobante vive en `facturas`, la tabla del motor ──────────────────
 #
@@ -339,6 +341,21 @@ class OrdenCarga(Base, Auditable, Anotable):
         nullable=False,
         default=EstadoOrden.PENDIENTE,
     )
+    #: La etapa del viaje (ADR-037), aparte del estado de facturación. Nace «asignada»; la `0022` dejó en
+    #: «cerrada» todo lo que ya existía, que son viajes hechos.
+    etapa: Mapped[EtapaOrden] = mapped_column(
+        Enum(EtapaOrden, name="etapa_orden", values_callable=lambda e: [m.value for m in e]),
+        nullable=False, default=EtapaOrden.ASIGNADA, server_default=EtapaOrden.ASIGNADA.value,
+    )
+    #: Kilos de la pesada al cargar y del ticket del puerto al descargar (ADR-037). Enteros, como en la CPE.
+    #: El neto se guarda porque a veces es lo único que se sabe; si están bruto y tara, el servidor lo calcula.
+    kg_bruto_carga: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kg_tara_carga: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kg_neto_carga: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kg_bruto_descarga: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kg_tara_descarga: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kg_neto_descarga: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # FK real, no el número de factura copiado a mano como hacía el legado. Desde
     # la revisión `0016` apunta a `facturas` del motor, donde vive el comprobante.
     comprobante_id: Mapped[int | None] = mapped_column(
@@ -373,10 +390,17 @@ class OrdenCarga(Base, Auditable, Anotable):
             "OR (estado <> 'facturada' AND comprobante_id IS NULL AND apertura_id IS NULL)",
             name="ck_ordenes_facturada_con_comprobante",
         ),
+        CheckConstraint(
+            "COALESCE(kg_bruto_carga, 0) >= 0 AND COALESCE(kg_tara_carga, 0) >= 0 AND COALESCE(kg_neto_carga, 0) >= 0"
+            " AND COALESCE(kg_bruto_descarga, 0) >= 0 AND COALESCE(kg_tara_descarga, 0) >= 0"
+            " AND COALESCE(kg_neto_descarga, 0) >= 0",
+            name="ck_ordenes_kilos_no_negativos",
+        ),
         Index("ix_ordenes_fecha", "fecha"),
         Index("ix_ordenes_cliente_fecha", "cliente_id", "fecha"),
         Index("ix_ordenes_fletero_fecha", "fletero_id", "fecha"),
         Index("ix_ordenes_estado", "estado"),
+        Index("ix_ordenes_etapa", "etapa"),
         Index("ix_ordenes_comprobante", "comprobante_id"),
         Index("ix_ordenes_apertura", "apertura_id"),
         Index("ix_ordenes_remito", "remito"),
@@ -468,3 +492,24 @@ class GastoDeProveedor(Base, Auditable):
         Index("ix_gastos_proveedor_fecha", "proveedor_id", "fecha"),
         Index("ix_gastos_fletero_fecha", "fletero_id", "fecha"),
     )
+
+
+class AdjuntoDeOrden(Base):
+    """Un archivo adjunto a una orden: la foto del ticket de descarga, un remito escaneado (ADR-037).
+
+    🔑 **En la base y no en el disco**, como el certificado de ARCA y el PDF de la CPE: así entra en el respaldo
+    de la instancia sin un paso aparte. Tiene tope de tamaño (`servicios.adjuntos.TAMANIO_MAXIMO`).
+    """
+
+    __tablename__ = "ordenes_adjuntos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    orden_id: Mapped[int] = mapped_column(ForeignKey("ordenes_carga.id", ondelete="CASCADE"), nullable=False)
+    nombre: Mapped[str] = mapped_column(String(200), nullable=False)
+    tipo_contenido: Mapped[str] = mapped_column(String(100), nullable=False)
+    tamanio: Mapped[int] = mapped_column(Integer, nullable=False)
+    contenido: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    __table_args__ = (Index("ix_ordenes_adjuntos_orden", "orden_id"),)

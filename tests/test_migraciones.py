@@ -150,7 +150,8 @@ def test_upgrade_downgrade_upgrade(base_limpia):
         # Y subió a 17 con la `0019` (`pre_facturas_cargo` y `pre_factura_ordenes`).
         # Y bajó a 16 con la `0020`, que borra `razones_sociales` (ADR-035).
         # Y subió a 18 con la `0021` (`cartas_porte` y `cartas_porte_pdf`, ADR-036).
-        assert tablas - del_motor == 18
+        # Y a 19 con la `0022` (`ordenes_adjuntos`, ADR-037).
+        assert tablas - del_motor == 19
         eng.dispose()
     finally:
         if original:
@@ -520,6 +521,47 @@ def test_la_0009_deja_pasar_al_mismo_tercero_en_las_dos_partes_si_es_del_legado(
                     "INSERT INTO gastos_de_proveedor (fecha, proveedor_id, fletero_id, "
                     "descripcion, importe, anulado) VALUES "
                     "('2025-01-01', 1, 1, 'nuevo', 100, false)"))
+        eng.dispose()
+    finally:
+        if original:
+            os.environ["DATABASE_URL"] = original
+
+
+def test_la_0022_deja_cerradas_las_ordenes_que_ya_existian(base_limpia):
+    """ADR-037: las órdenes que ya existen son viajes hechos y quedan en `cerrada`; las nuevas nacen `asignada`.
+
+    Siembra ANTES de subir, como la `0008`: la columna es `NOT NULL` y una tabla con filas es el caso de
+    producción (Suitrans tiene 4.337 órdenes).
+    """
+    original = os.environ.get("DATABASE_URL")
+    try:
+        cfg = _alembic(base_limpia)
+        command.upgrade(cfg, "0021")
+        eng = create_engine(base_limpia)
+        with eng.begin() as con:
+            cliente = con.execute(text(
+                "INSERT INTO terceros (razon_social, condicion_iva, es_cliente, es_fletero, es_proveedor, activo) "
+                "VALUES ('Cliente', 'consumidor_final', true, false, false, true) RETURNING id")).scalar_one()
+            a, b = (con.execute(text(
+                "INSERT INTO localidades (nombre, activa) VALUES (:n, true) RETURNING id"), {"n": n}).scalar_one()
+                for n in ("A", "B"))
+            con.execute(text(
+                "INSERT INTO ordenes_carga (fecha, cliente_id, origen_id, destino_id, tarifa, alicuota_iva, iva, "
+                "total, comision, estado) VALUES ('2026-08-01', :c, :a, :b, 100, 21, 21, 121, 0, 'pendiente')"),
+                {"c": cliente, "a": a, "b": b})
+
+        command.upgrade(cfg, "head")
+
+        with eng.begin() as con:
+            assert con.execute(text("SELECT etapa::text FROM ordenes_carga")).scalars().all() == ["cerrada"]
+            con.execute(text(
+                "INSERT INTO ordenes_carga (fecha, cliente_id, origen_id, destino_id, tarifa, alicuota_iva, iva, "
+                "total, comision, estado) VALUES ('2026-10-07', :c, :a, :b, 100, 21, 21, 121, 0, 'pendiente')"),
+                {"c": cliente, "a": a, "b": b})
+            assert con.execute(text(
+                "SELECT etapa::text FROM ordenes_carga ORDER BY id")).scalars().all() == ["cerrada", "asignada"]
+            assert con.execute(text(
+                "SELECT kg_neto_carga FROM ordenes_carga")).scalars().all() == [None, None]
         eng.dispose()
     finally:
         if original:

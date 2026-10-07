@@ -2,7 +2,8 @@
  *  combinacion era una pantalla distinta, copiada de la anterior. */
 import { SelectBuscable } from 'libra-ui/SelectBuscable'
 
-import type { Filtros, Opciones } from '@/api/ordenes'
+import type { Etapa, Filtros, Opciones } from '@/api/ordenes'
+import { ETAPAS } from '@/api/ordenes'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -80,8 +81,20 @@ export function FiltrosOrdenes({ valor, opciones, alCambiar }: Props) {
                 onChange={(e) => set({ estado: e.target.value || undefined })}>
           <option value="">Todos</option>
           <option value="pendiente">Pendiente</option>
-          <option value="facturada">Facturada</option>
+          <option value="facturada">Facturada (liquidada)</option>
           <option value="anulada">Anulada</option>
+        </select>
+      </div>
+
+      <div className="grid gap-1">
+        <Label htmlFor="f-etapa">Etapa</Label>
+        {/* Las cinco etapas del viaje. «Liquidada» no es una sexta: es una orden facturada, y se filtra con el
+            Estado «Facturada (liquidada)». */}
+        <select id="f-etapa" className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
+                value={valor.etapa ?? ''}
+                onChange={(e) => set({ etapa: (e.target.value || undefined) as Etapa | undefined })}>
+          <option value="">Todas</option>
+          {ETAPAS.map((e) => <option key={e.valor} value={e.valor}>{e.etiqueta}</option>)}
         </select>
       </div>
 

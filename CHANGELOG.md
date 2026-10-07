@@ -3,6 +3,15 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — La orden con etapas, kilos y la foto del ticket
+
+- **Etapa del viaje** en la orden (ADR-037): Asignada, Cargada, En viaje, Descargada y Cerrada. Va **aparte del estado de facturación**: una orden facturada se ve como «Liquidada». Se cambia desde la orden, también si ya está facturada, y por ahora sólo informa: no frena la facturación. Hay filtro por etapa en el listado.
+- **Kilos de carga y de descarga**: bruto, tara y neto. El neto se calcula solo si están bruto y tara.
+- **Adjuntos de la orden**, para la foto del ticket de descarga o un PDF. Se pueden subir, ver y borrar, también en una orden facturada. Aceptan JPG, PNG, WEBP, HEIC (iPhone) y PDF, hasta 10 MB.
+- **CUIT del chofer** en su ficha, con el dígito verificador. Es con lo que se cruza la Carta de Porte.
+- **API**: `etapa` y los seis `kg_*` en `/api/ordenes`; `GET /api/ordenes?etapa=`, `PUT /api/ordenes/{id}/etapa`, y `GET`/`POST /api/ordenes/{id}/adjuntos`, `GET`/`DELETE /api/ordenes/{id}/adjuntos/{adjunto_id}`; `cuit` en `/api/choferes`.
+- **Migración `0022`**: todas las órdenes que ya existen quedan en la etapa **Cerrada**, y las nuevas nacen **Asignada**. Kilos, CUIT y adjuntos arrancan vacíos.
+
 ## [Unreleased] — Cartas de porte: traerlas de ARCA por su CTG
 
 - **Pantalla nueva «Cartas de porte»** (ADR-036): se pegan uno o varios CTG, se elige **por qué CUIT se consulta** (los que delegaron el servicio en ARCA; no hay valor por defecto) y se traen de ARCA estado, kilos de carga y de descarga, chofer, pagador del flete, transportista, dominios, origen, destino, km, tarifa y el **PDF**. Vista previa antes de guardar, resultado por CTG (uno que falla no frena a los demás), «Actualizar» una o **todas las abiertas** hasta que ARCA informe la descarga, y **vincular con una orden de carga**.

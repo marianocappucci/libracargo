@@ -9,14 +9,18 @@ import { useForm } from 'react-hook-form'
 import { useSearchParams } from 'react-router-dom'
 
 import type { Filtros, Opciones, Orden } from '@/api/ordenes'
-import { cargarOpciones, ordenes as api } from '@/api/ordenes'
+import { ETAPAS, cargarOpciones, ordenes as api } from '@/api/ordenes'
+import { formatearKilos } from '@/api/cartas-porte'
 import { useConfiguracion } from '@/api/configuracion'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import { AdjuntosDeOrden } from '@/components/AdjuntosDeOrden'
+import { CambiarEtapa } from '@/components/CambiarEtapa'
+import { KilosDelDetalle, SeccionKilos } from '@/components/KilosDeOrden'
 import { OrdenImpresa } from '@/components/OrdenImpresa'
 import type { DatosOrden, EntradaOrden } from '@/components/esquema-orden'
 import { ORDEN_VACIA, esquemaOrden, formatearImporte } from '@/components/esquema-orden'
 import { FiltrosOrdenes } from '@/components/FiltrosOrdenes'
-import { EstadoDeOrden } from '@/components/EstadoDeOrden'
+import { EstadoDeOrden, EtapaDeOrden } from '@/components/EstadoDeOrden'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -26,6 +30,10 @@ import { Label } from '@/components/ui/label'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 type Form = UseFormReturn<EntradaOrden, unknown, DatosOrden>
+
+const KILOS_EN_LA_TABLA = {
+  className: 'tabular-nums hidden xl:table-cell', colClassName: 'hidden xl:table-column', opcional: true,
+}
 
 const nombreDe = (
   lista: { id: number; etiqueta: string }[] | undefined, id: number | null,
@@ -40,6 +48,19 @@ function Campo({ form, nombre, etiqueta, tipo = 'text' }: {
       <Label htmlFor={nombre}>{etiqueta}</Label>
       <Input id={nombre} type={tipo} {...form.register(nombre)} />
       {error && <p className="text-destructive text-xs">{String(error.message)}</p>}
+    </div>
+  )
+}
+
+function Etapa({ form }: { form: Form }) {
+  return (
+    <div className="grid gap-1">
+      <Label htmlFor="etapa">Etapa</Label>
+      {/* `<select>` nativo: son cinco valores fijos. Es la etapa del viaje; el estado de facturación es otro dato
+          y no se elige acá (lo cambia facturar). */}
+      <select id="etapa" className="h-9 rounded-md border px-3 text-sm" {...form.register('etapa')}>
+        {ETAPAS.map((e) => <option key={e.valor} value={e.valor}>{e.etiqueta}</option>)}
+      </select>
     </div>
   )
 }
@@ -129,8 +150,12 @@ export default function Ordenes() {
   function abrir(orden: Orden | null) {
     setEditando(orden)
     setError(null)
-    form.reset(orden
-      ? ({ ...orden } as unknown as EntradaOrden)
+    // Los kilos que no se saben vienen `null`: el campo del formulario es un texto, y vacío es «no se sabe».
+    const sinNulos = orden
+      ? Object.fromEntries(Object.entries(orden).map(([k, v]) => [k, k.startsWith('kg_') && v == null ? '' : v]))
+      : null
+    form.reset(sinNulos
+      ? (sinNulos as unknown as EntradaOrden)
       : (ORDEN_VACIA as EntradaOrden))
     setAbierto(true)
   }
@@ -168,6 +193,12 @@ export default function Ordenes() {
     }))
   }
 
+  /** Una orden cambió de etapa desde el detalle: se actualiza la ficha y su fila sin volver a pedir el listado. */
+  function etapaCambiada(orden: Orden) {
+    setDetalle(orden)
+    setFilas((actuales) => actuales.map((f) => (f.id === orden.id ? orden : f)))
+  }
+
   const columnas = [
     { accessorKey: 'fecha', header: sortableHeader('Fecha') },
     { id: 'cliente', header: sortableHeader('Cliente'),
@@ -179,6 +210,17 @@ export default function Ordenes() {
     { accessorKey: 'remito', header: 'Remito' },
     { id: 'total', header: sortableHeader('Total'),
       accessorFn: (o: Orden) => formatearImporte(o.total) },
+    { id: 'etapa', header: sortableHeader('Etapa'),
+      // Ordena por el avance del viaje, no por el alfabeto; liquidada y anulada van al final, como se leen.
+      accessorFn: (o: Orden) => o.estado === 'anulada' ? ETAPAS.length + 1
+        : o.estado === 'facturada' ? ETAPAS.length : ETAPAS.findIndex((e) => e.valor === o.etapa),
+      cell: ({ row }: { row: { original: Orden } }) => <EtapaDeOrden orden={row.original} /> },
+    // Los kilos netos, sólo donde hay ancho: en una pantalla angosta la tabla ya está justa y los kilos completos
+    // (bruto, tara, neto) están en el detalle.
+    { id: 'kg-carga', header: 'Kg carga', meta: KILOS_EN_LA_TABLA,
+      accessorFn: (o: Orden) => formatearKilos(o.kg_neto_carga) },
+    { id: 'kg-descarga', header: 'Kg descarga', meta: KILOS_EN_LA_TABLA,
+      accessorFn: (o: Orden) => formatearKilos(o.kg_neto_descarga) },
     { id: 'estado', header: sortableHeader('Estado'),
       accessorFn: (o: Orden) => o.estado,
       cell: ({ row }: { row: { original: Orden } }) => (
@@ -220,7 +262,9 @@ export default function Ordenes() {
 
       <FiltrosOrdenes valor={filtros} opciones={opciones} alCambiar={setFiltros} />
 
-      {error && (
+      {/* Con el formulario abierto el error se lee ADENTRO, al lado del botón que lo causó: el de la página queda
+          detrás del modal y el 422 («el neto no es bruto menos tara») no lo vería nadie. */}
+      {error && !abierto && (
         <p role="alert" className="mb-4 rounded border border-destructive/40 p-3 text-sm">
           {error}
         </p>
@@ -261,12 +305,19 @@ export default function Ordenes() {
             <Campo form={form} nombre="alicuota_iva" etiqueta="Alícuota de IVA (%)" />
             <Campo form={form} nombre="comision" etiqueta="Comisión" />
             <Campo form={form} nombre="observaciones" etiqueta="Observaciones" />
+            <Etapa form={form} />
+            <SeccionKilos form={form} />
             {/* El IVA y el total NO se editan: los calcula el servidor desde la
                 tarifa y la alícuota. Un campo editable mentiría sobre quién
                 decide el importe, que es el defecto que trae el legado. */}
             <p className="text-muted-foreground text-sm md:col-span-2">
               El IVA y el total los calcula el servidor desde la tarifa y la alícuota.
             </p>
+            {error && (
+              <p role="alert" className="rounded border border-destructive/40 p-3 text-sm md:col-span-2">
+                {error}
+              </p>
+            )}
             <DialogFooter className="md:col-span-2">
               <Button type="button" variant="ghost" onClick={() => setAbierto(false)}>
                 Cancelar
@@ -326,6 +377,9 @@ export default function Ordenes() {
                   <p className="font-medium">{valor}</p>
                 </div>
               ))}
+              <KilosDelDetalle orden={detalle} />
+              <CambiarEtapa orden={detalle} alCambiar={etapaCambiada} />
+              <AdjuntosDeOrden orden={detalle} />
               {detalle.observaciones && (
                 <div className="col-span-2">
                   <p className="text-muted-foreground text-xs">Observaciones</p>

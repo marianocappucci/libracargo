@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { ORDEN_VACIA, esquemaOrden, hoyEnArgentina } from './esquema-orden'
+import {
+  ORDEN_VACIA, esquemaOrden, formatearTamanio, hoyEnArgentina, netoCalculado,
+} from './esquema-orden'
 
 describe('esquema de la orden', () => {
   it('rechaza el origen igual al destino, y lo dice en el campo destino', () => {
@@ -43,5 +45,93 @@ describe('esquema de la orden', () => {
     expect(ORDEN_VACIA.fecha).toBe(enArgentina)
     // Nunca puede estar ADELANTE de UTC: Argentina es UTC-3.
     expect(enArgentina <= enUtc).toBe(true)
+  })
+})
+
+describe('esquema de la orden · etapa y kilos', () => {
+  const base = {
+    fecha: '2026-10-05', cliente_id: '1', origen_id: '2', destino_id: '3',
+    tarifa: '1000.00', alicuota_iva: '21.00', comision: '0.00',
+  }
+
+  it('sin etapa ni kilos, la orden nace «asignada» y con los kilos en null', () => {
+    const r = esquemaOrden.safeParse(base)
+    expect(r.success).toBe(true)
+    if (r.success) {
+      expect(r.data.etapa).toBe('asignada')
+      expect(r.data.kg_bruto_carga).toBeNull()
+      expect(r.data.kg_neto_descarga).toBeNull()
+    }
+  })
+
+  it('los kilos vacíos son «no se sabe» (null), no cero', () => {
+    const r = esquemaOrden.safeParse({ ...base, kg_bruto_carga: '', kg_tara_carga: '', kg_neto_carga: '' })
+    expect(r.success).toBe(true)
+    if (r.success) expect(r.data.kg_neto_carga).toBeNull()
+  })
+
+  it('con bruto y tara el neto es la resta, aunque haya quedado otro tipeado', () => {
+    const r = esquemaOrden.safeParse({
+      ...base, kg_bruto_carga: '44000', kg_tara_carga: '14500', kg_neto_carga: '1',
+      kg_bruto_descarga: '100', kg_tara_descarga: '100',
+    })
+    expect(r.success).toBe(true)
+    if (r.success) {
+      expect(r.data).toMatchObject({ kg_bruto_carga: 44000, kg_tara_carga: 14500, kg_neto_carga: 29500 })
+      // Tara igual al bruto es válida: neto cero.
+      expect(r.data.kg_neto_descarga).toBe(0)
+    }
+  })
+
+  it('el neto solo se acepta', () => {
+    const r = esquemaOrden.safeParse({ ...base, kg_neto_descarga: '29480' })
+    expect(r.success).toBe(true)
+    if (r.success) expect(r.data).toMatchObject({ kg_neto_descarga: 29480, kg_bruto_descarga: null })
+  })
+
+  it('🔴 tara mayor que el bruto se rechaza en el campo de la tara, con el mensaje del backend', () => {
+    const r = esquemaOrden.safeParse({ ...base, kg_bruto_carga: '10000', kg_tara_carga: '12000' })
+    expect(r.success).toBe(false)
+    if (!r.success) {
+      expect(r.error.issues[0].path).toEqual(['kg_tara_carga'])
+      expect(r.error.issues[0].message)
+        .toBe('los kilos de carga: la tara (12000) no puede ser mayor que el bruto (10000)')
+    }
+  })
+
+  it('kilos negativos, con decimales o que no son un número se rechazan', () => {
+    for (const malo of ['-1', '10.5', 'mucho']) {
+      expect(esquemaOrden.safeParse({ ...base, kg_bruto_carga: malo }).success, malo).toBe(false)
+    }
+  })
+
+  it('una etapa que no existe se rechaza', () => {
+    expect(esquemaOrden.safeParse({ ...base, etapa: 'volando' }).success).toBe(false)
+    expect(esquemaOrden.safeParse({ ...base, etapa: 'en_viaje' }).success).toBe(true)
+  })
+
+  it('editar una orden sin remito, cantidad ni observaciones (null en la API) no se traba', () => {
+    const r = esquemaOrden.safeParse({ ...base, remito: null, cantidad: null, unidad: null, observaciones: null })
+    expect(r.success).toBe(true)
+  })
+})
+
+describe('netoCalculado', () => {
+  it('es bruto menos tara sólo cuando se puede', () => {
+    expect(netoCalculado('44000', '14500')).toBe(29500)
+    expect(netoCalculado(44000, 14500)).toBe(29500)
+    expect(netoCalculado('', '14500')).toBeNull()
+    expect(netoCalculado('44000', null)).toBeNull()
+    expect(netoCalculado('10', '20')).toBeNull()
+  })
+})
+
+describe('formatearTamanio', () => {
+  it('lo lee como una persona', () => {
+    expect(formatearTamanio(850)).toBe('850 B')
+    expect(formatearTamanio(1536)).toBe('1,5 KB')
+    expect(formatearTamanio(2048)).toBe('2 KB')
+    expect(formatearTamanio(2_411_724)).toBe('2,3 MB')
+    expect(formatearTamanio(10 * 1024 * 1024)).toBe('10 MB')
   })
 })

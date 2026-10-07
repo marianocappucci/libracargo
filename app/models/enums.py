@@ -31,6 +31,17 @@ class EstadoOrden(enum.Enum):
     ANULADA = "anulada"
 
 
+class EtapaOrden(enum.Enum):
+    """Por dónde va el viaje (ADR-037). **No es el estado de facturación**: una orden facturada sigue teniendo
+    etapa, y la pantalla la muestra como «liquidada». Por ahora sólo informa: no frena la facturación."""
+
+    ASIGNADA = "asignada"
+    CARGADA = "cargada"
+    EN_VIAJE = "en_viaje"
+    DESCARGADA = "descargada"
+    CERRADA = "cerrada"
+
+
 class TipoComprobante(enum.Enum):
     FACTURA_A = "factura_a"
     FACTURA_B = "factura_b"

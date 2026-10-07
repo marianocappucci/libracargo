@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from libracore.arca_wsfe import cuit_con_verificador_valido
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.enums import CondicionIVA
@@ -102,12 +103,26 @@ class LocalidadOut(LocalidadIn):
 class ChoferIn(_Base):
     nombre: str = Field(min_length=1, max_length=120)
     dni: str | None = Field(default=None, max_length=15)
+    #: Con o sin guiones; se guarda en once dígitos (ADR-037). Es el que trae la Carta de Porte.
+    cuit: str | None = CUIT
     telefono: str | None = Field(default=None, max_length=40)
     fletero_id: int | None = None
     observaciones: str | None = None
     activo: bool = True
 
     _limpiar = field_validator("*", mode="before")(_vacio_es_nulo)
+
+    @field_validator("cuit", mode="after")
+    @classmethod
+    def _cuit_valido(cls, v):
+        """Once dígitos y el dígito verificador de ARCA, con la regla del motor. Un CUIT mal tipeado no cruza
+        nunca con la Carta de Porte, y nada avisaría."""
+        if v is None:
+            return v
+        digitos = "".join(c for c in v if c.isdigit())
+        if len(digitos) != 11 or not cuit_con_verificador_valido(digitos):
+            raise ValueError("el CUIT del chofer no es válido: tienen que ser 11 dígitos con el verificador correcto")
+        return digitos
 
 
 class ChoferOut(ChoferIn):

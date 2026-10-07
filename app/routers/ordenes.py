@@ -8,19 +8,20 @@ con filtros opcionales que se combinan entre sí.
 
 from datetime import date
 from decimal import Decimal
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from sqlalchemy import String, cast, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_staff
 from app.db import obtener_sesion
-from app.models.enums import AccionAuditoria, EstadoOrden
-from app.models.operacion import OrdenCarga, PreFacturaOrden
+from app.models.enums import AccionAuditoria, EstadoOrden, EtapaOrden
+from app.models.operacion import AdjuntoDeOrden, OrdenCarga, PreFacturaOrden
 from app.routers.maestros import traducir_integridad
-from app.schemas.ordenes import OrdenIn, OrdenOut, calcular_importes
-from app.servicios import auditoria, pre_facturas
+from app.schemas.ordenes import AdjuntoOut, EtapaIn, OrdenIn, OrdenOut, calcular_importes
+from app.servicios import adjuntos, auditoria, pre_facturas
 from app.servicios.ordenes import (
     revertir_comision,
     sincronizar_comision,
@@ -62,6 +63,7 @@ def listar(
     destino_id: int | None = None,
     tipo_carga_id: int | None = None,
     estado: EstadoOrden | None = None,
+    etapa: EtapaOrden | None = None,
     # `None` es "las dos", distinto de `False`. Es el filtro que en el legado
     # era una pantalla propia: "facturar pendientes".
     facturada: bool | None = Query(default=None),
@@ -83,6 +85,7 @@ def listar(
         (OrdenCarga.destino_id, destino_id),
         (OrdenCarga.tipo_carga_id, tipo_carga_id),
         (OrdenCarga.estado, estado),
+        (OrdenCarga.etapa, etapa),
     ):
         if valor is not None:
             consulta = consulta.where(columna == valor)
@@ -224,3 +227,98 @@ def auditar_importes(
     iva, total = calcular_importes(orden.tarifa, orden.alicuota_iva)
     return {"iva_calculado": iva, "total_calculado": total,
             "iva_guardado": orden.iva, "total_guardado": orden.total}
+
+
+# ── Etapa ───────────────────────────────────────────────────────────────────
+
+
+@router.put("/{id_}/etapa", response_model=OrdenOut)
+def cambiar_etapa(id_: int, datos: EtapaIn, sesion: Session = Depends(obtener_sesion),
+                  actual: dict = Depends(get_current_user)):
+    """Mueve la orden a otra etapa del viaje (ADR-037).
+
+    Aparte del `PUT` de la orden porque **también vale para una facturada**: la etapa es operativa y no cambia
+    nada del comprobante. Por ahora sólo informa: se puede ir a cualquier etapa, para adelante o para atrás.
+    Una anulada no se mueve.
+    """
+    orden = _traer(sesion, id_)
+    if orden.estado is EstadoOrden.ANULADA:
+        raise HTTPException(409, "la orden esta anulada: no cambia de etapa")
+    antes = auditoria.instantanea(orden)
+    orden.etapa = datos.etapa
+    auditoria.registrar(sesion, actual, "orden_carga", orden.id,
+                        AccionAuditoria.MODIFICACION, antes=antes, despues=orden)
+    sesion.commit()
+    sesion.refresh(orden)
+    return orden
+
+
+# ── Adjuntos ────────────────────────────────────────────────────────────────
+
+
+def _adjunto(sesion: Session, orden_id: int, adjunto_id: int) -> AdjuntoDeOrden:
+    adj = sesion.get(AdjuntoDeOrden, adjunto_id)
+    if adj is None or adj.orden_id != orden_id:
+        raise HTTPException(404, f"la orden {orden_id} no tiene el adjunto {adjunto_id}")
+    return adj
+
+
+def _usuario_id(actual: dict | None) -> int | None:
+    valor = str((actual or {}).get("id", ""))
+    return int(valor) if valor.isdigit() else None
+
+
+@router.get("/{id_}/adjuntos", response_model=list[AdjuntoOut])
+def listar_adjuntos(id_: int, sesion: Session = Depends(obtener_sesion)):
+    _traer(sesion, id_)
+    return list(sesion.scalars(
+        select(AdjuntoDeOrden).where(AdjuntoDeOrden.orden_id == id_).order_by(AdjuntoDeOrden.id)))
+
+
+@router.post("/{id_}/adjuntos", response_model=AdjuntoOut, status_code=201)
+def subir_adjunto(id_: int, archivo: UploadFile = File(...), sesion: Session = Depends(obtener_sesion),
+                  actual: dict = Depends(get_current_user)):
+    """Adjunta un archivo (la foto del ticket, un PDF). **También a una orden facturada**: el ticket suele
+    llegar después. El tipo sale del contenido, no del navegador; tope de 10 MB."""
+    orden = _traer(sesion, id_)
+    if orden.estado is EstadoOrden.ANULADA:
+        raise HTTPException(409, "la orden esta anulada: no se le adjuntan archivos")
+    contenido = archivo.file.read(adjuntos.TAMANIO_MAXIMO + 1)
+    try:
+        tipo = adjuntos.tipo_por_contenido(contenido)
+    except adjuntos.AdjuntoInvalido as e:
+        raise HTTPException(422, str(e)) from None
+    adj = AdjuntoDeOrden(orden_id=orden.id, nombre=adjuntos.nombre_seguro(archivo.filename),
+                         tipo_contenido=tipo, tamanio=len(contenido), contenido=contenido,
+                         created_by=_usuario_id(actual))
+    sesion.add(adj)
+    sesion.flush()
+    auditoria.registrar(sesion, actual, "orden_adjunto", adj.id, AccionAuditoria.ALTA,
+                        despues={"orden_id": orden.id, "nombre": adj.nombre, "tipo": tipo, "tamanio": adj.tamanio})
+    sesion.commit()
+    sesion.refresh(adj)
+    return adj
+
+
+@router.get("/{id_}/adjuntos/{adjunto_id}")
+def descargar_adjunto(id_: int, adjunto_id: int, sesion: Session = Depends(obtener_sesion)):
+    adj = _adjunto(sesion, id_, adjunto_id)
+    return Response(adj.contenido, media_type=adj.tipo_contenido, headers={
+        # `filename*` en UTF-8 para los acentos y un `filename` ASCII de respaldo: un nombre con «ñ» o un emoji
+        # en el `filename` solo rompe el encabezado.
+        "Content-Disposition": (f'inline; filename="{adj.nombre.encode("ascii", "replace").decode()}"; '
+                                f"filename*=UTF-8''{quote(adj.nombre)}"),
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@router.delete("/{id_}/adjuntos/{adjunto_id}", status_code=204)
+def borrar_adjunto(id_: int, adjunto_id: int, sesion: Session = Depends(obtener_sesion),
+                   actual: dict = Depends(get_current_user)):
+    adj = _adjunto(sesion, id_, adjunto_id)
+    auditoria.registrar(sesion, actual, "orden_adjunto", adj.id, AccionAuditoria.BAJA,
+                        antes={"orden_id": adj.orden_id, "nombre": adj.nombre, "tipo": adj.tipo_contenido,
+                               "tamanio": adj.tamanio})
+    sesion.delete(adj)
+    sesion.commit()
+    return Response(status_code=204)
