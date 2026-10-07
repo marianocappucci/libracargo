@@ -9,7 +9,7 @@
  * la tupla `("admin", "staff")` del `UserRepository` de este producto, así
  * que no hay nada propio que pasarle.
  */
-import { UserCog } from 'lucide-react'
+import { ICONOS_LC } from '@/iconos'
 import { Usuarios as UsuariosCompartido } from 'libra-ui/Usuarios'
 import { useAuth } from '@/context/AuthContext'
 
@@ -22,7 +22,7 @@ export default function Usuarios() {
           recibe el icono del sidebar de este producto. Antes había uno acá
           también y la pantalla decía «Usuarios» dos veces. */}
       <UsuariosCompartido
-        icono={UserCog}
+        icono={ICONOS_LC.usuarios}
         basePath="/api/usuarios"
         // El backend adoptó `libraauth.usuarios.build_users_router()`
         // (ADR-018, v0.43.0), que trae el `DELETE` con las guardas del único

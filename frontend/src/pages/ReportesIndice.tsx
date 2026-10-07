@@ -9,7 +9,7 @@
  * fechas: se apretaba con la pantalla recién abierta y salían noventa hojas. Los
  * listados viven acá, donde el rango es obligatorio.
  */
-import { ArrowRight, BarChart3 } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -17,6 +17,7 @@ import type { Reporte } from '@/api/reportes'
 import { reportes } from '@/api/reportes'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
+import { ICONOS_LC } from '@/iconos'
 
 const NOMBRE_DE_PARAMETRO: Record<string, string> = {
   rango: 'fechas', cliente: 'cliente', fletero: 'fletero/transporte',
@@ -61,7 +62,7 @@ export default function ReportesIndice() {
 
   return (
     <div className="p-6">
-      <TituloPantalla icono={BarChart3}>Reportes</TituloPantalla>
+      <TituloPantalla icono={ICONOS_LC.reportes}>Reportes</TituloPantalla>
       <p className="text-muted-foreground mt-1 text-sm">
         Cada uno se abre por separado y se parametriza por lo suyo. Todos se
         pueden imprimir.

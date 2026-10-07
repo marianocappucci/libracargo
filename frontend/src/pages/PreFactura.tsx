@@ -13,7 +13,7 @@
 import { api } from 'libra-ui/api-client'
 import { BadgeEstado } from 'libra-ui/badge-estado'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
-import { ArrowLeft, Download, ExternalLink, Receipt } from 'lucide-react'
+import { ArrowLeft, Download, ExternalLink } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
@@ -34,6 +34,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { irA } from '@/navegacion'
+import { ICONOS_LC } from '@/iconos'
 
 type Accion = 'enviar' | 'anular' | 'facturar' | null
 
@@ -157,7 +158,7 @@ export default function PreFactura() {
         <Button variant="ghost" size="icon" asChild aria-label="Volver a Pre facturas">
           <Link to="/pre-facturas"><ArrowLeft className="size-4" /></Link>
         </Button>
-        <TituloPantalla icono={Receipt}>Pre factura {pf.numero_interno}</TituloPantalla>
+        <TituloPantalla icono={ICONOS_LC.preFacturas}>Pre factura {pf.numero_interno}</TituloPantalla>
         <BadgeEstado tono={TONO_DE_ESTADO[pf.estado]}>{NOMBRE_DE_ESTADO[pf.estado]}</BadgeEstado>
       </div>
 

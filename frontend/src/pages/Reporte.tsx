@@ -13,7 +13,7 @@
  * corre y no hay botón que apretar.
  */
 import { DataTable } from 'libra-ui/data-table'
-import { ArrowLeft, BarChart3 } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
@@ -35,6 +35,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 import { formatearFecha, formatearFechaHoraDeTexto } from '@/components/esquema-orden'
+import { ICONOS_LC } from '@/iconos'
 
 type Fila = Record<string, string | number | null>
 
@@ -337,7 +338,7 @@ export default function Reporte() {
 
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
-          <TituloPantalla icono={BarChart3}>{entrada?.titulo ?? slug}</TituloPantalla>
+          <TituloPantalla icono={ICONOS_LC.reportes}>{entrada?.titulo ?? slug}</TituloPantalla>
           {entrada && (
             <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
               {entrada.descripcion}

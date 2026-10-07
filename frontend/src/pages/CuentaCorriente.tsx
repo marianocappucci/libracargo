@@ -1,4 +1,4 @@
-import { BookOpen, Store, Truck, Users, type LucideIcon } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 /** La cuenta corriente de un tercero, con saldo corrido.
  *
  * La cuenta es el **par** (tercero, rol): un mismo tercero puede ser cliente y
@@ -34,15 +34,16 @@ import { BotonImprimir } from '@/components/impresion'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ICONOS_LC } from '@/iconos'
 import { origenDelMovimiento } from '@/navegacion'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 import { formatearFecha } from '@/components/esquema-orden'
 
 /** Las tres cuentas. `etiqueta` es la del campo (singular); `pestana`, la de la pestaña. */
 const ROLES: { valor: Rol; pestana: string; etiqueta: string; icono: LucideIcon }[] = [
-  { valor: 'cliente', pestana: 'Clientes', etiqueta: 'Cliente', icono: Users },
-  { valor: 'fletero', pestana: 'Fleteros', etiqueta: 'Fletero', icono: Truck },
-  { valor: 'proveedor', pestana: 'Proveedores', etiqueta: 'Proveedor', icono: Store },
+  { valor: 'cliente', pestana: 'Clientes', etiqueta: 'Cliente', icono: ICONOS_LC.clientes },
+  { valor: 'fletero', pestana: 'Fleteros', etiqueta: 'Fletero', icono: ICONOS_LC.fleteros },
+  { valor: 'proveedor', pestana: 'Proveedores', etiqueta: 'Proveedor', icono: ICONOS_LC.proveedores },
 ]
 
 /** El rol que pide un query, o `null` si falta o no es uno de los tres. */
@@ -223,7 +224,7 @@ export default function CuentaCorriente() {
   return (
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
-        <TituloPantalla icono={BookOpen}>Cuenta corriente</TituloPantalla>
+        <TituloPantalla icono={ICONOS_LC.cuentaCorriente}>Cuenta corriente</TituloPantalla>
         {datos && (
           <BotonImprimir
             titulo="Cuenta corriente"
