@@ -20,7 +20,7 @@ from libracore import pre_facturas as dominio_pre_facturas
 from libracore.db import core as libracore_core
 from sqlalchemy import text
 
-from app.servicios import pre_facturas as servicio
+from app.servicios.emisor_del_pdf import emisor_de
 from tests.conftest import CUIT_EMISOR, URL_CORE, arca_responde
 from tests.test_comprobantes import orden, pre_factura
 
@@ -433,7 +433,7 @@ def test_el_emisor_del_pdf_es_la_razon_social_de_la_pre_factura(cliente, datos, 
     """El nombre, el CUIT y la condición de IVA son de la razón social, no de la empresa de la instancia."""
     a = orden(cliente, datos, "1000.00")
     pf = _crear(cliente, datos, [a])
-    emisor = servicio.emisor_del_pdf(sesion, pf)
+    emisor = emisor_de(sesion, pf)
     assert emisor["nombre"] == "Suitrans"
     assert emisor["cuit"] == CUIT_EMISOR
     assert emisor["iva_condition"] == "Responsable Inscripto"
@@ -442,7 +442,7 @@ def test_el_emisor_del_pdf_es_la_razon_social_de_la_pre_factura(cliente, datos, 
     cliente.put("/api/configuracion", json={
         "razon_social": "Suitrans SA", "cuit": CUIT_EMISOR, "domicilio": "Calle Falsa 123",
         "localidad": "Suipacha", "provincia": "Buenos Aires", "ingresos_brutos": "123-456"})
-    emisor = servicio.emisor_del_pdf(sesion, pf)
+    emisor = emisor_de(sesion, pf)
     assert emisor["direccion"] == "Calle Falsa 123, Suipacha, Buenos Aires"
     assert emisor["iibb"] == "123-456"
 
@@ -450,7 +450,7 @@ def test_el_emisor_del_pdf_es_la_razon_social_de_la_pre_factura(cliente, datos, 
     cliente.put(f"/api/razones-sociales/{datos['otra_razon']}", json={"nombre": "Juan Pérez", "cuit": "20-33445566-2"})
     propia = orden(cliente, datos, "100.00", razon_social_id=datos["otra_razon"])
     otra = _crear(cliente, datos, [propia], razon=datos["otra_razon"])
-    assert "direccion" not in servicio.emisor_del_pdf(sesion, otra)
+    assert "direccion" not in emisor_de(sesion, otra)
 
 
 def test_enviar_por_correo_la_marca_enviada_y_si_falla_queda_como_estaba(cliente, datos, monkeypatch):

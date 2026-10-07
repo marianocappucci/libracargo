@@ -16,7 +16,7 @@ from libraauth import session_auth as _session_auth
 from libraauth.captcha import Captcha
 from libraauth.models import Base as AuthBase
 from libraauth.testing import crear_schema_de_auth
-from libracore import config_manager
+from libracore import config_manager, pdf_generator
 from libracore.db import core as libracore_core
 from libracore.db.schema import init_core_schema
 from libracore.testing.pg_por_worker import base_por_worker
@@ -172,6 +172,23 @@ def _arca_de_cero(tmp_path, monkeypatch):
     libracore_core.configure(URL_CORE)
     with libracore_core.get_connection() as conn:
         conn.execute("DELETE FROM arca_config")
+
+
+@pytest.fixture(autouse=True)
+def _pdfs_de_comprobantes_en_tmp(tmp_path):
+    """Los PDF que se guardan al emitir caen en la carpeta del test, no en la del paquete del motor.
+
+    Desde ADR-034 emitir un comprobante genera y guarda su PDF (`pdf_generator.FACTURAS_PDF_DIR`, que sin
+    `DATA_DIR` es una carpeta adentro de `site-packages/libracore`). Sin esto cada corrida ensucia el venv, y un
+    PDF viejo de otro test podría ser el que un endpoint encuentre en disco.
+
+    `MonkeyPatch()` propio y no el fixture `monkeypatch`, por lo mismo que `_terminos_ya_aceptados`: un
+    `monkeypatch.undo()` en el cuerpo de un test deshace también este parche.
+    """
+    mp = pytest.MonkeyPatch()
+    mp.setattr(pdf_generator, "FACTURAS_PDF_DIR", str(tmp_path / "facturas_pdf"))
+    yield
+    mp.undo()
 
 
 #: Secreto de firma de sesión para la suite. Fijo y evidente: no es una clave,

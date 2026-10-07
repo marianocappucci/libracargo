@@ -13,7 +13,9 @@ conocen la razón social ni las órdenes); acá van las propias, en los mismos c
 - `GET /api/pre-facturas` y `GET /api/pre-facturas/{id}`: lo del motor, más la razón social y las órdenes.
 
 Del motor quedan tal cual `GET /{id}/pdf`, `POST /{id}/enviar-email`, `POST /{id}/aceptar` y
-`POST /{id}/anular` (que libera las órdenes por el gancho `al_anular`).
+`POST /{id}/anular` (que libera las órdenes por el gancho `al_anular`). El emisor de los PDF (razón social,
+domicilio y logo) lo pone el resolvedor único del producto (`servicios/emisor_del_pdf.py`, ADR-034), que
+registra `crear_app` para todos los PDF: este router ya no pasa uno propio.
 
 🔴 **`def` y no `async def`, a propósito**, como `comprobantes.facturar` hasta ahora: la `Session` y
 `openssl` son sincrónicos y bloquearían el loop de uvicorn, que corre con un solo proceso.
@@ -33,6 +35,7 @@ from app.db import obtener_sesion
 from app.routers.maestros import traducir_integridad
 from app.schemas.comprobantes import ComprobanteOut
 from app.schemas.pre_facturas import FacturarPreFacturaIn, PreFacturaEditarIn, PreFacturaIn
+from app.servicios import comprobantes
 from app.servicios import pre_facturas as servicio
 from app.servicios.comprobantes import _conexion_del_motor
 
@@ -42,12 +45,6 @@ PREFIJO = "/api/pre-facturas"
 def _usuario(request: Request) -> str:
     """Con qué nombre se asienta quién aceptó o anuló: el del usuario de la sesión."""
     return get_current_user(request, request.app.state.session_auth)["username"]
-
-
-def _emisor_del_pdf(pre_factura: dict) -> dict | None:
-    # Fuera del pedido: el router del motor lo llama cuando arma el PDF o el correo, sin la `Session`.
-    with db.fabrica_de_sesiones()() as sesion:
-        return servicio.emisor_del_pdf(sesion, pre_factura)
 
 
 def _traducir(e: servicio.Rechazo) -> HTTPException:
@@ -63,7 +60,6 @@ def construir_router():
         # SMTP por pantalla tiene efecto sin reiniciar. Es el mismo que usan la prueba de SMTP y el correo
         # de recuperación.
         smtp_resolver=lambda: resolver_smtp_config(db.fabrica_de_sesiones()),
-        emisor_del_pdf=_emisor_del_pdf,
         al_anular=servicio.liberar,
         donde_configurar_smtp="Configuración → Email",
         dependencies=[Depends(require_staff)],
@@ -159,6 +155,8 @@ def construir_router():
         except IntegrityError as err:
             sesion.rollback()
             raise traducir_integridad(err) from None
+        # Ya autorizado y guardado: el PDF va después, y si no sale el comprobante queda igual (ver `guardar_pdf`).
+        comprobantes.guardar_pdf(sesion, comprobante)
         sesion.refresh(comprobante)
         return comprobante
 

@@ -846,3 +846,55 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 - Pide libracore v1.140.0 o posterior (migración `0021_pre_factura` del motor, que corre antes que la `0019` de acá).
 - Una pre factura anulada conserva su número y no se reabre. No hay anulación de una facturada: se revierte la factura con una nota de crédito.
 - Anular y aceptar quedan asentadas en la propia pre factura (`resuelto_por`, `motivo_descarte`, `aceptado_por`); crear, editar y facturar, además, en el log de actividad.
+
+
+## ADR-033 — La pre liquidación de transportistas: el valor es la comisión y el IVA lo decide la condición del transportista
+
+**Contexto.** El humano pidió el 2026-10-06 un reporte **«Pre liquidación de transportistas»**: con un rango de fechas, los fletes que hizo cada transportista, el valor de cada uno y el IVA sumado. Es el papel que se le manda al fletero antes de que facture. Hay dos decisiones que no son obvias y se toman acá para que no se reabran en cada cambio: **qué es el valor de un flete** y **cuándo se suma IVA**.
+
+**Decisión.**
+- **El valor de un flete es la comisión de la orden** (`OrdenCarga.comision`), no la tarifa: es lo que cobra el transportista, y el mismo importe que `ordenes.sincronizar_comision` le asienta en su cuenta corriente. La tarifa es lo que se le cobra al cliente.
+- **Qué órdenes entran** (la misma condición con que se le asienta el flete): con **fletero**, con **comisión mayor que cero**, **no anuladas**, y con la **fecha de la orden** en el rango, extremos incluidos. Pendientes y facturadas entran las dos: liquidarle al transportista no depende de que al cliente ya se le haya facturado. Una orden **sin fletero no entra**: no hay a quién liquidarle.
+- **El IVA lo decide la condición del transportista (`Tercero.condicion_iva`), no la orden.** Sólo quien discrimina IVA en su factura lo suma:
+
+  | Condición | IVA | Por qué |
+  |---|---|---|
+  | `responsable_inscripto` | `comisión × alícuota de la orden / 100` | factura A: discrimina IVA |
+  | `monotributo` | 0 | factura C: no discrimina |
+  | `exento` | 0 | exento |
+  | `consumidor_final` | 0, **con aviso** | no es una condición de quien presta un servicio: es un dato a corregir en el maestro |
+  | `no_categorizado` | 0, **con aviso** | no se sabe; sumar IVA por las dudas le liquidaría de más a quien no lo cobra |
+
+  La alícuota es la de **cada orden** (`OrdenCarga.alicuota_iva`), no una fija: una orden al 10,5 % suma 10,5 %. El IVA se redondea **por flete**, mitad hacia arriba, con la misma fórmula que el IVA de la propia orden (`calcular_importes`): la factura del transportista discrimina flete por flete, y el redondeo sobre el total daría centavos distintos.
+- **El criterio es exhaustivo sobre el enum**: un valor nuevo de `CondicionIVA` sin criterio rompe `test_cada_condicion_tiene_su_criterio` en vez de liquidarse en silencio con IVA cero.
+- **El reporte es del catálogo** (`pre-liquidacion-transportistas`, `detalle`, rango obligatorio) pero **no cabe en la grilla genérica**: viene en bloques por transportista, con subtotales y total general. Tiene pantalla propia, que se registra antes que `/reportes/:slug`.
+- **Se imprime y se baja en PDF.** El PDF lo arma el servidor con las piezas de `libracore.pdf_generator` (la base `_TextoSeguroPDF` y el encabezado de empresa de la pre factura), con los datos de la empresa de la instancia y la leyenda «Pre liquidación — no es un comprobante» arriba y en el pie de cada hoja.
+
+**Consecuencias.**
+- Es **de lectura**: no asienta nada, no toca la cuenta corriente ni el libro. Lo que se liquida de verdad sigue siendo lo asentado en la cuenta del fletero.
+- Un transportista cargado por la API sin condición queda como `consumidor_final` (el default del alta): sale **sin IVA y con aviso**. Corregirlo en el maestro de terceros es lo que hace que se le sume.
+- El motor no tiene una API pública para un informe por bloques: el PDF usa helpers de módulo de `pdf_generator` (prefijo `_`). Si un salto de versión del motor los renombra, `tests/test_pre_liquidacion.py` lo detecta (genera el PDF de verdad). Un generador de «informe por bloques» público en LibraCore sería el arreglo de fondo si otro producto lo necesita.
+
+
+## ADR-034 — El PDF de los comprobantes: el del motor, con la razón social y el logo de la base
+
+**Contexto.** El humano dijo el 2026-10-06: «los comprobantes, cualquiera sea el tipo, no muestran el logo de Suitrans». Eran dos defectos en uno. **LibraCargo no tenía PDF de factura, de nota de crédito ni de FCE** (sólo el de la pre factura, que armaba su emisor aparte y **sin logo**). Y el motor, hasta libracore v1.140.0, dibujaba todos sus PDF con la configuración global de la instancia: un solo emisor, sin logo en bytes. Libracore v1.141.0 (ADR-031 de allá) lo normaliza para toda la familia: `emisor_del_pdf.emisor_para(documento)` arma el membrete por capas (configuración global, `emisor_id` del comprobante, **el resolvedor que registra el producto**, `empresa=`) y trae `build_comprobantes_pdf_router`.
+
+**Decisión.**
+- **Un solo resolvedor, en `app/servicios/emisor_del_pdf.py`**, registrado por `crear_app` (`emisor_del_pdf.registrar_resolvedor`) para **todos** los PDF del proceso: el de la pre factura, el de cada comprobante, el que se guarda al emitir y el que va por correo. `servicios.pre_facturas.emisor_del_pdf` y `routers.pre_facturas._emisor_del_pdf` desaparecen: no quedan dos lugares que decidan quién emite.
+- **Qué razón social emite**: la de `pre_facturas_cargo` para una pre factura y la de `comprobantes_cargo` para un comprobante (la fuente exacta: no depende de que el CUIT de la razón social siga siendo el del `arca_config`). Sin fila propia, la razón social cuyo CUIT es el del `emisor_id`; si hay dos con el mismo CUIT no se adivina. `nombre`, `cuit` e `iva_condition` son de la razón social.
+- **El domicilio, los ingresos brutos, el inicio de actividades, el teléfono, el correo y el logo** salen de `configuracion_empresa`, **sólo si son de esa razón social** (mismo CUIT, o la empresa no cargó CUIT): el domicilio o el logo de otra razón social en el membrete es peor que no tenerlos. El logo viaja como `logo_bytes`, desde la base (el disco del contenedor se pierde en cada despliegue). El inicio de actividades se normaliza a ISO, que es lo que lee el motor: en «Datos de la empresa» es texto libre, y `31/01/2020` salía como `20-/1-31/0`.
+- **El router del motor, montado en `/api/comprobantes`** (`app/routers/comprobantes_pdf.py`): `GET /{id}/pdf` y `POST /{id}/enviar-email`, con `require_staff` y el SMTP de la instancia (el mismo callable que la pre factura). No choca con nada: `comprobantes.router` no tiene `/{id}/pdf` ni `/{id}/enviar-email`.
+- **Qué comprobantes se ven (`puede_ver`)**: los que tienen fila en `comprobantes_cargo`, **con CAE** y que **no son de homologación**; el resto es un 404 igual al de un id inexistente.
+  - **Sin CAE no hay PDF** (lo registrado a mano y lo migrado del legado): ARCA no los conoce, y un papel con el formato de una factura, sin CAE ni QR, se podría mandar a un cliente como si lo fuera. La pantalla tampoco ofrece los botones. Se anulan como siempre.
+  - **De homologación no se imprime**: por el camino normal no queda ninguno (el ensayo se revierte entero, ADR-032), pero un dato cargado por fuera traería un CAE que no vale.
+- **El PDF se genera y se guarda al emitir** (`servicios.comprobantes.guardar_pdf`: `generate_pdf_factura` y `facturas.pdf_path`), para la factura (`POST /api/pre-facturas/{id}/facturar`) y para la nota de crédito (`POST /api/comprobantes/{id}/nota-de-credito`). **Va DESPUÉS del `commit` y un fallo no deshace nada**: cuando corre, ARCA ya autorizó y la transacción ya guardó el comprobante; revertirlo por un PDF dejaría a ARCA con una factura que acá no existe. Es el criterio del motor, que genera el PDF recién después de guardar el CAE. Si el PDF falla, se loguea, `pdf_path` queda vacío y el router lo arma al vuelo la primera vez que se pide (y **no** lo guarda: lo dice el motor).
+- **El PDF guardado es lo que salió**: con el emisor y el logo de ese momento. Si después cambia el logo o el domicilio de la empresa, los ya emitidos no se reescriben; sí los nuevos. Un PDF que ya no está en disco se arma de nuevo con el emisor de hoy.
+- **La pantalla** (Comprobantes, el detalle): «Ver PDF», «Descargar PDF» y «Enviar por correo» (con el correo del cliente prellenado) sólo con CAE, y un enlace «PDF» en cada nota de crédito de la lista.
+
+**Consecuencias.**
+- Pide libracore **v1.141.0** o posterior. Sin migración.
+- **Los PDF van a `DATA_DIR/facturas_pdf`** (`/app/data`, el volumen de la instancia). No entran en el backup de la instancia (que lleva las dos bases y los certificados): si se pierden se regeneran, pero con el emisor de hoy y no con el de la emisión. Si hace falta conservar el original, hay que sumar esa carpeta al respaldo.
+- **Los comprobantes ya emitidos no tienen `pdf_path`**: se arman al pedirlos, con el membrete de hoy (razón social, domicilio y logo cargados ahora). Es lo esperable para lo anterior a este cambio.
+- Una instancia con `ENV=development` imprime `[DEV - SIMULADO]` junto al CAE (lo hace el motor): en las instancias desplegadas `ENV` no está definida (sólo `ENTORNO`).
+- Una sola configuración de empresa por instancia: con dos razones sociales sólo la que tiene el CUIT de la empresa (o la empresa sin CUIT cargado) lleva logo y domicilio. Para que cada una tenga el suyo hay que modelar el membrete por razón social, y no es el pedido de hoy.

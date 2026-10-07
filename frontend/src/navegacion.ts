@@ -28,11 +28,32 @@ export const irA = {
    *  se puede saber desde caja, donde el movimiento guarda el tercero y no la
    *  cuenta a la que fue la contrapartida. */
   cuentaDe: (terceroId: number) => `/cuentas?tercero=${terceroId}`,
-  gasto: (id: number) => `/gastos?ver=${id}`,
+  /** El comprobante de proveedor es la sección «Proveedores» de Comprobantes. `/gastos?ver=` (el enlace
+   *  de antes) sigue andando: `App.tsx` lo redirige acá. */
+  gasto: (id: number) => `/comprobantes?seccion=proveedores&ver=${id}`,
   /** La pantalla de facturar, con el cliente ya elegido si se sabe cual. */
   facturarPendientes: (clienteId?: number) =>
     clienteId ? `/comprobantes/facturar?cliente=${clienteId}` : '/comprobantes/facturar',
 }
+
+/** Las dos secciones de la entrada «Comprobantes» del menú. La sección va en el query (`?seccion=`), como la de
+ *  Configuración de la familia: la clientes es la de la ruta pelada, así que `/comprobantes` y los enlaces de
+ *  siempre caen ahí, y sólo la otra lleva parámetro. El `?ver=` es de la sección que lo abre. */
+export const SECCIONES_DE_COMPROBANTES = ['clientes', 'proveedores'] as const
+export type SeccionDeComprobantes = (typeof SECCIONES_DE_COMPROBANTES)[number]
+
+/** La sección que pide un query; cualquier cosa que no sea una conocida cae en Clientes. */
+export function seccionDe(valor: string | null): SeccionDeComprobantes {
+  return valor === 'proveedores' ? 'proveedores' : 'clientes'
+}
+
+/** Las rutas que pertenecen a «Comprobantes», para que el menú marque esa entrada en todas
+ *  (`activoEn` de libra-ui 0.119.0: cada una cubre también lo que cuelga de ella).
+ *
+ *  «Comprobantes» abarca más que `/comprobantes`: facturar pendientes (`/comprobantes/facturar`),
+ *  las pre facturas (lista, detalle, edición) y el enlace viejo `/gastos`.
+ */
+export const RUTAS_DE_COMPROBANTES = ['/comprobantes', '/pre-facturas', '/gastos']
 
 /** El origen de un asiento de cuenta corriente, o `null` si no tiene.
  *

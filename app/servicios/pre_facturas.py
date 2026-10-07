@@ -36,12 +36,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import tiempo
-from app.models.configuracion import ConfiguracionEmpresa
 from app.models.enums import (
     CODIGO_ARCA,
     TIPO_DE_CODIGO,
     AccionAuditoria,
-    CondicionIVA,
     EstadoOrden,
     RolCuenta,
     TipoComprobante,
@@ -61,15 +59,6 @@ from app.servicios.comprobantes import _conexion_del_motor, etiqueta, sumar_orde
 #: que distinguir adentro, así que la instancia va vacía (la numeración `PF-0001` es de la base).
 ORIGEN_PRODUCTO = "libracargo"
 ORIGEN_INSTANCIA = ""
-
-#: Cómo se lee la condición de IVA de la razón social en el encabezado del PDF.
-_CONDICION_IVA = {
-    CondicionIVA.RESPONSABLE_INSCRIPTO: "Responsable Inscripto",
-    CondicionIVA.MONOTRIBUTO: "Monotributista",
-    CondicionIVA.EXENTO: "Exento",
-    CondicionIVA.CONSUMIDOR_FINAL: "Consumidor Final",
-    CondicionIVA.NO_CATEGORIZADO: "",
-}
 
 
 class Rechazo(Exception):
@@ -551,33 +540,6 @@ def facturar(sesion: Session, actual: dict, pre_factura_id: int, *, fecha: date 
 
 
 # ── Lo que lee la pantalla ─────────────────────────────────────────────────
-
-
-def emisor_del_pdf(sesion: Session, pre_factura: dict) -> dict | None:
-    """Los datos del emisor para el PDF: la razón social de la pre factura, con el domicilio de la empresa.
-
-    El nombre, el CUIT y la condición de IVA son de la razón social (una instancia puede tener más de una).
-    El domicilio, los ingresos brutos y el inicio de actividades salen de los datos de la empresa de la
-    instancia, **sólo si son de esa razón social** (mismo CUIT, o la empresa no cargó CUIT): los de otra
-    razón social saldrían con el domicilio equivocado.
-    """
-    cargo = sesion.get(PreFacturaCargo, pre_factura["id"])
-    razon = sesion.get(RazonSocial, cargo.razon_social_id) if cargo else None
-    if razon is None:
-        return None
-    emisor = {
-        "nombre": razon.nombre, "cuit": razon.cuit or "",
-        "iva_condition": _CONDICION_IVA[razon.condicion_iva],
-    }
-    empresa = sesion.get(ConfiguracionEmpresa, 1)
-    if empresa is not None and (not _digitos(empresa.cuit) or _digitos(empresa.cuit) == _digitos(razon.cuit)):
-        partes = [empresa.domicilio, empresa.localidad, empresa.provincia]
-        emisor["direccion"] = ", ".join(p.strip() for p in partes if p and p.strip())
-        emisor["iibb"] = empresa.ingresos_brutos or ""
-        emisor["inicio_actividades"] = empresa.inicio_actividades or ""
-        emisor["telefono"] = empresa.telefono or ""
-        emisor["email"] = empresa.email or ""
-    return emisor
 
 
 def enriquecer(sesion: Session, filas: list[dict]) -> list[dict]:

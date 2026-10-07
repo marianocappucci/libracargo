@@ -1,5 +1,6 @@
-/** Comprobantes de proveedores: lo que el proveedor entrega y se le descuenta
- *  al fletero.
+/** Comprobantes · Proveedores: lo que el proveedor entrega y se le descuenta
+ *  al fletero. Es la pestaña «Proveedores» de `ComprobantesSeccion`, que pone el
+ *  título y las pestañas; `/gastos` (el enlace de antes) redirige ahí.
  *
  *  🔑 **La etiqueta y el modelo no dicen lo mismo, a propósito.** Adentro
  *  esto es un `GastoDeProveedor` —no es una factura de compra, y el ADR-021
@@ -13,7 +14,7 @@
  *  y nada en pantalla explicaba que el alta tocaba dos cuentas.
  */
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
-import { Ban, Pencil, Plus, ReceiptText } from 'lucide-react'
+import { Ban, Pencil, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
@@ -32,7 +33,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 import { formatearFecha } from '@/components/esquema-orden'
 import { hoyISO } from 'libra-ui/fechas'
 
@@ -185,7 +185,6 @@ export default function Gastos() {
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <TituloPantalla icono={ReceiptText}>Comprobantes de proveedores</TituloPantalla>
           <p className="text-muted-foreground text-sm">
             Lo que el proveedor entrega y se le descuenta al fletero.
           </p>
