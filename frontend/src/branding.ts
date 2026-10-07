@@ -1,13 +1,14 @@
-// La identidad visual de LibraCargo: el logo y como se escribe el nombre.
+// La identidad visual de LibraCargo: como se escribe el nombre.
 //
 // Vive en un archivo propio porque lo usan las DOS superficies que lo muestran
 // -- el login y la sidebar -- y son shims distintos sobre `libra-ui`. Con la
 // definicion repetida en cada uno, alcanza con tocar una para que las dos
 // pantallas dejen de coincidir, que es el tipo de divergencia que nadie
 // reporta porque nunca se ven juntas.
-import logoProducto from '@/assets/logo-libracargo.png'
-
-export const LOGO = logoProducto
+//
+// La marca (el icono sobre el cuadrado del color) ya no esta aca: sale de
+// `libra-ui/identidad` (ADR-033), se pasa como `producto="libracargo"` a `Layout` y
+// `Login`, y el logo ilustrado `logo-libracargo.png` se retiro.
 
 /**
  * Familia, peso y color del nombre del producto. Igual en los seis productos
