@@ -55,6 +55,24 @@ describe('cargarOpciones', () => {
     expect(o.proveedores.map((p) => p.etiqueta)).toEqual(['Gomeria Del Centro'])
   })
 
+  it('el CUIT de un tercero viaja como `detalle`, y sin CUIT no hay `detalle`', async () => {
+    // La cuenta corriente busca por nombre o por CUIT: el CUIT tiene que llegar
+    // hasta la opcion. Un tercero sin CUIT no lleva un `detalle` vacio.
+    responder({
+      ...VACIOS,
+      terceros: [
+        { id: 1, razon_social: 'Agro Norte', cuit: '30-00000001-0', es_cliente: true },
+        { id: 2, razon_social: 'Fletes SRL', cuit: '', es_fletero: true },
+        { id: 3, razon_social: 'Gomeria Del Centro', cuit: null, es_proveedor: true },
+      ],
+    })
+    const o = await cargarOpciones()
+    expect(o.clientes).toEqual([{ id: 1, etiqueta: 'Agro Norte', detalle: '30-00000001-0' }])
+    expect(o.fleteros).toEqual([{ id: 2, etiqueta: 'Fletes SRL' }])
+    expect(o.proveedores).toEqual([{ id: 3, etiqueta: 'Gomeria Del Centro' }])
+    expect(o.terceros[0].detalle).toBe('30-00000001-0')
+  })
+
   it('la lista de todos los terceros no repite al que tiene dos roles', async () => {
     responder(VACIOS)
     const o = await cargarOpciones()
