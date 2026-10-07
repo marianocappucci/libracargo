@@ -61,11 +61,6 @@ export type FilaDeCaja = {
   tipo: string; medio_pago: string; movimientos: number; importe: string
 }
 
-export type FilaDeRazonSocial = {
-  razon_social_id: number; razon_social: string
-  comprobantes: number; neto: string; iva: string; total: string
-}
-
 export type FilaDeRuta = {
   origen: string; destino: string; ordenes: number
   total: string; comision: string; cantidad: string

@@ -325,9 +325,10 @@ def razones_sociales(con) -> str:
                           WHERE f.factura_nro = o.carga_factura
                             AND f.factura_razonsocial = o.carga_razonsocial)""")
     return ("## Razón social — los enteros sin tabla\n\n"
-            "En el legado son un `<select>` de HTML: `1 = Suitrans`, `2 = Mauricio`, "
-            "y un `0` que usa `bajarpendientes.php`. Cada valor distinto que aparezca "
-            "acá necesita una fila en `razones_sociales` antes de migrar.\n\n"
+            "En el legado son un `<select>` de HTML: `1 = Suitrans`, `2 = el nombre del dueño`, "
+            "y un `0` que usa `bajarpendientes.php`. El sistema nuevo no tiene tabla de "
+            "razones sociales (ADR-035): todo lo migrado es de la empresa de «Datos de la "
+            "empresa», y estas columnas sólo sirven para unir cada orden con su factura.\n\n"
             f"| Columna | Valor | Filas |\n|---|---|---:|\n{ordenes}\n{facturas}\n\n"
             f"- Órdenes marcadas como facturadas **sin factura que las respalde**: "
             f"{'🔴 ' if sin_factura else ''}**{sin_factura}** — cada una es una orden "

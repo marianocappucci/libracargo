@@ -43,7 +43,7 @@ const GASTO = {
 }
 const PRE_FACTURA = {
   id: 7, numero_interno: 'PF-0007', estado: 'pendiente', cliente_id: 1, cliente_razon: 'Agro Norte',
-  cliente_cuit: '30-12345678-1', razon_social_id: 5, razon_social: 'Suitrans', tipo_comprobante: 1,
+  cliente_cuit: '30-12345678-1', tipo_comprobante: 1,
   fecha_sugerida: '2026-08-20', fecha_vencimiento_pago: null, observaciones: '', orden_ids: [3],
   total: '1210.00', created_at: '2026-08-20 10:15:00', enviado_at: null, enviado_a: null,
   aceptado_at: null, aceptado_por: null, factura_id: null, motivo_descarte: null, resuelto_por: null,
@@ -52,11 +52,16 @@ const PRE_FACTURA = {
 }
 const COMPROBANTE = {
   comprobante: {
-    id: 9, razon_social_id: 5, tipo: 'factura_a', punto_venta: 5, numero: 42, fecha: '2026-08-15',
+    id: 9, tipo: 'factura_a', punto_venta: 5, numero: 42, fecha: '2026-08-15',
     cliente_id: 1, neto: '1000.00', iva: '210.00', total: '1210.00', anulado: false,
     origen_legado: null, cae: null,
   },
   ordenes: [], suma_de_ordenes: { cantidad: 0, neto: '0.00', iva: '0.00', total: '0.00' }, coinciden: true,
+}
+
+const TOTALES_VACIOS = {
+  cantidad_comprobantes: 0, neto_comprobantes: '0.00', iva_comprobantes: '0.00', total_comprobantes: '0.00',
+  cantidad_ordenes: 0, neto_ordenes: '0.00', iva_ordenes: '0.00', total_ordenes: '0.00', coinciden: true,
 }
 
 function responder() {
@@ -65,6 +70,7 @@ function responder() {
     if (/^\/api\/gastos\/\d+/.test(ruta)) return Promise.resolve(GASTO)
     if (ruta.startsWith('/api/gastos')) return Promise.resolve([GASTO])
     if (ruta.startsWith('/api/terceros')) return Promise.resolve(TERCEROS)
+    if (ruta.startsWith('/api/comprobantes/totales')) return Promise.resolve(TOTALES_VACIOS)
     if (ruta === '/api/comprobantes/9') return Promise.resolve(COMPROBANTE)
     if (ruta === '/api/pre-facturas/7') return Promise.resolve(PRE_FACTURA)
     if (ruta.startsWith('/api/pre-facturas')) {

@@ -19,18 +19,15 @@ const { default: Comprobantes } = await import('./Comprobantes')
 const { ApiError } = await import('libra-ui/api-client')
 
 const TERCEROS = [{ id: 1, razon_social: 'Agro Norte', es_cliente: true }]
-const RAZONES = [
-  { id: 5, nombre: 'Suitrans' },
-  { id: 6, nombre: 'Juan Pérez' },
-]
 
 type Respuestas = {
-  totales?: unknown[]
+  totales?: unknown
   comprobantes?: unknown[]
   ordenes?: unknown[]
 }
 
-function responder({ totales = [], comprobantes = [], ordenes = [] }: Respuestas) {
+function responder({ totales = total({ cantidad_comprobantes: 0, cantidad_ordenes: 0,
+                                      total_comprobantes: '0.00', total_ordenes: '0.00' }), comprobantes = [], ordenes = [] }: Respuestas) {
   get.mockImplementation((ruta?: string) => {
     if (!ruta) return Promise.resolve([])
     // `/totales` primero: `/api/comprobantes` es prefijo suyo, y al reves esta
@@ -39,14 +36,13 @@ function responder({ totales = [], comprobantes = [], ordenes = [] }: Respuestas
     if (ruta.startsWith('/api/comprobantes')) return Promise.resolve(comprobantes)
     if (ruta.startsWith('/api/ordenes')) return Promise.resolve(ordenes)
     if (ruta.startsWith('/api/terceros')) return Promise.resolve(TERCEROS)
-    if (ruta.startsWith('/api/razones-sociales')) return Promise.resolve(RAZONES)
     return Promise.resolve([])
   })
 }
 
 function total(extra: Record<string, unknown> = {}) {
   return {
-    razon_social_id: 5, cantidad_comprobantes: 1,
+    cantidad_comprobantes: 1,
     neto_comprobantes: '1000.00', iva_comprobantes: '210.00',
     total_comprobantes: '1210.00',
     cantidad_ordenes: 1, neto_ordenes: '1000.00', iva_ordenes: '210.00',
@@ -58,7 +54,7 @@ function total(extra: Record<string, unknown> = {}) {
 function detalleDe(cae: string | null, tipo = 'factura_a', extra: Record<string, unknown> = {}) {
   return {
     comprobante: {
-      id: 9, razon_social_id: 5, tipo, punto_venta: 5, numero: 42,
+      id: 9, tipo, punto_venta: 5, numero: 42,
       fecha: '2026-08-15', cliente_id: 1, neto: '1000.00', iva: '210.00', total: '1210.00',
       anulado: false, origen_legado: null, cae,
     },
@@ -80,10 +76,10 @@ function abrirDetalle(cae: string | null, tipo = 'factura_a', extra: Record<stri
 describe('Comprobantes', () => {
   beforeEach(() => { get.mockReset(); post.mockReset() })
 
-  it('🔴 avisa cuando los dos lados de una razón social NO coinciden', async () => {
+  it('🔴 avisa cuando los dos lados NO coinciden', async () => {
     // Es la razon de que el endpoint devuelva los dos totales. Mostrar solo uno
     // haria que un total divergente se viera igual de confiable que uno sano.
-    responder({ totales: [total({ total_ordenes: '0.00', cantidad_ordenes: 0, coinciden: false })] })
+    responder({ totales: total({ total_ordenes: '0.00', cantidad_ordenes: 0, coinciden: false }) })
     render(<MemoryRouter><Comprobantes /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
@@ -96,7 +92,7 @@ describe('Comprobantes', () => {
   it('con los dos totales iguales no aparece ninguna alarma', async () => {
     // El control del test de arriba: sin este, una pantalla que gritara SIEMPRE
     // pasaria igual y la alarma dejaria de significar algo.
-    responder({ totales: [total()] })
+    responder({ totales: total() })
     render(<MemoryRouter><Comprobantes /></MemoryRouter>)
 
     await waitFor(() => expect(screen.getAllByText('1210.00').length).toBe(2))

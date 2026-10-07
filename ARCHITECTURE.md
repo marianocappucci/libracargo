@@ -28,19 +28,20 @@ sistema legado tenía cero FK y dos índices fuera de las claves primarias.
 - **`localidades`** — orígenes y destinos unificados.
 - **`choferes`** y **`vehiculos`** — separados: un chofer maneja distintos
   equipos.
-- **`razones_sociales`** — las razones sociales propias con CUIT y punto de venta.
+- **`configuracion_empresa`** — «Datos de la empresa»: el **único emisor** de la instancia (ADR-035), con su
+  CUIT y su condición de IVA (enumeración). Ya no hay `razones_sociales`.
 - **`ordenes_carga`** — el núcleo. Estado explícito, comisión propia, FK real al
   comprobante.
 - **El comprobante vive en `facturas` del motor** (ADR-030). Lo propio de acá
-  (razón social, tercero, anulado, origen en el legado) va en
+  (tercero, anulado, origen en el legado) va en
   `comprobantes_cargo`, con el mismo id. La numeración es única por *(emisor,
   ambiente, tipo, punto de venta, número)*: el emisor es la fila de ARCA del
-  CUIT de la razón social. El comprobante de apertura del legado, que no es
+  CUIT de la empresa. El comprobante de apertura del legado, que no es
   fiscal, está en `comprobante_de_apertura`. La tabla vieja quedó como
   `comprobantes_legado`, de sólo lectura.
 - **La pre factura vive en `comprobantes_pendientes` del motor** (ADR-032), con
   número interno `PF-0001` y su ciclo. Lo propio de acá va en dos tablas:
-  `pre_facturas_cargo` (la razón social y el tercero, con el mismo id) y
+  `pre_facturas_cargo` (el tercero, con el mismo id) y
   `pre_factura_ordenes` (la reserva: `orden_id` es la clave primaria, así una
   orden está en a lo sumo una pre factura abierta).
 - **La cuenta corriente vive en `cc_asientos`**, el libro de terceros del motor

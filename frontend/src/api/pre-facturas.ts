@@ -43,8 +43,6 @@ export type PreFactura = {
   cliente_id: number | null
   cliente_razon: string
   cliente_cuit: string
-  razon_social_id: number | null
-  razon_social: string
   tipo_comprobante: number | null
   fecha_sugerida: string
   fecha_vencimiento_pago: string | null
@@ -73,7 +71,6 @@ export type ListadoPreFacturas = {
 /** Lo que elige el operador. Los ítems y los importes **no viajan**: salen de las órdenes. Y tampoco el
  *  punto de venta ni el número: la pre factura tiene el suyo y el de la factura lo pone ARCA. */
 export type DatosDePreFactura = {
-  razon_social_id: number
   tipo: string
   fecha: string
   fecha_vencimiento_pago?: string

@@ -15,11 +15,9 @@
  *  localidad, provincia, código postal, sitio web y pie de impresión, que salen
  *  en el membrete de la orden. Usar la del kit sería perderlos.
  *
- *  🔴 **ARCA es por RAZÓN SOCIAL, y sigue siéndolo.** Una empresa de transporte
- *  factura bajo varias razones sociales, cada una con su CUIT, su punto de venta
- *  y su propio par de certificado y clave. El router del motor maneja **una sola
- *  fila** por instancia: pasarlo ahí no sería normalizar, sería borrarle la
- *  capacidad. Es el mismo caso que Contalibra, que también es multi-empresa.
+ *  🔴 **El emisor es uno solo: la empresa (ADR-035).** La configuración de ARCA
+ *  es lo técnico —certificado, clave, punto de venta y ambiente— y sólo emite si
+ *  su CUIT es el de «Datos de la empresa». Ya no hay «Razones sociales».
  *
  *  Su pantalla, además, ya hace lo que la del motor vino a traerle al resto:
  *  sube el certificado y la clave, y dice cuándo vence. Entra como una
@@ -33,13 +31,13 @@
  */
 import { createConfiguracion } from 'libra-ui/Configuracion'
 import {
-  Building2, MapPin, Package, Settings, ShieldCheck, Truck, Users, UserSquare,
+  MapPin, Package, Settings, ShieldCheck, Truck, Users, UserSquare,
 } from 'lucide-react'
 
 import { FacturacionArca } from '@/pages/Arca'
 import { DatosDeLaEmpresa } from '@/pages/DatosDeLaEmpresa'
 import {
-  Choferes, Localidades, RazonesSociales, Terceros, TiposCarga, Vehiculos,
+  Choferes, Localidades, Terceros, TiposCarga, Vehiculos,
 } from '@/pages/maestros'
 
 export const Configuracion = createConfiguracion({
@@ -71,13 +69,6 @@ export const Configuracion = createConfiguracion({
     { clave: 'vehiculos', label: 'Vehículos', icono: Truck, contenido: <Vehiculos /> },
     { clave: 'localidades', label: 'Localidades', icono: MapPin, contenido: <Localidades /> },
     { clave: 'tipos-carga', label: 'Tipos de carga', icono: Package, contenido: <TiposCarga /> },
-    // Última de los maestros y no primera: el certificado de ARCA es de un
-    // CUIT, y el CUIT lo pone la razón social. Configurar ARCA sin razones
-    // sociales cargadas no tiene por dónde empezar.
-    {
-      clave: 'razones-sociales', label: 'Razones sociales', icono: Building2,
-      contenido: <RazonesSociales />,
-    },
   ],
 })
 

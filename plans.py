@@ -11,7 +11,7 @@ sin órdenes de carga no es un plan más barato, es otra cosa. Cuando el negocio
 defina qué se cobra aparte, se cambia este archivo y nada más.
 
 **El core no se gatea**: órdenes de carga, terceros, choferes, vehículos,
-localidades, tipos de carga, razones sociales, cuentas corrientes, caja y
+localidades, tipos de carga, cuentas corrientes, caja y
 comprobantes son lo que define al producto.
 """
 

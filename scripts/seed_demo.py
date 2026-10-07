@@ -4,7 +4,7 @@
 Va **por la API** y no por SQL: así los comprobantes, el estado de las órdenes y
 los asientos de cuenta corriente salen del mismo camino que usa el producto, y
 no de un `INSERT` que puede dejar invariantes rotas que después la pantalla
-reporta como alarma. El gate de F5 —que los totales por razón social coincidan
+reporta como alarma. El gate de F5 —que lo facturado coincida
 por los dos lados— vale sobre estos datos justamente por eso.
 
 **Vive en el repo y no suelto en el servidor.** El estado limpio de la demo es
@@ -166,14 +166,16 @@ cereal = crear("/api/tipos-carga", {"nombre": "Cereal", "unidad_default": "kg"},
 general = crear("/api/tipos-carga", {"nombre": "Carga general", "unidad_default": "bultos"},
                 "Carga general")
 
-# Las dos razones sociales, cada una con su punto de venta.
-suitrans = crear("/api/razones-sociales", {
-    "nombre": "Suitrans SRL", "cuit": "30-11223344-5",
-    "condicion_iva": "responsable_inscripto", "punto_venta": 1}, "razon social Suitrans SRL")
-# Ficticia, como todo lo de la demo: nunca el nombre de una persona real.
-monotributista = crear("/api/razones-sociales", {
-    "nombre": "Juan Pérez", "cuit": "20-22334455-6",
-    "condicion_iva": "monotributo", "punto_venta": 2}, "razon social Juan Pérez")
+# La empresa de la demo: el único emisor (ADR-035). Ficticia, como todo lo de la demo —nombre y CUIT inventados,
+# con dígito verificador válido—: nunca los de una persona o empresa real.
+codigo, salida = pedir("PUT", "/api/configuracion", {
+    "razon_social": "Transportes del Plata Demo SRL", "cuit": "30-55667788-9",
+    "condicion_iva": "responsable_inscripto", "domicilio": "Av. Demo 1234",
+    "localidad": "Rosario", "provincia": "Santa Fe"})
+if codigo != 200:
+    print(f"  x datos de la empresa: {codigo} {salida}")
+    sys.exit(1)
+print("  ok datos de la empresa")
 
 # ---- órdenes --------------------------------------------------------------
 print("ordenes de carga")
@@ -189,15 +191,15 @@ def ordenar(dias_atras, cliente, origen, destino, tarifa, **extra):
 o1 = ordenar(18, agro, suipacha, rosario, "845000.00", fletero_id=aguirre,
              chofer_id=ramon, vehiculo_id=scania, tipo_carga_id=cereal,
              cantidad="30000", unidad="kg", remito="0001-00012345",
-             comision="84500.00", razon_social_id=suitrans)
+             comision="84500.00")
 o2 = ordenar(16, agro, suipacha, bahia, "1120000.00", fletero_id=aguirre,
              chofer_id=julio, vehiculo_id=iveco, tipo_carga_id=cereal,
              cantidad="28500", unidad="kg", remito="0001-00012346",
-             comision="112000.00", razon_social_id=suitrans)
+             comision="112000.00")
 o3 = ordenar(14, molinos, mercedes, rosario, "610500.50", fletero_id=aguirre,
              chofer_id=ramon, vehiculo_id=scania, tipo_carga_id=general,
              cantidad="140", unidad="bultos", remito="0001-00012347",
-             comision="61050.05", razon_social_id=monotributista)
+             comision="61050.05")
 # Estas quedan PENDIENTES y libres: son las que se ven en "facturar pendientes". (Las tres de arriba también
 # están pendientes, pero reservadas en una pre factura: ver más abajo.)
 o4 = ordenar(9, agro, suipacha, mercedes, "398000.00", fletero_id=aguirre,
@@ -226,22 +228,22 @@ print(f"  ok orden {o7} anulada -> {codigo}")
 print("pre facturas")
 
 
-def pre_factura(dias_atras, razon, cliente, ordenes, etiqueta, tipo="factura_a"):
+def pre_factura(dias_atras, cliente, ordenes, etiqueta, tipo="factura_a"):
     return crear("/api/pre-facturas", {
-        "fecha": hace(dias_atras), "razon_social_id": razon, "cliente_id": cliente,
+        "fecha": hace(dias_atras), "cliente_id": cliente,
         "tipo": tipo, "orden_ids": ordenes}, etiqueta)
 
 
 # Una pre factura que agrupa DOS órdenes: es lo que en el legado hacía "facturar pendientes". Con la
 # conformidad del cliente ya marcada, lista para facturar cuando haya certificado.
-pf1 = pre_factura(11, suitrans, agro, [o1, o2], "PF-0001 Agro del Oeste, dos ordenes")
+pf1 = pre_factura(11, agro, [o1, o2], "PF-0001 Agro del Oeste, dos ordenes")
 codigo, _ = pedir("POST", f"/api/pre-facturas/{pf1}/aceptar")
 print(f"  ok pre factura {pf1} aceptada -> {codigo}")
-# Otra, de la razón social monotributista, todavía sin respuesta del cliente. Factura C: sin IVA discriminado.
-pf2 = pre_factura(10, monotributista, molinos, [o3], "PF-0002 Molinos Suipacha, una orden",
+# Otra, todavía sin respuesta del cliente. Factura C: sin IVA discriminado.
+pf2 = pre_factura(10, molinos, [o3], "PF-0002 Molinos Suipacha, una orden",
                   tipo="factura_c")
 # Y una anulada, para que se vea el estado y que sus órdenes quedan libres para otra pre factura.
-pf3 = pre_factura(8, suitrans, cerealera, [o6], "PF-0003 Cerealera del Sur")
+pf3 = pre_factura(8, cerealera, [o6], "PF-0003 Cerealera del Sur")
 codigo, _ = pedir("POST", f"/api/pre-facturas/{pf3}/anular", {"motivo": "El cliente cambio el pedido"})
 print(f"  ok pre factura {pf3} anulada -> {codigo}")
 
@@ -276,10 +278,9 @@ print(f"  ordenes pendientes de facturar: {len(pendientes)}")
 
 problemas = 0
 _, totales = pedir("GET", "/api/comprobantes/totales")
-for t in totales:
-    print(f"  razon social {t['razon_social_id']}: comprobantes {t['total_comprobantes']} . "
-          f"ordenes {t['total_ordenes']} . coinciden {t['coinciden']}")
-    problemas += 0 if t["coinciden"] else 1
+print(f"  facturado: comprobantes {totales['total_comprobantes']} . "
+      f"ordenes {totales['total_ordenes']} . coinciden {totales['coinciden']}")
+problemas += 0 if totales["coinciden"] else 1
 _, cuenta = pedir("GET", f"/api/cuentas/cliente/{agro}")
 print(f"  cuenta de Agro del Oeste: saldo {cuenta['saldo']} . "
       f"recorriendo {cuenta['saldo_recorriendo']} . coinciden {cuenta['coinciden']}")

@@ -14,7 +14,6 @@ from app.models.enums import (
 from app.models.maestros import (
     Chofer,
     Localidad,
-    RazonSocial,
     Tercero,
     TipoCarga,
     Vehiculo,
@@ -33,7 +32,7 @@ __all__ = [
     "AccionAuditoria", "Base", "Chofer", "Comprobante", "ComprobanteCargo",
     "ComprobanteDeApertura", "CondicionIVA",
     "EstadoOrden", "GastoDeProveedor", "Localidad", "MedioPago", "MovimientoCaja",
-    "MovimientoCuenta", "OrdenCarga", "PreFacturaCargo", "PreFacturaOrden", "RazonSocial", "ConfiguracionEmpresa",
+    "MovimientoCuenta", "OrdenCarga", "PreFacturaCargo", "PreFacturaOrden", "ConfiguracionEmpresa",
     "RegistroAuditoria",
     "RolCuenta", "Tercero", "TipoCarga", "TipoComprobante",
     "TipoMovimientoCaja", "Vehiculo",

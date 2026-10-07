@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from sqlalchemy import CheckConstraint, Integer, LargeBinary, String, Text
+from sqlalchemy import CheckConstraint, Enum, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Auditable, Base
+from app.models.enums import CondicionIVA
 
 
 class ConfiguracionEmpresa(Base, Auditable):
@@ -13,6 +14,10 @@ class ConfiguracionEmpresa(Base, Auditable):
 
     Es lo que va en el encabezado de la orden de carga impresa y de los
     comprobantes, y el nombre que se ve debajo del producto en la barra lateral.
+
+    🔑 **Es el único emisor de la instancia** (ADR-035): su razón social, su CUIT y su condición de IVA
+    son los de toda factura, nota de crédito, pre factura y PDF, y por ARCA sólo se emite si su CUIT es el
+    del certificado cargado. Antes el emisor era una «razón social» aparte, con el CUIT en tres lugares.
     Cada instancia de cliente tiene la suya —es lo que distingue la de Suitrans
     de la de cualquier otro— y por eso vive en la base y no en el `.env`: el
     cliente la edita, no se redespliega para cambiarle el teléfono.
@@ -30,7 +35,13 @@ class ConfiguracionEmpresa(Base, Auditable):
     razon_social: Mapped[str] = mapped_column(String(120), nullable=False)
     nombre_fantasia: Mapped[str | None] = mapped_column(String(120), nullable=True)
     cuit: Mapped[str | None] = mapped_column(String(13), nullable=True)
-    condicion_iva: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    #: La misma enumeración que la del tercero: de ella depende qué clase de comprobante se puede emitir
+    #: (A/B o C). Era texto libre; la migración `0020` lo mapea y deja `NULL` lo que no reconoce.
+    condicion_iva: Mapped[CondicionIVA | None] = mapped_column(
+        Enum(CondicionIVA, name="condicion_iva",
+             values_callable=lambda e: [m.value for m in e]),
+        nullable=True,
+    )
     ingresos_brutos: Mapped[str | None] = mapped_column(String(30), nullable=True)
     inicio_actividades: Mapped[str | None] = mapped_column(String(10), nullable=True)
 

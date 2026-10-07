@@ -2,7 +2,30 @@
 
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
+
+## [Unreleased] — Configuración → ARCA muestra el CTG y la Carta de Porte
+
+- La pantalla de ARCA tiene un bloque por servicio: **Facturación** y **CTG y Carta de Porte** (`wscpe`). Cada uno con su certificado y clave por ambiente, a nombre de qué CUIT está el certificado, cuándo vence y «Probar» contra ARCA para ese servicio (libracore v1.142.0, ADR-032; libra-ui v0.120.0, ADR-030).
+- Pines: libracore v1.142.0 (migración 0022 del motor: tabla nueva), libra-ui v0.120.0.
+
 ## [Unreleased]
+
+### Cambiado
+
+- **Cuenta corriente en pestañas, con un campo donde se escribe para buscar** (pedido del humano, 2026-10-07). El selector «Cuenta» (cliente, fletero, proveedor) pasa a **tres pestañas: Clientes, Fleteros y Proveedores**, y adentro de cada una el tercero se elige en un **campo de texto con lupa**: se escribe el nombre (o el CUIT, que se ve al lado de cada opción) y la lista se filtra al instante, sin acentos ni mayúsculas; se elige con el mouse o con las flechas y Enter, y una × lo quita. Antes era una lista que sólo tenía buscador a partir de 12 terceros y, aun así, había que abrirla para descubrirlo.
+  - **La pestaña y el tercero van en la URL** (`/cuentas?rol=fletero&tercero=5`): los enlaces del tablero, de los reportes de saldos y de caja siguen andando. Sin `rol` (caja) se abre la primera cuenta que el tercero tenga, y se pide una sola vez. Cambiar de pestaña **empuja el historial** (atrás vuelve a la pestaña anterior) y **descarta el tercero**, que es de un rol; elegir un tercero reemplaza la entrada. La fecha «Saldo al» se conserva al cambiar de pestaña.
+  - Una respuesta que llega tarde (se cambió de pestaña o de tercero mientras tanto) se descarta, en vez de pintar la cuenta de otro.
+  - **Frontend**: las opciones de terceros (`cargarOpciones`) traen el CUIT como `detalle`. Sin cambios en la API ni migración. **Pide `libra-ui` v0.121.0** (`SelectBuscable` con `buscarEscribiendo`, ADR-031 del kit): hasta subir el pin la pantalla no compila.
+  - Los tests de la pantalla pasan a cubrir las pestañas, los enlaces con y sin `rol`, la búsqueda por nombre y por CUIT, y la impresión. `src/test/setup.ts` stubea `scrollIntoView` (jsdom no lo trae; lo usa la lista del campo).
+
+- **Un solo emisor: «Datos de la empresa»; se retiran las razones sociales** (ADR-035). El CUIT del emisor estaba en tres lugares (la empresa, las razones sociales y la configuración de ARCA) que había que mantener iguales a mano; en Suitrans la razón social tenía el CUIT vacío y por eso el PDF salía sin logo. Ahora **«Datos de la empresa» es el único emisor** de toda factura, nota de crédito, pre factura y PDF, y **sólo se emite por ARCA con el CUIT de la empresa**.
+  - **La condición de IVA de la empresa se elige de la lista del tercero** (responsable inscripto, monotributo, exento, consumidor final, no categorizado) en vez de escribirse a mano.
+  - **ARCA sólo emite si el CUIT de su configuración es el de la empresa.** Si no, dice por qué (409) y la pre factura queda lista para cuando se resuelva: la empresa sin CUIT («cargá el CUIT en Configuración → Datos de la empresa»), ARCA sin configurar, los dos CUIT distintos (los nombra) o el certificado o la clave sin cargar. El CUIT de la configuración de ARCA es **el que factura**, aunque el certificado esté a nombre de otra persona que representa a la empresa. El punto de venta es el de la configuración de ARCA.
+  - **Se quitan** la pantalla «Razones sociales» (Configuración), el selector de razón social en Órdenes, Facturar pendientes, pre facturas, Comprobantes y Reportes, la columna «Razón social» de los listados y el reporte «Facturado por razón social». El resumen de lo facturado sigue en «Resumen del período».
+  - **El panel «Total facturado» de Comprobantes** muestra un solo total (comprobantes contra órdenes), ya no uno por razón social. API: `GET /api/comprobantes/totales` devuelve un objeto y no una lista.
+  - **API**: se quitan `/api/razones-sociales`, `/api/reportes/por-razon-social`, `razon_social_id` de órdenes, pre facturas y comprobantes (y los filtros del mismo nombre), y de `GET /api/comprobantes/fce/corresponde`. `PUT /api/configuracion` valida `condicion_iva` contra el enum (422 si no lo es; `""` es «sin cargar»).
+  - **Migración `0020`** (con `downgrade`): copia a la empresa el CUIT, la condición de IVA y el nombre de la razón social **sólo si a la empresa le faltan y la razón social es única** (la única que hay, o la única con CUIT); pasa el texto de la condición a la enumeración (lo que no se reconoce queda vacío, para elegirlo en la pantalla); quita `razon_social_id` de las cuatro tablas y borra `razones_sociales`. **Antes de desplegar en una instancia: respaldar, y revisar que «Datos de la empresa» tenga el CUIT y la condición de IVA correctos, y que el CUIT de Configuración → ARCA sea el mismo.**
+  - La **demo** se siembra con una empresa ficticia.
 
 ### Agregado
 

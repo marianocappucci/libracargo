@@ -25,25 +25,28 @@ ARCA numera correlativamente por punto de venta y tipo, y rechaza cualquier
 número que no sea `FECompUltimoAutorizado + 1`. Un número tipeado a mano que
 coincida es casualidad; uno que no, es un rechazo.
 
-⚠️ **El alta manual no desaparece de golpe.** Sigue siendo el camino de la razón
-social que **todavía no tiene ARCA configurado** — que hoy son todas, porque
-`arca_config` está vacía en las tres instancias. Aplicar el cambio de forma
-literal dejaría a la instancia del cliente sin poder facturar, que es una
-regresión sobre un sistema vivo. En cuanto se carga el par y la razón social es
-la del CUIT del certificado, su alta pasa a emitir y el número deja de pedirse.
+## 🔑 Quién emite: la empresa, y sólo ella (ADR-035)
+
+El emisor es **«Datos de la empresa»** (`configuracion_empresa`): su CUIT, su condición de IVA y su razón
+social son los de todo comprobante. La configuración de ARCA (`arca_config`) es sólo lo técnico —certificado,
+clave, **punto de venta** y ambiente—, y se emite únicamente si **su CUIT es el de la empresa**. Si no, se
+dice cuál es el problema (`problema_de_emision`) y no se toca nada: facturar con el certificado de un CUIT
+a nombre de otro es lo que esta guarda existe para impedir.
 """
 
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from decimal import Decimal
 
 from libracore import arca_credenciales, arca_wsaa, arca_wsfe
 from libracore.db import arca_config as db_arca_config
 from sqlalchemy.orm import Session
 
+from app.models.configuracion import ConfiguracionEmpresa
 from app.models.enums import CODIGO_ARCA, CondicionIVA, TipoComprobante
-from app.models.maestros import RazonSocial, Tercero
+from app.models.maestros import Tercero
 from app.models.operacion import Comprobante
 
 #: El slug con el que esta instancia da de alta su fila en `arca_config`.
@@ -92,7 +95,10 @@ CODIGO_IVA_DE_LA_FAMILIA = {
 
 
 class ArcaNoConfigurado(RuntimeError):
-    """La razón social no tiene el par cargado, o el par no es de su CUIT."""
+    """La instancia no puede emitir: la empresa no tiene CUIT, falta el par de ARCA o es de otro CUIT.
+
+    El mensaje (`problema_de_emision`) dice cuál de las tres y qué cargar, y va tal cual a la pantalla.
+    """
 
 
 class ArcaAmbiguo(RuntimeError):
@@ -100,7 +106,7 @@ class ArcaAmbiguo(RuntimeError):
 
     🔴 **Existe para NO caer en la primera.** `libracore.arca_facturacion` hace
     `arca_cfg[0]` porque los productos que lo usan son de instancia única con
-    una sola empresa; este modela N razones sociales. Con dos filas, elegir por
+    una sola empresa; este producto antes modelaba N razones sociales. Con dos filas, elegir por
     índice factura con el CUIT equivocado **sin fallar** — el comprobante sale,
     lo firma otro contribuyente, y se descubre en el libro IVA de un tercero.
 
@@ -118,12 +124,11 @@ class ArcaRechazo(RuntimeError):
 def _solo_digitos(cuit: str | None) -> str:
     """El CUIT comparable.
 
-    `razones_sociales.cuit` es `String(13)` porque admite la forma con guiones
+    `configuracion_empresa.cuit` es `String(13)` porque admite la forma con guiones
     (`20-12345678-9`), y en `arca_config` se carga como lo tipea quien configura
     la pantalla compartida. Comparar los textos crudos haría que el mismo CUIT
-    escrito de las dos formas **no** matchee, y el síntoma sería el peor de los
-    dos posibles: la razón social correcta deja de emitir y vuelve al alta
-    manual, en silencio.
+    escrito de las dos formas **no** matchee, y la empresa correcta dejaría de
+    poder emitir con un mensaje que dice que los CUIT difieren cuando son el mismo.
     """
     return "".join(c for c in (cuit or "") if c.isdigit())
 
@@ -159,34 +164,56 @@ def _par_completo(cfg: dict) -> bool:
     return bool(cert) and bool(clave) and os.path.exists(cert) and os.path.exists(clave)
 
 
-def configuracion_activa(sesion: Session, razon_social_id: int) -> dict | None:
-    """La configuración de ARCA **si esta razón social puede emitir con ella**.
+@dataclass(frozen=True)
+class Emisor:
+    """Con qué CUIT y en qué punto de venta se emite: el de la empresa y el de `arca_config`."""
 
-    🔑 **El CUIT es la guarda, y no una bandera.** El certificado de ARCA es de
-    un CUIT; `arca_config.cuit` dice de cuál. Una razón social con otro CUIT no
-    puede emitir con ese par —ARCA lo rechazaría— así que sigue registrando a
-    mano, que es exactamente el comportamiento que tenía antes con
-    `habilitado=False`.
+    cuit: str
+    punto_venta: int
 
-    Expresarlo con los datos y no con un flag es lo que hace que la regla
-    degrade sola el día que el motor sepa llevar un par por empresa: ahí deja de
-    haber una sola fila y esta función busca la del CUIT, sin que nadie tenga
-    que acordarse de apagar una bandera.
-    """
-    cfg = configuracion_de_la_instancia()
+
+def empresa_de(sesion: Session) -> ConfiguracionEmpresa | None:
+    """«Datos de la empresa», la única fuente del emisor (ADR-035), o `None` si todavía no se cargó."""
+    return sesion.get(ConfiguracionEmpresa, 1)
+
+
+def _problema(sesion: Session, cfg: dict | None) -> str | None:
+    """Por qué **esta configuración** no sirve para emitir con la empresa de la instancia, o `None`."""
+    empresa = empresa_de(sesion)
+    if empresa is None or not _solo_digitos(empresa.cuit):
+        return ("la empresa no tiene CUIT cargado, y ARCA factura contra un CUIT: "
+                "cargá el CUIT en Configuración → Datos de la empresa")
     if cfg is None:
-        return None
-    razon = sesion.get(RazonSocial, razon_social_id)
-    if razon is None or not _solo_digitos(razon.cuit):
-        return None
-    if _solo_digitos(razon.cuit) != _solo_digitos(cfg.get("cuit")):
-        return None
-    return cfg if _par_completo(cfg) else None
+        return (f"ARCA no está configurado: cargá el certificado y la clave en Configuración → ARCA, "
+                f"con el CUIT de la empresa ({empresa.cuit})")
+    if _solo_digitos(cfg.get("cuit")) != _solo_digitos(empresa.cuit):
+        # 🔑 El CUIT de `arca_config` es el que FACTURA (el de la empresa), aunque el certificado esté a
+        # nombre de otra persona que la representa (delegación). Nunca se compara contra el sujeto del
+        # certificado: sólo contra lo que dice la configuración.
+        return (f"el CUIT de la configuración de ARCA es {cfg.get('cuit') or '(vacío)'} y la empresa tiene "
+                f"{empresa.cuit}: la configuración de ARCA lleva el CUIT que factura (el de la empresa), "
+                "aunque el certificado esté a nombre de otra persona que la representa. "
+                "Corregí uno de los dos en Configuración → ARCA o Datos de la empresa")
+    if not _par_completo(cfg):
+        return ("falta el certificado o la clave de ARCA del ambiente elegido: "
+                "cargalos en Configuración → ARCA")
+    return None
 
 
-def emite_por_arca(sesion: Session, razon_social_id: int) -> bool:
-    """Si el alta de esta razón social tiene que emitir en vez de registrar."""
-    return configuracion_activa(sesion, razon_social_id) is not None
+def problema_de_emision(sesion: Session) -> str | None:
+    """Por qué esta instancia no puede emitir por ARCA, o `None` si puede (ADR-035).
+
+    🔑 **El CUIT de la empresa es la guarda, y no una bandera.** Se emite sólo si hay una `arca_config` con
+    el par completo y **su CUIT es el de «Datos de la empresa»**. Levanta `ArcaAmbiguo` con dos
+    configuraciones: no se adivina con cuál firmar.
+    """
+    return _problema(sesion, configuracion_de_la_instancia())
+
+
+def configuracion_activa(sesion: Session) -> dict | None:
+    """La configuración de ARCA **si la empresa puede emitir con ella**, o `None`."""
+    cfg = configuracion_de_la_instancia()
+    return cfg if _problema(sesion, cfg) is None else None
 
 
 def es_ensayo(cfg: dict | None) -> bool:
@@ -207,30 +234,26 @@ def es_ensayo(cfg: dict | None) -> bool:
 
 
 async def numero_que_sigue(
-    sesion: Session, razon_social_id: int, tipo: TipoComprobante
-) -> tuple[int, dict, dict, RazonSocial]:
+    sesion: Session, tipo: TipoComprobante
+) -> tuple[int, dict, dict, Emisor]:
     """Le pregunta a ARCA cuál es el próximo número, y de paso autentica.
 
-    Devuelve `(numero, ta, cfg, razon)` para que el llamador no tenga que
+    Devuelve `(numero, ta, cfg, emisor)` para que el llamador no tenga que
     autenticar dos veces: el ticket de acceso sirve para el pedido de CAE que
-    viene después.
+    viene después. El punto de venta es el de `arca_config`.
+
+    Levanta `ArcaNoConfigurado` (con el motivo) si la empresa no puede emitir.
 
     ⚠️ **No hay fallback a numeración local.** Contalibra sí lo tiene, porque
     allá una factura sin CAE es un borrador que se reintenta. Acá el número
     **es** el de ARCA: inventar uno local y pedir el CAE después con ese número
     da un rechazo garantizado.
     """
-    cfg = configuracion_activa(sesion, razon_social_id)
-    if cfg is None:
-        raise ArcaNoConfigurado(
-            "esta razon social no tiene ARCA habilitado: cargá el certificado "
-            "y la clave en Configuracion, con el CUIT de esta razon social"
-        )
-    razon = sesion.get(RazonSocial, razon_social_id)
-    if razon is None or not razon.cuit:
-        raise ArcaNoConfigurado(
-            "la razon social no tiene CUIT cargado, y ARCA factura contra un CUIT"
-        )
+    cfg = configuracion_de_la_instancia()
+    problema = _problema(sesion, cfg)
+    if problema is not None:
+        raise ArcaNoConfigurado(problema)
+    emisor = Emisor(cuit=empresa_de(sesion).cuit, punto_venta=int(cfg["punto_venta"]))
 
     ambiente = cfg["ambiente"]
     # 🔑 Una sola llamada y no el baile de dos pasos —"de qué ambiente es el
@@ -242,7 +265,7 @@ async def numero_que_sigue(
     try:
         ta = await arca_wsaa.autenticar(cert_path, clave_path, ambiente)
         ultimo = await arca_wsfe.ultimo_numero_autorizado(
-            razon.punto_venta, CODIGO_ARCA[tipo], razon.cuit,
+            emisor.punto_venta, CODIGO_ARCA[tipo], emisor.cuit,
             ta["token"], ta["sign"], ambiente,
         )
     except Exception as e:
@@ -250,12 +273,12 @@ async def numero_que_sigue(
         # habilitado para wsfe" de "la hora del servidor esta corrida", y las
         # dos se arreglan en lugares distintos.
         raise ArcaRechazo(str(e)) from None
-    return ultimo + 1, ta, cfg, razon
+    return ultimo + 1, ta, cfg, emisor
 
 
 async def pedir_cae(
     sesion: Session, comprobante: Comprobante, ta: dict,
-    cfg: dict, razon: RazonSocial, nota: dict | None = None,
+    cfg: dict, emisor: Emisor, nota: dict | None = None,
 ) -> Comprobante:
     """Pide el CAE del comprobante ya creado y lo guarda.
 
@@ -311,7 +334,7 @@ async def pedir_cae(
                         if k.startswith("cbte_asoc_") or k == "fce_anulacion"})
     try:
         datos = await arca_wsfe.solicitar_cae(
-            factura, razon.cuit, ta["token"], ta["sign"], cfg["ambiente"],
+            factura, emisor.cuit, ta["token"], ta["sign"], cfg["ambiente"],
         )
     except Exception as e:
         raise ArcaRechazo(str(e)) from None

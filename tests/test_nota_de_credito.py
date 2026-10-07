@@ -21,19 +21,19 @@ from app import tiempo
 from app.models import Comprobante, MovimientoCuenta, TipoComprobante
 from app.models.enums import EstadoOrden
 from app.models.operacion import OrdenCarga
-from tests.conftest import comprobante_de_prueba
+from tests.conftest import cargar_empresa, comprobante_de_prueba
 from tests.test_comprobantes import facturado_a_mano, facturar, orden
-from tests.test_emision_arca import _arca_responde, _configurar_arca, razon_con_arca  # noqa: F401
+from tests.test_emision_arca import _arca_responde, _configurar_arca, empresa_con_arca  # noqa: F401
 
 
 @pytest.fixture
-def factura(cliente, datos, razon_con_arca, monkeypatch):  # noqa: F811
+def factura(cliente, datos, empresa_con_arca, monkeypatch):  # noqa: F811
     """Una Factura A emitida por ARCA (CAE, número 42) con una orden, y el registro de lo que se le pidió."""
     pedidos = _arca_responde(monkeypatch, ultimo=41)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
-    r = facturar(cliente, datos, [a], razon=razon_con_arca)
+    a = orden(cliente, datos, "1000.00")
+    r = facturar(cliente, datos, [a])
     assert r.status_code == 201, r.text
-    return {"comprobante": r.json(), "orden": a, "pedidos": pedidos, "razon": razon_con_arca}
+    return {"comprobante": r.json(), "orden": a, "pedidos": pedidos}
 
 
 def _nota(cliente, id_, motivo="Error de tarifa", importe=None):
@@ -85,7 +85,7 @@ def test_la_factura_queda_anulada_y_sus_ordenes_vuelven_a_pendientes(cliente, da
 
     # Y se puede volver a facturar: ARCA ya tiene la factura *y* su nota, no hay dos facturas vigentes.
     _arca_responde(monkeypatch, ultimo=42)
-    otra = facturar(cliente, datos, [factura["orden"]], razon=factura["razon"])
+    otra = facturar(cliente, datos, [factura["orden"]])
     assert otra.status_code == 201, otra.text
 
 
@@ -110,9 +110,9 @@ def test_los_totales_no_cuentan_la_nota_y_siguen_coincidiendo(cliente, datos, fa
     """La factura queda `anulado` (afuera de los totales) y la nota total no suma: lo facturado baja a cero."""
     assert _nota(cliente, factura["comprobante"]["id"]).status_code == 201
 
-    filas = cliente.get("/api/comprobantes/totales").json()
-    assert all(f["coinciden"] for f in filas)
-    assert all(f["cantidad_comprobantes"] == 0 and Decimal(f["total_comprobantes"]) == 0 for f in filas)
+    total = cliente.get("/api/comprobantes/totales").json()
+    assert total["coinciden"] is True
+    assert total["cantidad_comprobantes"] == 0 and Decimal(total["total_comprobantes"]) == 0
     resumen = cliente.get("/api/reportes/resumen").json()
     assert resumen["comprobantes"] == 0
     assert Decimal(resumen["facturado"]) == 0
@@ -146,7 +146,7 @@ def test_la_guarda_de_la_nota_repetida_del_motor_llega_con_409(cliente, datos, f
     """Una nota previa colgada del original (aunque el original no figure anulado): el motor la ve y frena."""
     original = factura["comprobante"]
     comprobante_de_prueba(
-        sesion, razon_social_id=original["razon_social_id"], tipo=TipoComprobante.NOTA_CREDITO_A,
+        sesion, tipo=TipoComprobante.NOTA_CREDITO_A,
         punto_venta=5, numero=99, fecha=date(2026, 8, 20), cliente_id=original["cliente_id"],
         neto=original["neto"], iva=original["iva"], total=original["total"],
         comprobante_asociado_id=original["id"], cae="75000000000001",
@@ -273,16 +273,15 @@ def test_las_parciales_que_suman_el_total_liberan_las_ordenes(cliente, datos, fa
     assert cliente.get(f"/api/ordenes/{factura['orden']['id']}").json()["estado"] == "pendiente"
     assert Decimal(_cuenta(cliente, datos)["saldo"]) == 0
     # Los totales: el original anulado sale, y sus notas con él (si no, se restaría dos veces).
-    filas = cliente.get("/api/comprobantes/totales").json()
-    assert all(f["coinciden"] and Decimal(f["total_comprobantes"]) == 0 for f in filas)
+    total = cliente.get("/api/comprobantes/totales").json()
+    assert total["coinciden"] and Decimal(total["total_comprobantes"]) == 0
     assert Decimal(cliente.get("/api/reportes/resumen").json()["facturado"]) == 0
 
 
 def test_los_totales_restan_la_nota_parcial_de_los_dos_lados(cliente, datos, factura):
     assert _nota(cliente, factura["comprobante"]["id"], importe="121.00").status_code == 201
 
-    fila = next(f for f in cliente.get("/api/comprobantes/totales").json()
-                if f["razon_social_id"] == factura["razon"])
+    fila = cliente.get("/api/comprobantes/totales").json()
     assert fila["coinciden"] is True, "una nota parcial no es una diferencia entre comprobantes y ordenes"
     assert (fila["neto_comprobantes"], fila["iva_comprobantes"], fila["total_comprobantes"]) == (
         "900.00", "189.00", "1089.00")
@@ -298,9 +297,9 @@ def test_la_nota_parcial_resta_en_el_rango_de_su_fecha(cliente, datos, factura):
     hoy = tiempo.hoy().isoformat()
 
     def total(**rango):
-        filas = cliente.get("/api/comprobantes/totales", params=rango).json()
-        assert all(f["coinciden"] for f in filas), rango
-        return sum((Decimal(f["total_comprobantes"]) for f in filas), Decimal(0))
+        fila = cliente.get("/api/comprobantes/totales", params=rango).json()
+        assert fila["coinciden"], rango
+        return Decimal(fila["total_comprobantes"])
 
     assert total(hasta="2026-09-30") == Decimal("1210.00"), "antes de la nota, la factura entera"
     assert total(desde=hoy) == Decimal("-121.00"), "en el rango de la nota, sólo lo que acredita"
@@ -332,10 +331,10 @@ def test_un_importe_igual_al_total_es_la_nota_total(cliente, datos, factura):
 
 @pytest.fixture
 def fce(factura, sesion):
-    """Una FCE A emitida (con CAE) de 1210, del mismo cliente y razón social que la factura."""
+    """Una FCE A emitida (con CAE) de 1210, del mismo cliente que la factura."""
     original = factura["comprobante"]
     fce = comprobante_de_prueba(
-        sesion, razon_social_id=original["razon_social_id"], tipo=TipoComprobante.FCE_A, punto_venta=5,
+        sesion, tipo=TipoComprobante.FCE_A, punto_venta=5,
         numero=7, fecha=date(2026, 8, 20), cliente_id=original["cliente_id"], neto="1000.00",
         iva="210.00", total="1210.00", cae="75000000000002", fch_vto_pago=date(2026, 9, 20),
     )
@@ -410,14 +409,12 @@ def test_si_arca_no_da_el_numero_tampoco_queda_nada(cliente, datos, factura, ses
     assert _estado(cliente, sesion, datos, original_id) == antes
 
 
-def test_si_la_razon_social_ya_no_emite_por_arca_lo_dice(cliente, datos, factura, monkeypatch):
-    """Cambió el CUIT de la razón social después de facturar: no hay con qué firmar la nota."""
-    r = cliente.put(f"/api/razones-sociales/{factura['razon']}", json={
-        "nombre": "Suitrans SA", "cuit": "30-99999999-7", "punto_venta": 5})
-    assert r.status_code == 200, r.text
+def test_si_la_empresa_ya_no_puede_emitir_por_arca_lo_dice(cliente, datos, factura, monkeypatch):
+    """Cambió el CUIT de la empresa después de facturar: no hay con qué firmar la nota."""
+    cargar_empresa(cliente, cuit="30-99999999-7")
     r = _nota(cliente, factura["comprobante"]["id"])
     assert r.status_code == 409, r.text
-    assert "ARCA" in r.json()["detail"]
+    assert "30-99999999-7" in r.json()["detail"] and "ARCA" in r.json()["detail"]
 
 
 # ── Homologación: se corre todo y no se guarda nada ────────────────────────
@@ -426,14 +423,13 @@ def test_contra_homologacion_se_ensaya_y_no_se_guarda(cliente, datos, sesion, mo
     """Una nota de prueba no mueve la cuenta del cliente ni libera las órdenes (mismo criterio que `facturar`)."""
     from tests.test_emision_arca import CUIT
 
-    razon = datos["razon"]
-    cliente.put(f"/api/razones-sociales/{razon}", json={"nombre": "Suitrans SA", "cuit": CUIT, "punto_venta": 5})
+    cargar_empresa(cliente, cuit=CUIT)
     _configurar_arca(cliente, ambiente="homologacion")
     pedidos = _arca_responde(monkeypatch, ultimo=41)
 
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon)
+    a = orden(cliente, datos, "1000.00")
     original = comprobante_de_prueba(
-        sesion, razon_social_id=razon, tipo=TipoComprobante.FACTURA_A, punto_venta=5, numero=42,
+        sesion, tipo=TipoComprobante.FACTURA_A, punto_venta=5, numero=42,
         fecha=date(2026, 8, 20), cliente_id=datos["cliente"], neto="1000.00", iva="210.00",
         total="1210.00", cae="75000000000003",
     )
@@ -457,7 +453,7 @@ def test_contra_homologacion_se_ensaya_y_no_se_guarda(cliente, datos, sesion, mo
 def test_no_se_crea_una_nota_sin_asociado_ni_una_factura_con_asociado(cliente, datos, factura, sesion):
     """Era un CHECK de la tabla propia; `facturas` no lo tiene, así que lo dice `crear` (ADR-030)."""
     original = factura["comprobante"]
-    comun = dict(razon_social_id=original["razon_social_id"], punto_venta=5, fecha=date(2026, 8, 20),
+    comun = dict(punto_venta=5, fecha=date(2026, 8, 20),
                  cliente_id=original["cliente_id"], neto="1.00", iva="0.21", total="1.21")
     with pytest.raises(ValueError, match="acredita a un comprobante"):
         comprobante_de_prueba(sesion, tipo=TipoComprobante.NOTA_CREDITO_A, numero=500, **comun)

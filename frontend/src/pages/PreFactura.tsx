@@ -7,7 +7,8 @@
  *
  * 🔑 **Facturar es lo único de acá que no se deshace**: una factura con CAE se revierte con una nota de
  * crédito. Por eso pide confirmación, dice qué va a pasar y muestra el resultado (o el error, tal cual
- * lo dice el servidor: «la razón social X no tiene configurado el certificado de ARCA»).
+ * lo dice el servidor: «ARCA no está configurado», «la empresa no tiene CUIT cargado»...). El emisor es siempre la
+ * empresa (ADR-035): no se elige.
  */
 import { api } from 'libra-ui/api-client'
 import { BadgeEstado } from 'libra-ui/badge-estado'
@@ -204,9 +205,8 @@ export default function PreFactura() {
           <p>{pf.cliente_cuit || 'Sin CUIT'}</p>
         </div>
         <div>
-          <p className="text-muted-foreground text-xs">Emite</p>
-          <p className="font-semibold">{pf.razon_social || '—'}</p>
-          <p>{tipo ? NOMBRE_DE_TIPO[tipo] : 'Sin tipo'}</p>
+          <p className="text-muted-foreground text-xs">Comprobante</p>
+          <p className="font-semibold">{tipo ? NOMBRE_DE_TIPO[tipo] : 'Sin tipo'}</p>
         </div>
         <div>
           <p className="text-muted-foreground text-xs">Fecha</p>

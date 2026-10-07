@@ -12,13 +12,12 @@
  *  compartida muestra los dos, cada uno con su vencimiento, y `ambiente` pasa a
  *  ser el selector de cuál se usa para emitir.
  *
- *  ⚠️ **Y lo que se pierde es la lista por razón social.** El motor guarda una
- *  configuración por instancia y sus archivos van a un nombre fijo dentro de
- *  `CERTS_DIR`, sin la empresa adentro: dos razones sociales se pisarían el
- *  certificado entre sí. Mientras eso siga así, factura **una sola**, y cuál es
- *  lo dice el CUIT — el del certificado tiene que ser el de la razón social.
- *  La regla vive en `app/servicios/emision_arca.py`, que es el camino que hace
- *  daño; acá sólo se configura.
+ *  🔑 **El CUIT de esta configuración es el que FACTURA, y tiene que ser el de
+ *  «Datos de la empresa»** (ADR-035): sólo se emite si coinciden. Puede que el
+ *  certificado esté a nombre de otra persona que representa a la empresa
+ *  (delegación); no importa de quién es el `.crt`: lo que cuenta es el CUIT que
+ *  se escribe acá. La regla vive en `app/servicios/emision_arca.py`, que es el
+ *  camino que hace daño; acá sólo se configura.
  *
  *  El prefijo es `/api/arca`, el que este producto ya publicó. `basePath` es
  *  parámetro del kit justamente porque cambiarlo rompe el frontend desplegado.

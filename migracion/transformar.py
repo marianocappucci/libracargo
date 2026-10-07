@@ -222,14 +222,11 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
     conteos: dict[str, int] = {}
 
     # ---------------------------------------------------------- razón social
-    # ADR-013: una sola. El `2 = Mauricio` del `<select>` no aparece en ninguna
-    # fila de ninguna tabla del legado.
-    razon_social_id = id_de("razones_sociales")
-    conteos["razones_sociales"] = copiar(
-        destino, "razones_sociales",
-        ["id", "nombre", "cuit", "condicion_iva", "punto_venta", "activa", "codigo_legado"],
-        [(razon_social_id, "Suitrans", None, "responsable_inscripto", 1, True, 1)],
-    )
+    # ADR-013 (y ADR-035): no hay tabla de razones sociales. El `2 = el nombre del dueño` del
+    # `<select>` no aparece en ninguna fila del legado, y el `1` es el emisor único:
+    # lo que se migra pertenece a la empresa de «Datos de la empresa», que se carga
+    # por la pantalla. Las columnas `*_razonsocial` del legado sólo sirven acá para
+    # unir cada orden con su factura.
 
     # --------------------------------------------------------------- terceros
     # ADR-003: **no se deduplica**. Los 276 entran como 276, cada uno con su rol
@@ -356,7 +353,7 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
             "[]", importe(f["factura_neto"]), importe(f["factura_iva"]),
             importe(f["factura_total"]), "produccion"))
         filas_cargo.append((
-            nuevo, razon_social_id,
+            nuevo,
             tercero_de[("cliente", f["factura_cliente_id"])], False,
             f"factura:{f['factura_nro']}:{f['factura_razonsocial']}"))
 
@@ -376,9 +373,8 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
     if huerfanas:
         apertura_id = id_de("comprobante_de_apertura")
         copiar(destino, "comprobante_de_apertura",
-               ["id", "razon_social_id", "cliente_id", "fecha", "neto", "iva", "total",
-                "origen_legado"],
-               [(apertura_id, razon_social_id, tercero_de[("cliente", huerfanas[0][1])],
+               ["id", "cliente_id", "fecha", "neto", "iva", "total", "origen_legado"],
+               [(apertura_id, tercero_de[("cliente", huerfanas[0][1])],
                  min(date.fromisoformat(h[5][:10]) for h in huerfanas),
                  sum(importe(h[2]) for h in huerfanas), sum(importe(h[3]) for h in huerfanas),
                  sum(importe(h[4]) for h in huerfanas), "apertura")])
@@ -388,7 +384,7 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
         ["id", "tipo", "punto_venta", "numero", "fecha", "items", "subtotal", "iva_amount",
          "total", "ambiente"], filas_facturas) + (1 if apertura_id else 0)
     copiar(destino, "comprobantes_cargo",
-           ["factura_id", "razon_social_id", "cliente_id", "anulado", "origen_legado"],
+           ["factura_id", "cliente_id", "anulado", "origen_legado"],
            filas_cargo)
 
     # ------------------------------------------------------------------ órdenes
@@ -416,16 +412,12 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
             importe(f["carga_importe"]), Decimal("21.00"), importe(f["carga_iva"]),
             importe(f["carga_total"]), importe(f["carga_comision"]),
             "facturada" if (comprobante or apertura) else "pendiente",
-            # ADR-013: el `0` no crea una segunda razón social. Las que no están
-            # facturadas y lo llevan entran sin razón social, que el modelo admite.
-            razon_social_id if (f.get("carga_razonsocial") == "1" or comprobante or apertura)
-            else None,
             comprobante, apertura, None, f"carga:{f['carga_id']}"))
     conteos["orden_carga"] = copiar(
         destino, "ordenes_carga",
         ["id", "fecha", "cliente_id", "origen_id", "destino_id", "fletero_id", "chofer_id",
          "vehiculo_id", "tipo_carga_id", "remito", "cantidad", "unidad", "cantidad_legado",
-         "tarifa", "alicuota_iva", "iva", "total", "comision", "estado", "razon_social_id",
+         "tarifa", "alicuota_iva", "iva", "total", "comision", "estado",
          "comprobante_id", "apertura_id", "observaciones", "origen_legado"], filas_ordenes)
     completar_facturas(destino)
 
@@ -532,7 +524,7 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
     # ------------------------------------------------------------- secuencias
     # Los ids los puso el contador, así que la secuencia sigue en 1: el primer
     # alta del sistema nuevo chocaría contra la clave primaria de la fila 1.
-    for tabla in ("razones_sociales", "terceros", "localidades", "choferes", "vehiculos",
+    for tabla in ("terceros", "localidades", "choferes", "vehiculos",
                   "tipos_carga", "facturas", "comprobante_de_apertura", "ordenes_carga",
                   "movimientos_caja",
                   "cc_asientos", "auditoria"):

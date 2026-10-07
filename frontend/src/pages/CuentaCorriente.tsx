@@ -1,11 +1,26 @@
-import { BookOpen } from 'lucide-react'
+import { BookOpen, Store, Truck, Users, type LucideIcon } from 'lucide-react'
 /** La cuenta corriente de un tercero, con saldo corrido.
  *
- * El tercero y el rol se eligen arriba: la cuenta es el **par**, porque un
- * mismo tercero puede ser cliente y fletero a la vez y son dos cuentas.
+ * La cuenta es el **par** (tercero, rol): un mismo tercero puede ser cliente y
+ * fletero a la vez y son dos cuentas. El rol son **tres pestañas** —Clientes,
+ * Fleteros, Proveedores— y, adentro, un campo donde se **escribe** para buscar
+ * el tercero por nombre o por CUIT (antes era un `<select>` «Cuenta» y una
+ * lista que sólo tenía buscador a partir de 12 terceros; pedido del humano,
+ * 2026-10-07).
+ *
+ * ## La pestaña y el tercero van en la URL
+ *
+ * `/cuentas?rol=fletero&tercero=5`: la URL es la única fuente de verdad, y por
+ * eso los enlaces del tablero, de los reportes de saldos y de caja siguen
+ * andando. Cambiar de pestaña **empuja** una entrada al historial (atrás vuelve
+ * a la pestaña anterior) y **descarta el tercero**, que es de un rol y no del
+ * otro. Elegir un tercero **reemplaza** la entrada: es afinar la búsqueda, no
+ * navegar. Sin `rol` en la URL —desde caja, que guarda el tercero y no la
+ * cuenta— se abre la primera cuenta que ese tercero tenga.
  */
 import { DataTable } from 'libra-ui/data-table'
-import { useEffect, useState } from 'react'
+import { SelectBuscable } from 'libra-ui/SelectBuscable'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import type { Opciones } from '@/api/ordenes'
@@ -13,34 +28,35 @@ import { cargarOpciones } from '@/api/ordenes'
 import type { FilaDeCuenta, Rol, ResumenDeCuenta } from '@/api/cuentas'
 import { cuentas } from '@/api/cuentas'
 import { mensajeDeError } from '@/components/AbmMaestro'
-import { Elegir } from '@/components/Elegir'
 import { formatearImporte } from '@/components/esquema-orden'
 import type { Columna } from '@/components/impresion'
 import { BotonImprimir } from '@/components/impresion'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { origenDelMovimiento } from '@/navegacion'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 import { formatearFecha } from '@/components/esquema-orden'
 
-const ROLES: { valor: Rol; etiqueta: string }[] = [
-  { valor: 'cliente', etiqueta: 'Cliente' },
-  { valor: 'fletero', etiqueta: 'Fletero' },
-  { valor: 'proveedor', etiqueta: 'Proveedor' },
+/** Las tres cuentas. `etiqueta` es la del campo (singular); `pestana`, la de la pestaña. */
+const ROLES: { valor: Rol; pestana: string; etiqueta: string; icono: LucideIcon }[] = [
+  { valor: 'cliente', pestana: 'Clientes', etiqueta: 'Cliente', icono: Users },
+  { valor: 'fletero', pestana: 'Fleteros', etiqueta: 'Fletero', icono: Truck },
+  { valor: 'proveedor', pestana: 'Proveedores', etiqueta: 'Proveedor', icono: Store },
 ]
+
+/** El rol que pide un query, o `null` si falta o no es uno de los tres. */
+function rolDe(valor: string | null): Rol | null {
+  return ROLES.find((r) => r.valor === valor)?.valor ?? null
+}
 
 export default function CuentaCorriente() {
   const [opciones, setOpciones] = useState<Opciones | null>(null)
   const navegar = useNavigate()
-  const [params] = useSearchParams()
-  // La cuenta se puede abrir por URL: `/cuentas?rol=fletero&tercero=5`. Es a
-  // donde llevan el tablero y los reportes de saldos. El `rol` puede venir
-  // vacio -- desde caja, donde el movimiento guarda el tercero y no la cuenta --
-  // y entonces se elige el primer rol que ese tercero tenga.
-  const rolDeLaUrl = params.get('rol') as Rol | null
-  const terceroDeLaUrl = params.get('tercero')
-  const [rol, setRol] = useState<Rol>(rolDeLaUrl ?? 'cliente')
-  const [terceroId, setTerceroId] = useState<number | undefined>()
+  const [params, setParams] = useSearchParams()
+  const rolDeLaUrl = rolDe(params.get('rol'))
+  const terceroDeLaUrl = Number(params.get('tercero'))
+  const terceroId = params.get('tercero') && Number.isFinite(terceroDeLaUrl) ? terceroDeLaUrl : undefined
   const [hasta, setHasta] = useState('')
   const [datos, setDatos] = useState<ResumenDeCuenta | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -49,38 +65,31 @@ export default function CuentaCorriente() {
     cargarOpciones().then(setOpciones).catch((e) => setError(mensajeDeError(e)))
   }, [])
 
-  // Aplica lo que vino por URL. Espera a `opciones` porque sin las listas no se
-  // puede saber qué roles tiene ese tercero — y desde caja el rol no viene.
-  //
-  // 🔑 Depende de los parámetros y no del estado de los selects: una vez
-  // aplicado, cambiar la cuenta a mano no vuelve a dispararlo. Si dependiera de
-  // `rol`, elegir otro rol lo devolvería al de la URL y el select quedaría
-  // trabado.
-  useEffect(() => {
-    if (!terceroDeLaUrl || !opciones) return
-    const id = Number(terceroDeLaUrl)
-    if (!Number.isFinite(id)) return
-    if (rolDeLaUrl) {
-      setRol(rolDeLaUrl)
-    } else {
-      const tiene = (lista: { id: number }[]) => lista.some((t) => t.id === id)
-      const primero: Rol | undefined =
-        tiene(opciones.clientes) ? 'cliente'
-        : tiene(opciones.fleteros) ? 'fletero'
-        : tiene(opciones.proveedores) ? 'proveedor'
-        : undefined
-      if (primero) setRol(primero)
-    }
-    setTerceroId(id)
-  }, [terceroDeLaUrl, rolDeLaUrl, opciones])
+  // El rol de la pestaña activa. Sin `rol` en la URL y con un tercero —el caso
+  // de caja— es el primero que ese tercero tenga, y para saberlo hacen falta
+  // las listas: hasta que llegan es Clientes, y la cuenta no se pide todavía.
+  const rol: Rol = useMemo(() => {
+    if (rolDeLaUrl) return rolDeLaUrl
+    if (terceroId === undefined || !opciones) return 'cliente'
+    const tiene = (lista: { id: number | string }[]) => lista.some((t) => t.id === terceroId)
+    return tiene(opciones.clientes) ? 'cliente'
+      : tiene(opciones.fleteros) ? 'fletero'
+      : tiene(opciones.proveedores) ? 'proveedor'
+      : 'cliente'
+  }, [rolDeLaUrl, terceroId, opciones])
+  const esperandoElRol = !rolDeLaUrl && terceroId !== undefined && !opciones
 
   useEffect(() => {
-    if (!terceroId) { setDatos(null); return }
+    if (!terceroId || esperandoElRol) { setDatos(null); return }
     setError(null)
+    // Si se cambia de pestaña o de tercero antes de que llegue, la respuesta
+    // vieja se descarta: pintaría la cuenta de otro.
+    let vigente = true
     cuentas.ver(rol, terceroId, hasta || undefined)
-      .then(setDatos)
-      .catch((e) => setError(mensajeDeError(e)))
-  }, [rol, terceroId, hasta])
+      .then((d) => { if (vigente) setDatos(d) })
+      .catch((e) => { if (vigente) setError(mensajeDeError(e)) })
+    return () => { vigente = false }
+  }, [rol, terceroId, hasta, esperandoElRol])
 
   // 🔴 Decía `rol === 'fletero' ? fleteros : clientes`, así que con el rol
   // "Proveedor" elegido —que el desplegable de arriba ofrece— la lista de abajo
@@ -93,6 +102,21 @@ export default function CuentaCorriente() {
     fletero: opciones?.fleteros ?? [],
     proveedor: opciones?.proveedores ?? [],
   }[rol]
+  const opcionesDelCampo = useMemo(
+    () => listaDeTerceros.map((t) => ({ value: String(t.id), label: t.etiqueta, hint: t.detalle })),
+    [listaDeTerceros],
+  )
+
+  // Cambiar de pestaña empuja una entrada y deja el tercero afuera.
+  function elegirPestana(valor: string) {
+    const nuevo = rolDe(valor)
+    if (nuevo && nuevo !== rol) setParams({ rol: nuevo })
+  }
+
+  // Elegir (o quitar) el tercero reemplaza la entrada, y fija el rol en la URL.
+  function elegirTercero(valor: string) {
+    setParams(valor ? { rol, tercero: valor } : { rol }, { replace: true })
+  }
 
   const COLUMNAS_IMPRESAS: Columna<FilaDeCuenta>[] = [
     { encabezado: 'Fecha', valor: (f) => formatearFecha(f.movimiento.fecha) },
@@ -120,42 +144,27 @@ export default function CuentaCorriente() {
       accessorFn: (f: FilaDeCuenta) => formatearImporte(f.saldo) },
   ]
 
-  return (
-    <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <TituloPantalla icono={BookOpen}>Cuenta corriente</TituloPantalla>
-        {datos && (
-          <BotonImprimir
-            titulo="Cuenta corriente"
-            filtros={`${listaDeTerceros.find((o) => o.id === terceroId)?.etiqueta ?? ''} · cuenta ${rol}`
-                     + (hasta ? ` · al ${hasta}` : '')}
-            columnas={COLUMNAS_IMPRESAS}
-            traer={async () => ({ filas: datos.movimientos, truncado: false })}
-            totales={() => [
-              { etiqueta: 'Saldo', valor: datos.saldo },
-              // Los dos saldos tambien en el papel: si no coinciden, el que
-              // mira la hoja impresa tiene que poder verlo igual que en pantalla.
-              { etiqueta: 'Saldo recorriendo los movimientos',
-                valor: datos.saldo_recorriendo },
-              { etiqueta: 'Coinciden', valor: datos.coinciden ? 'sí' : '🔴 NO' },
-            ]}
-          />
-        )}
-      </div>
-
+  // Lo de adentro de cada pestaña es lo mismo con otro rol, y sólo la pestaña
+  // activa se monta (`TabsContent` desmonta las otras): se arma una vez.
+  const etiquetaDelRol = ROLES.find((r) => r.valor === rol)!.etiqueta
+  const cuerpo = (
+    <>
       <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-        <div className="grid gap-1">
-          <Label htmlFor="cc-rol">Cuenta</Label>
-          <select id="cc-rol" className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
-                  value={rol}
-                  onChange={(e) => { setRol(e.target.value as Rol); setTerceroId(undefined) }}>
-            {ROLES.map((r) => <option key={r.valor} value={r.valor}>{r.etiqueta}</option>)}
-          </select>
+        <div className="grid min-w-0 gap-1 md:col-span-2">
+          <Label htmlFor="cc-tercero">{etiquetaDelRol}</Label>
+          {/* Siempre el campo donde se escribe, sea cual sea el largo de la lista:
+              con diez fleteros también se busca por letras. */}
+          <SelectBuscable
+            buscarEscribiendo
+            id="cc-tercero"
+            value={terceroId === undefined ? '' : String(terceroId)}
+            onChange={elegirTercero}
+            opciones={opcionesDelCampo}
+            placeholder={`Buscar ${etiquetaDelRol.toLowerCase()} por nombre o CUIT…`}
+            emptyMessage="No hay ninguno con ese nombre o CUIT."
+            className="w-full min-w-0"
+          />
         </div>
-        <Elegir id="cc-tercero" etiqueta="Tercero" vacio="Elegir…"
-                valor={terceroId === undefined ? '' : String(terceroId)}
-                opciones={listaDeTerceros}
-                alCambiar={(v) => setTerceroId(v ? Number(v) : undefined)} />
         <div className="grid gap-1">
           <Label htmlFor="cc-hasta">Saldo al</Label>
           <Input id="cc-hasta" type="date" value={hasta}
@@ -206,8 +215,44 @@ export default function CuentaCorriente() {
           if (destino) navegar(destino)
         }}
         emptyMessage={terceroId ? 'Esta cuenta no tiene movimientos.'
-                                : 'Elegí una cuenta y un tercero.'}
+                                : `Buscá y elegí un ${etiquetaDelRol.toLowerCase()}.`}
       />
+    </>
+  )
+
+  return (
+    <div className="p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <TituloPantalla icono={BookOpen}>Cuenta corriente</TituloPantalla>
+        {datos && (
+          <BotonImprimir
+            titulo="Cuenta corriente"
+            filtros={`${listaDeTerceros.find((o) => o.id === terceroId)?.etiqueta ?? ''} · cuenta ${rol}`
+                     + (hasta ? ` · al ${hasta}` : '')}
+            columnas={COLUMNAS_IMPRESAS}
+            traer={async () => ({ filas: datos.movimientos, truncado: false })}
+            totales={() => [
+              { etiqueta: 'Saldo', valor: datos.saldo },
+              // Los dos saldos tambien en el papel: si no coinciden, el que
+              // mira la hoja impresa tiene que poder verlo igual que en pantalla.
+              { etiqueta: 'Saldo recorriendo los movimientos',
+                valor: datos.saldo_recorriendo },
+              { etiqueta: 'Coinciden', valor: datos.coinciden ? 'sí' : '🔴 NO' },
+            ]}
+          />
+        )}
+      </div>
+
+      <Tabs value={rol} onValueChange={elegirPestana} className="gap-4">
+        <TabsList className="no-imprimir">
+          {ROLES.map((r) => (
+            <TabsTrigger key={r.valor} value={r.valor}>
+              <r.icono className="size-4" />{r.pestana}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        {ROLES.map((r) => <TabsContent key={r.valor} value={r.valor}>{cuerpo}</TabsContent>)}
+      </Tabs>
     </div>
   )
 }

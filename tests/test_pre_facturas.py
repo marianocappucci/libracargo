@@ -21,7 +21,7 @@ from libracore.db import core as libracore_core
 from sqlalchemy import text
 
 from app.servicios.emisor_del_pdf import emisor_de
-from tests.conftest import CUIT_EMISOR, URL_CORE, arca_responde
+from tests.conftest import CUIT_EMISOR, URL_CORE, arca_responde, cargar_empresa
 from tests.test_comprobantes import orden, pre_factura
 
 pytestmark = pytest.mark.con_emisor
@@ -55,8 +55,7 @@ def test_generar_crea_la_pre_factura_con_numero_interno_y_reserva_las_ordenes(cl
     assert pf["estado"] == "pendiente"
     assert pf["cliente_razon"] == "Agro Norte"
     assert pf["cliente_cuit"] == "30-12345678-1"
-    assert pf["razon_social_id"] == datos["razon"]
-    assert pf["razon_social"] == "Suitrans"
+    assert "razon_social_id" not in pf and "razon_social" not in pf, "el emisor es la empresa (ADR-035)"
     assert pf["orden_ids"] == [a["id"], b["id"]]
     assert pf["tipo_comprobante"] == 1
     assert pf["fecha_sugerida"] == "2026-08-15"
@@ -159,18 +158,14 @@ def test_una_orden_ya_facturada_no_entra(cliente, datos):
 def test_las_ordenes_repetidas_no_duplican_el_importe(cliente, datos):
     a = orden(cliente, datos, "1000.00")
     r = cliente.post("/api/pre-facturas", json={
-        "fecha": "2026-08-15", "razon_social_id": datos["razon"], "cliente_id": datos["cliente"],
+        "fecha": "2026-08-15", "cliente_id": datos["cliente"],
         "tipo": "factura_a", "orden_ids": [a["id"], a["id"]]})
     assert r.status_code == 422
     assert "repetida" in r.text
 
 
-def test_una_orden_que_no_existe_da_404_y_una_de_otra_razon_social_422(cliente, datos):
+def test_una_orden_que_no_existe_da_404(cliente, datos):
     assert pre_factura(cliente, datos, [9999]).status_code == 404
-    ajena = orden(cliente, datos, "100.00", razon_social_id=datos["otra_razon"])
-    r = pre_factura(cliente, datos, [ajena])
-    assert r.status_code == 422
-    assert "razon social" in r.text
 
 
 def test_una_nota_de_credito_no_se_genera_sobre_ordenes(cliente, datos):
@@ -181,9 +176,9 @@ def test_una_nota_de_credito_no_se_genera_sobre_ordenes(cliente, datos):
 def test_el_cuerpo_no_acepta_items_ni_punto_de_venta_ni_numero(cliente, datos):
     """Se sacó el registro a mano: ni los ítems ni el punto de venta ni el número se mandan."""
     a = orden(cliente, datos, "1000.00")
-    base = {"fecha": "2026-08-15", "razon_social_id": datos["razon"], "cliente_id": datos["cliente"],
+    base = {"fecha": "2026-08-15", "cliente_id": datos["cliente"],
             "tipo": "factura_a", "orden_ids": [a["id"]]}
-    for extra in ({"punto_venta": 1}, {"numero": 7},
+    for extra in ({"punto_venta": 1}, {"numero": 7}, {"razon_social_id": 1},
                   {"items": [{"description": "x", "qty": 1, "unit_price": 1}]}):
         r = cliente.post("/api/pre-facturas", json=base | extra)
         assert r.status_code == 422, extra
@@ -248,9 +243,8 @@ def test_ordenes_que_suman_cero_no_tienen_nada_que_facturar(cliente, datos):
     assert "suman cero" in r.text
 
 
-def test_una_razon_social_o_un_cliente_que_no_existen_dan_404(cliente, datos):
+def test_un_cliente_que_no_existe_da_404(cliente, datos):
     a = orden(cliente, datos, "100.00")
-    assert pre_factura(cliente, datos, [a], razon=9999).status_code == 404
     assert pre_factura(cliente, datos, [a], cliente_id=9999).status_code == 404
 
 
@@ -275,7 +269,7 @@ def test_el_listado_y_el_detalle_traen_lo_propio(cliente, datos):
 
 
 def _cuerpo_de_edicion(datos, ordenes, **cambios):
-    return {"fecha": "2026-08-15", "razon_social_id": datos["razon"], "tipo": "factura_a",
+    return {"fecha": "2026-08-15", "tipo": "factura_a",
             "orden_ids": [o["id"] for o in ordenes]} | cambios
 
 
@@ -297,7 +291,7 @@ def test_editar_reemplaza_las_ordenes_y_libera_las_que_salen(cliente, datos):
     assert _crear(cliente, datos, [a])["numero_interno"] == "PF-0002"
 
 
-def test_editar_cambia_tipo_fecha_y_razon_social(cliente, datos):
+def test_editar_cambia_tipo_y_fecha(cliente, datos):
     a = orden(cliente, datos, "1000.00")
     pf = _crear(cliente, datos, [a])
 
@@ -306,16 +300,6 @@ def test_editar_cambia_tipo_fecha_y_razon_social(cliente, datos):
     assert r.status_code == 200, r.text
     assert r.json()["tipo_comprobante"] == 6
     assert r.json()["fecha_sugerida"] == "2026-08-20"
-
-    # Una orden de otra razón social no entra en una pre factura de ésta, pero sí en la suya.
-    propia = orden(cliente, datos, "300.00", razon_social_id=datos["otra_razon"])
-    r = cliente.put(f"/api/pre-facturas/{pf['id']}", json=_cuerpo_de_edicion(datos, [a, propia]))
-    assert r.status_code == 422
-    r = cliente.put(f"/api/pre-facturas/{pf['id']}", json=_cuerpo_de_edicion(
-        datos, [propia], razon_social_id=datos["otra_razon"]))
-    assert r.status_code == 200, r.text
-    assert r.json()["razon_social"] == "Juan Pérez"
-    assert _reservadas(cliente) == [propia["id"]]
 
 
 def test_editar_una_orden_reservada_en_otra_o_ajena_se_rechaza_y_no_toca_nada(cliente, datos):
@@ -429,28 +413,21 @@ def test_el_pdf_sale_y_dice_que_no_es_fiscal(cliente, datos):
     assert cliente.get("/api/pre-facturas/9999/pdf").status_code == 404
 
 
-def test_el_emisor_del_pdf_es_la_razon_social_de_la_pre_factura(cliente, datos, sesion):
-    """El nombre, el CUIT y la condición de IVA son de la razón social, no de la empresa de la instancia."""
+def test_el_emisor_del_pdf_es_la_empresa(cliente, datos, sesion):
+    """El nombre, el CUIT, la condición de IVA, el domicilio y el logo son los de «Datos de la empresa» (ADR-035)."""
     a = orden(cliente, datos, "1000.00")
     pf = _crear(cliente, datos, [a])
     emisor = emisor_de(sesion, pf)
-    assert emisor["nombre"] == "Suitrans"
+    assert emisor["nombre"] == "Transportes de Prueba SRL"
     assert emisor["cuit"] == CUIT_EMISOR
     assert emisor["iva_condition"] == "Responsable Inscripto"
-    assert "direccion" not in emisor, "sin datos de la empresa cargados"
+    assert emisor["direccion"] == ""
 
-    cliente.put("/api/configuracion", json={
-        "razon_social": "Suitrans SA", "cuit": CUIT_EMISOR, "domicilio": "Calle Falsa 123",
-        "localidad": "Suipacha", "provincia": "Buenos Aires", "ingresos_brutos": "123-456"})
+    cargar_empresa(cliente, domicilio="Calle Falsa 123", localidad="Suipacha", provincia="Buenos Aires",
+                   ingresos_brutos="123-456")
     emisor = emisor_de(sesion, pf)
     assert emisor["direccion"] == "Calle Falsa 123, Suipacha, Buenos Aires"
     assert emisor["iibb"] == "123-456"
-
-    # La razón social de otro CUIT no hereda el domicilio de la empresa.
-    cliente.put(f"/api/razones-sociales/{datos['otra_razon']}", json={"nombre": "Juan Pérez", "cuit": "20-33445566-2"})
-    propia = orden(cliente, datos, "100.00", razon_social_id=datos["otra_razon"])
-    otra = _crear(cliente, datos, [propia], razon=datos["otra_razon"])
-    assert "direccion" not in emisor_de(sesion, otra)
 
 
 def test_enviar_por_correo_la_marca_enviada_y_si_falla_queda_como_estaba(cliente, datos, monkeypatch):
@@ -502,7 +479,7 @@ def test_facturar_emite_por_arca_y_cierra_todo_junto(cliente, datos, emisor):
     r = cliente.post(f"/api/pre-facturas/{pf['id']}/facturar")
     assert r.status_code == 201, r.text
     comp = r.json()
-    # El número y el punto de venta los puso ARCA y la razón social: no se tipean.
+    # El número lo puso ARCA y el punto de venta es el de su configuración: no se tipean.
     assert comp["numero"] == 1 and comp["punto_venta"] == 1
     assert comp["cae"] == "75123456789012"
     assert comp["fecha"] == "2026-08-15"
@@ -520,7 +497,6 @@ def test_facturar_emite_por_arca_y_cierra_todo_junto(cliente, datos, emisor):
         actual = cliente.get(f"/api/ordenes/{o['id']}").json()
         assert actual["estado"] == "facturada"
         assert actual["comprobante_id"] == comp["id"]
-        assert actual["razon_social_id"] == datos["razon"]
     # La deuda del cliente entró en la cuenta corriente con el número real.
     cuenta = cliente.get(f"/api/cuentas/cliente/{datos['cliente']}").json()
     assert len(cuenta["movimientos"]) == 1
@@ -529,8 +505,8 @@ def test_facturar_emite_por_arca_y_cierra_todo_junto(cliente, datos, emisor):
     assert Decimal(mov["debe"]) == Decimal(comp["total"])
     # Y el detalle del comprobante no marca alarma: lo que dice es lo que suman sus órdenes.
     assert cliente.get(f"/api/comprobantes/{comp['id']}").json()["coinciden"] is True
-    # La nueva facturada sale en los totales por razón social, que coinciden.
-    assert all(f["coinciden"] for f in cliente.get("/api/comprobantes/totales").json())
+    # La nueva facturada sale en los totales, que coinciden.
+    assert cliente.get("/api/comprobantes/totales").json()["coinciden"] is True
 
 
 def test_una_pre_factura_facturada_no_se_factura_dos_veces(cliente, datos):
@@ -627,14 +603,18 @@ def test_facturar_con_otra_fecha_usa_esa_fecha(cliente, datos):
 
 
 def test_sin_certificado_no_se_factura_y_no_se_toca_nada(cliente, datos):
-    """🔴 La razón social «Juan Pérez» no tiene el par de ARCA cargado: el error lo dice y nada cambia."""
-    a = orden(cliente, datos, "1000.00", razon_social_id=datos["otra_razon"])
-    pf = _crear(cliente, datos, [a], razon=datos["otra_razon"])
+    """🔴 La instancia no tiene el par de ARCA cargado: el error lo dice y nada cambia."""
+    from libracore.db import arca_config as db_arca_config
+
+    for fila in db_arca_config.obtener_todas_arca_configs():
+        db_arca_config.eliminar_arca_config(fila["empresa"])
+    a = orden(cliente, datos, "1000.00")
+    pf = _crear(cliente, datos, [a])
 
     r = cliente.post(f"/api/pre-facturas/{pf['id']}/facturar")
     assert r.status_code == 409
-    assert "La razon social Juan Pérez no tiene configurado el certificado de ARCA" in r.json()["detail"]
-    assert "queda lista para facturar cuando este" in r.json()["detail"]
+    assert "ARCA no está configurado" in r.json()["detail"]
+    assert "queda lista para facturar cuando esté resuelto" in r.json()["detail"]
 
     assert cliente.get("/api/comprobantes").json() == []
     assert cliente.get(f"/api/cuentas/cliente/{datos['cliente']}").json()["movimientos"] == []
@@ -720,7 +700,7 @@ def test_facturar_una_fce_sale_con_vencimiento_cbu_y_modalidad(cliente, datos, e
 def test_ya_no_se_puede_registrar_un_comprobante_a_mano(cliente, datos):
     """Se sacó del todo: ni sin certificado ni con él. `POST /api/comprobantes` ya no existe."""
     a = orden(cliente, datos, "1000.00")
-    cuerpo = {"fecha": "2026-08-15", "razon_social_id": datos["otra_razon"], "cliente_id": datos["cliente"],
+    cuerpo = {"fecha": "2026-08-15", "cliente_id": datos["cliente"],
               "tipo": "factura_a", "punto_venta": 1, "numero": 7, "orden_ids": [a["id"]]}
     r = cliente.post("/api/comprobantes", json=cuerpo)
     assert r.status_code == 405
@@ -742,7 +722,7 @@ def test_la_anulacion_de_un_comprobante_sin_cae_migrado_sigue_existiendo(cliente
     from tests.conftest import comprobante_de_prueba
 
     comp = comprobante_de_prueba(
-        sesion, razon_social_id=datos["razon"], tipo=_tipo("factura_a"), punto_venta=3, numero=77,
+        sesion, tipo=_tipo("factura_a"), punto_venta=3, numero=77,
         fecha=_fecha("2026-05-10"), cliente_id=datos["cliente"], neto=100, iva=21, total=121)
     r = cliente.delete(f"/api/comprobantes/{comp.id}")
     assert r.status_code == 200, r.text

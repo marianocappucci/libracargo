@@ -190,7 +190,8 @@ reemplazadas.
 
 ## ADR-013 — Una sola razón social: el `2` del legado no existe en los datos
 
-- Estado: aceptada
+- Estado: aceptada. **La tabla de razones sociales se retiró en ADR-035**: el emisor único es «Datos de la
+  empresa», y lo migrado del legado pertenece a ella.
 - Fecha: 2026-08-18
 - Contexto: el `<select>` del legado ofrece `1 = Suitrans` y `2 = Mauricio`, y
   `bajarpendientes.php` usa además un `0`. Medido sobre el dump: **las 741
@@ -396,7 +397,8 @@ esté entre ellas.
 
 ## ADR-020 — La configuración de ARCA cuelga de la razón social, y verifica los archivos al subirlos
 
-- Estado: aceptada
+- Estado: aceptada. **Reemplazada en parte por ADR-035**: la configuración
+  ya no cuelga de una razón social (no hay) sino de la empresa; sólo se emite si su CUIT es el de «Datos de la empresa».
 - Fecha: 2026-08-20
 - Contexto: el humano pidió *"agregar la configuración de ARCA y facturación
   electrónica"*, y al plantear el alcance eligió **sólo la pantalla de
@@ -878,6 +880,12 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 
 ## ADR-034 — El PDF de los comprobantes: el del motor, con la razón social y el logo de la base
 
+> **Nota (ADR-035).** Se retiró la razón social: el resolvedor devuelve **siempre los datos de la empresa** (nombre,
+> CUIT, condición de IVA, domicilio, ingresos brutos, inicio de actividades, teléfono, correo y logo) para todo documento.
+> Ya no existe la regla «el domicilio y el logo salen sólo si son de esa razón social», ni la elección de la razón social
+> por `pre_facturas_cargo`/`comprobantes_cargo`/`emisor_id`. El resto de esta decisión (un solo resolvedor, qué
+> comprobantes se ven, el PDF al emitir y lo que se guarda) sigue igual.
+
 **Contexto.** El humano dijo el 2026-10-06: «los comprobantes, cualquiera sea el tipo, no muestran el logo de Suitrans». Eran dos defectos en uno. **LibraCargo no tenía PDF de factura, de nota de crédito ni de FCE** (sólo el de la pre factura, que armaba su emisor aparte y **sin logo**). Y el motor, hasta libracore v1.140.0, dibujaba todos sus PDF con la configuración global de la instancia: un solo emisor, sin logo en bytes. Libracore v1.141.0 (ADR-031 de allá) lo normaliza para toda la familia: `emisor_del_pdf.emisor_para(documento)` arma el membrete por capas (configuración global, `emisor_id` del comprobante, **el resolvedor que registra el producto**, `empresa=`) y trae `build_comprobantes_pdf_router`.
 
 **Decisión.**
@@ -898,3 +906,24 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 - **Los comprobantes ya emitidos no tienen `pdf_path`**: se arman al pedirlos, con el membrete de hoy (razón social, domicilio y logo cargados ahora). Es lo esperable para lo anterior a este cambio.
 - Una instancia con `ENV=development` imprime `[DEV - SIMULADO]` junto al CAE (lo hace el motor): en las instancias desplegadas `ENV` no está definida (sólo `ENTORNO`).
 - Una sola configuración de empresa por instancia: con dos razones sociales sólo la que tiene el CUIT de la empresa (o la empresa sin CUIT cargado) lleva logo y domicilio. Para que cada una tenga el suyo hay que modelar el membrete por razón social, y no es el pedido de hoy.
+
+## ADR-035 — Un solo emisor: «Datos de la empresa»; se retira la razón social
+
+**Contexto.** El CUIT del emisor estaba en **tres lugares** que había que mantener iguales a mano: `configuracion_empresa` («Datos de la empresa»: razón social, CUIT, condición de IVA como texto libre, domicilio y logo), `razones_sociales` (nombre, CUIT, condición de IVA, punto de venta; es lo que llevaban la orden, la pre factura, el comprobante y la emisión) y `arca_config` del motor (CUIT, punto de venta, certificado, clave y ambiente). **Las razones sociales existían porque el legado facturaba con dos nombres** (`1 = Suitrans`, `2 = otro nombre` en un `<select>` de HTML, ADR-013), y el producto las heredó como un maestro. Ya se había decidido que Suitrans factura con una sola. En producción hay una sola razón social, con el CUIT **vacío**: por eso el PDF salía sin logo (ADR-034 comparaba el CUIT de la empresa con el de la razón social) y no habría podido emitir por ARCA. **El resto de la familia ya tiene un solo emisor por instancia** (la empresa más su `arca_config`): LibraCargo era la excepción. El humano lo decidió el 2026-10-07: «sacar esa sección y dejar sólo lo que es empresa; que sólo pueda facturar con el CUIT que está en empresa».
+
+**Decisión.**
+- **«Datos de la empresa» es la única fuente del emisor**: razón social, CUIT, condición de IVA, domicilio, ingresos brutos, inicio de actividades, teléfono, correo y logo. Toda factura, nota de crédito, pre factura y PDF sale con esos datos (`app/servicios/emisor_del_pdf.py` se reduce a «los datos de la empresa para todo documento»; sigue registrado en el motor).
+- **La condición de IVA de la empresa es la enumeración del tercero** (`condicion_iva`), no texto libre: de ella depende qué clase de comprobante se puede emitir (A/B o C). La API la valida (`""` es «sin cargar»; cualquier otro valor fuera del enum es 422) y la pantalla la elige de la lista.
+- **`arca_config` es sólo lo técnico**: certificado, clave, **punto de venta** y ambiente. **Se emite por ARCA sólo si hay una configuración con el par completo y su CUIT (en dígitos) es el de la empresa** (`emision_arca.problema_de_emision`). Si no, 409 con el motivo y qué hacer: la empresa sin CUIT («cargá el CUIT en Configuración → Datos de la empresa»), ARCA sin configurar, el CUIT de ARCA distinto del de la empresa (dice los dos), o el par incompleto. La pre factura queda abierta, lista para facturar cuando se resuelva.
+  - 🔑 **El CUIT de la configuración de ARCA es el que FACTURA** (el de la empresa), **aunque el certificado esté a nombre de otra persona que la representa** (delegación: en Suitrans el certificado puede ser de una persona física). El motor lo usa como `Cuit` del `Auth` de WSFE. **No se compara nunca contra el sujeto del `.crt`**: sólo contra el CUIT de la empresa.
+- **Se retiran la pantalla y la API de «Razones sociales»** (`/api/razones-sociales`), el modelo `RazonSocial` y el selector en Órdenes, Facturar pendientes, pre facturas, Comprobantes y Reportes, y el reporte «Facturado por razón social». **`razon_social_id` se quita** de `ordenes_carga`, `pre_facturas_cargo`, `comprobantes_cargo` y `comprobante_de_apertura`. `comprobantes_cargo` se queda: es la marca «este comprobante es de LibraCargo» que lee `puede_ver`, con el tercero, el anulado y el origen del legado.
+- **El gate de totales** (`GET /api/comprobantes/totales`) deja de abrirse por razón social: devuelve **un** total, contado por los dos lados (comprobantes y órdenes), con `coinciden`.
+- **Migración `0020`**: antes de borrar, copia a la empresa lo que sólo estaba en la razón social —si la empresa no tiene CUIT o condición de IVA y hay una razón social **única** (la única que hay, o la única con CUIT), se copian; sin razón social (texto), el nombre; sin fila, la crea con el nombre— y **nunca pisa** lo que la empresa ya tenía. Pasa el texto de la condición de IVA a la enumeración (`Responsable Inscripto`, `IVA Responsable Inscripto`, `RI`, `Monotributo`/`Monotributista`, `Exento`, `Consumidor Final`; lo que no se reconoce queda en `NULL`, que no se adivina). Después quita las columnas, sus índices y claves, y la tabla. El tipo `condicion_iva` se queda: lo usa `terceros`. El `downgrade` recrea la estructura con **una** razón social hecha de la empresa y las columnas nulas permitidas apuntando a ella.
+
+**Consecuencias.**
+- **Suitrans** (una razón social con el CUIT vacío; la empresa con `30-70933285-2`): tras la migración la empresa conserva su CUIT y recibe la condición `responsable_inscripto` si no tenía. Para emitir hace falta que el `arca_config` lleve ese mismo CUIT.
+- **Los comprobantes ya emitidos quedan como están**: su PDF sale con los datos de la empresa de hoy (ADR-034: lo ya guardado en disco no se reescribe).
+- **Sólo hay un emisor por instancia.** Si algún día hay que facturar con dos CUIT, es una instancia por CUIT —como en el resto de la familia— y no una tabla de razones sociales.
+- El filtro y la columna «Razón social» de los listados y de «Listado de comprobantes» se quitaron; los asientos viejos del log de actividad sobre `razones-sociales` dejan de ser clickeables.
+- No hay hoy ninguna regla que limite la clase de comprobante (A/B/C) según la condición de IVA del emisor: el operador elige el tipo. Lo que cambia es que la condición ya no puede ser un texto cualquiera y que sale de un solo lugar.
+- La migración del legado (`migracion/transformar.py`) ya no crea ni referencia razones sociales: todo lo migrado pertenece a la empresa, que se carga por la pantalla.

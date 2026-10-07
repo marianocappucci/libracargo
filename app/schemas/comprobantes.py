@@ -88,7 +88,6 @@ class ComprobanteOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    razon_social_id: int
     tipo: TipoComprobante
     punto_venta: int
     numero: int
@@ -148,22 +147,17 @@ class ComprobanteConOrdenes(BaseModel):
     saldo_acreditable: Decimal | None = None
 
 
-class TotalDeRazonSocial(BaseModel):
-    """El total facturado por una razón social, contado por los dos lados.
+class TotalDeComprobantes(BaseModel):
+    """Lo facturado en el rango, contado por los dos lados.
 
     - Por **comprobantes**: suma de los encabezados.
-    - Por **órdenes**: suma de las órdenes, agrupadas por la razón social que
-      lleva **la orden**, no la del comprobante.
+    - Por **órdenes**: suma de las órdenes que esos comprobantes agrupan.
 
-    Agrupar por la columna de la orden es a propósito: `facturar` deja las dos
-    iguales, así que sobre datos cargados acá siempre coinciden. Lo que esto
-    detecta son los **datos migrados**, donde `carga_razonsocial` y
-    `factura_razonsocial` son dos columnas del legado que pueden discrepar — y
-    entonces el mismo importe estaría en una razón social por un lado y en otra
-    por el otro.
+    `facturar` deja las dos iguales, así que sobre datos cargados acá siempre coinciden. Lo que esto
+    detecta son los **datos migrados** o tocados por fuera, donde un encabezado puede decir un importe y
+    sus órdenes otro. Desde ADR-035 hay un solo emisor, así que el total ya no se abre por razón social.
     """
 
-    razon_social_id: int | None
     cantidad_comprobantes: int
     neto_comprobantes: Decimal
     iva_comprobantes: Decimal

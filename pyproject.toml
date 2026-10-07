@@ -54,7 +54,8 @@ dependencies = [
     # v1.140.0 -> v1.141.0 (2026-10-06): el PDF de los comprobantes normalizado (ADR-031 de libracore):
     # `emisor_del_pdf` con su resolvedor por producto, el logo en el emisor y `build_comprobantes_pdf_router`
     # (`GET /{id}/pdf` y `POST /{id}/enviar-email`). Sin migracion.
-    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.141.0",
+    # v1.141.0 -> v1.142.0 (2026-10-07): credenciales y estado de ARCA por servicio web; LibraCargo suma `wscpe` (CTG y Carta de Porte) a Configuracion -> ARCA. Migracion 0022.
+    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.142.0",
 ]
 
 # Los motores de la familia entran en F1, desde repos privados por deploy key.
@@ -123,7 +124,7 @@ extend-immutable-calls = [
 [tool.pytest.ini_options]
 markers = [
     "sin_aceptar_terminos: deja al test afuera de la excepcion autouse del conftest, para medir el gate de Terminos con el corte puesto de verdad",
-    "con_emisor: el test arranca con `datos[\"razon\"]` lista para emitir por ARCA (certificado cargado y ARCA simulada); ver la fixture `emisor` del conftest",
+    "con_emisor: el test arranca con la empresa lista para emitir por ARCA (certificado cargado y ARCA simulada); ver la fixture `emisor` del conftest",
 ]
 testpaths = ["tests"]
 addopts = "-q"
