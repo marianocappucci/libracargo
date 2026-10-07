@@ -5,7 +5,7 @@
 // a una pantalla que no existe.
 import { createLogin } from 'libra-ui/Login'
 
-import { LOGO, WORDMARK } from '@/branding'
+import { WORDMARK } from '@/branding'
 
 import { useAuth } from '@/context/AuthContext'
 
@@ -14,10 +14,9 @@ type Usuario = { role?: string; name?: string }
 export const Login = createLogin<Usuario>({
   productName: 'LibraCargo',
   productInitial: 'C',
-  // El logo y el nombre en Montserrat Bold. `productInitial` sigue arriba
-  // porque es el fallback del motor: si el asset no resuelve, la pantalla
-  // muestra la inicial en vez de un hueco.
-  logo: { src: LOGO, className: 'h-[72px] w-[72px]' },
+  // La marca (icono sobre un cuadrado del color del producto, libra-ui ADR-033) y el nombre en Montserrat Bold. `productInitial` sigue arriba
+  // porque es obligatorio en la config del motor, aunque con `producto` ya no se dibuja.
+  producto: 'libracargo',
   // El enlace de recuperación. Sin esta línea el kit no lo pinta: la pantalla
   // queda idéntica y no falla nada, que es por lo que faltó hasta el
   // 2026-08-21 sin que ningún test lo dijera.
