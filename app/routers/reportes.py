@@ -81,7 +81,7 @@ class Reporte(BaseModel):
 
 
 #: El catálogo. `parametros` usa nombres que la pantalla sabe dibujar:
-#: `rango`, `cliente`, `fletero`, `proveedor`, `tercero`, `razon_social`,
+#: `rango`, `cliente`, `fletero`, `proveedor`, `tercero`,
 #: `origen`, `destino`, `medio_pago`, `tipo_caja`, `rol`, `incluir_en_cero`,
 #: `limite`, `entidad`, `usuario`, `accion`.
 CATALOGO = [
@@ -112,9 +112,6 @@ CATALOGO = [
             descripcion="Ingresos y egresos del período, abiertos por tipo y medio de "
                         "pago. Se puede acotar a un tercero.",
             parametros=["rango", "tercero", "medio_pago", "tipo_caja"]),
-    Reporte(slug="por-razon-social", titulo="Facturado por razón social",
-            descripcion="Cuánto facturó cada razón social propia en el período.",
-            parametros=["rango", "razon_social"]),
     Reporte(slug="por-ruta", titulo="Rutas más transitadas",
             descripcion="Origen y destino como par —la ida y la vuelta son dos rutas "
                         "distintas—, con las órdenes, la cantidad y lo que dejaron.",
@@ -136,7 +133,7 @@ CATALOGO = [
     Reporte(slug="listado-comprobantes", titulo="Listado de comprobantes",
             descripcion="Los comprobantes emitidos en el período, con su neto, su IVA "
                         "y su total. Los anulados salen marcados como tales.",
-            parametros=["rango", "razon_social", "cliente"],
+            parametros=["rango", "cliente"],
             detalle=True),
     Reporte(slug="listado-gastos", titulo="Listado de comprobantes de proveedores",
             descripcion="Lo que los proveedores entregaron en el período y a qué "
@@ -222,15 +219,6 @@ class FilaDeCaja(BaseModel):
     importe: Decimal
 
 
-class FilaDeRazonSocial(BaseModel):
-    razon_social_id: int
-    razon_social: str
-    comprobantes: int
-    neto: Decimal
-    iva: Decimal
-    total: Decimal
-
-
 class FilaDeRuta(BaseModel):
     origen: str
     destino: str
@@ -311,13 +299,6 @@ def caja(sesion: Session = Depends(obtener_sesion),
     return servicio.caja(sesion, desde, hasta, tercero_id, medio_pago, tipo)
 
 
-@router.get("/por-razon-social", response_model=list[FilaDeRazonSocial])
-def por_razon_social(sesion: Session = Depends(obtener_sesion),
-                     desde: date | None = None, hasta: date | None = None,
-                     razon_social_id: int | None = None):
-    return servicio.por_razon_social(sesion, desde, hasta, razon_social_id)
-
-
 @router.get("/por-ruta", response_model=list[FilaDeRuta])
 def por_ruta(sesion: Session = Depends(obtener_sesion),
              desde: date | None = None, hasta: date | None = None,
@@ -347,7 +328,7 @@ def listado_ordenes(sesion: Session = Depends(obtener_sesion),
         cliente_id=cliente_id, fletero_id=fletero_id,
         chofer_id=None, vehiculo_id=None,
         origen_id=origen_id, destino_id=destino_id,
-        tipo_carga_id=None, razon_social_id=None,
+        tipo_carga_id=None,
         estado=None, facturada=None, reservada=None, pre_factura_id=None, q=None,
         limite=limite, desplazamiento=desplazamiento)
 
@@ -355,7 +336,6 @@ def listado_ordenes(sesion: Session = Depends(obtener_sesion),
 @router.get("/listado-comprobantes", response_model=list[ComprobanteOut])
 def listado_comprobantes(sesion: Session = Depends(obtener_sesion),
                          desde: date | None = None, hasta: date | None = None,
-                         razon_social_id: int | None = None,
                          cliente_id: int | None = None,
                          tipo: TipoComprobante | None = None,
                          limite: int = Query(default=1000, ge=1, le=1000),
@@ -363,7 +343,7 @@ def listado_comprobantes(sesion: Session = Depends(obtener_sesion),
     _exigir_rango(desde, hasta)
     return r_comprobantes.listar(
         sesion=sesion, desde=desde, hasta=hasta,
-        razon_social_id=razon_social_id, cliente_id=cliente_id, tipo=tipo,
+        cliente_id=cliente_id, tipo=tipo,
         # `None` y no `False`: los anulados salen, marcados. Un número que falta
         # en la secuencia impresa no tiene explicación en el papel.
         anulado=None,

@@ -10,7 +10,6 @@ export type Orden = {
   chofer_id: number | null
   vehiculo_id: number | null
   tipo_carga_id: number | null
-  razon_social_id: number | null
   remito: string | null
   cantidad: string | null
   unidad: string | null
@@ -46,7 +45,6 @@ export type Filtros = {
   origen_id?: number
   destino_id?: number
   tipo_carga_id?: number
-  razon_social_id?: number
   estado?: string
   facturada?: boolean
   /** Reservada en una pre factura abierta. `false` son las que se pueden incluir en una pre factura nueva. */
@@ -115,13 +113,12 @@ async function traerTodo(recurso: string): Promise<Record<string, unknown>[]> {
  *  Se piden **sólo los activos**: un maestro dado de baja no tiene que poder
  *  elegirse en una orden nueva, aunque siga existiendo en las viejas. */
 export async function cargarOpciones() {
-  const [terceros, localidades, choferes, vehiculos, tipos, razones] = await Promise.all([
+  const [terceros, localidades, choferes, vehiculos, tipos] = await Promise.all([
     traerTodo('terceros'),
     traerTodo('localidades'),
     traerTodo('choferes'),
     traerTodo('vehiculos'),
     traerTodo('tipos-carga'),
-    traerTodo('razones-sociales'),
   ])
   const mapear = (filas: Record<string, unknown>[], campo: string): Opcion[] =>
     filas.map((f) => ({ id: f.id as number, etiqueta: String(f[campo] ?? '') }))
@@ -141,7 +138,6 @@ export async function cargarOpciones() {
     choferes: mapear(choferes, 'nombre'),
     vehiculos: mapear(vehiculos, 'patente_chasis'),
     tipos: mapear(tipos, 'nombre'),
-    razones: mapear(razones, 'nombre'),
   }
 }
 

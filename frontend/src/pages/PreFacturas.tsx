@@ -51,7 +51,6 @@ export default function PreFacturas() {
       accessorFn: (p: PreFactura) => p.fecha_sugerida,
       cell: ({ row }: { row: { original: PreFactura } }) => formatearFecha(row.original.fecha_sugerida) },
     { accessorKey: 'cliente_razon', header: 'Cliente' },
-    { accessorKey: 'razon_social', header: 'Razón social' },
     { id: 'tipo', header: 'Comprobante',
       accessorFn: (p: PreFactura) => { const t = tipoDe(p); return t ? NOMBRE_DE_TIPO[t] : '' } },
     { id: 'total', header: sortableHeader('Total'),

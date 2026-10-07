@@ -1,10 +1,11 @@
 """Comprobantes: lo facturado, sus totales, la anulación de lo que no tiene CAE y las notas de crédito.
 
 **Acá no se crean comprobantes.** Hasta ADR-032 `POST /api/comprobantes` facturaba un grupo de órdenes, y si
-la razón social no tenía certificado de ARCA, **registraba a mano** el punto de venta y el número que alguien
+no había certificado de ARCA, **registraba a mano** el punto de venta y el número que alguien
 tipeaba. Ya no: el comprobante sale siempre de una pre factura que el cliente pudo ver
-(`POST /api/pre-facturas/{id}/facturar`, en `app/routers/pre_facturas.py`), y el número y el punto de venta
-los pone ARCA. Lo que se registró a mano antes y lo migrado del legado sigue ahí, y se anula como siempre.
+(`POST /api/pre-facturas/{id}/facturar`, en `app/routers/pre_facturas.py`), y el número lo pone ARCA y el
+punto de venta es el de su configuración. El emisor es siempre la empresa (ADR-035).
+Lo que se registró a mano antes y lo migrado del legado sigue ahí, y se anula como siempre.
 
 **La operación es una sola, no tres pasos.** En el legado el alta de una orden insertaba en `orden_carga`,
 después en `facturas` y después en la cuenta corriente, con `INSERT` sueltos y sin transacción: si el segundo
@@ -33,7 +34,7 @@ from app.models.enums import (
     RolCuenta,
     TipoComprobante,
 )
-from app.models.maestros import RazonSocial, Tercero
+from app.models.maestros import Tercero
 from app.models.operacion import Comprobante, OrdenCarga
 from app.routers.maestros import traducir_integridad
 from app.schemas.comprobantes import (
@@ -41,14 +42,14 @@ from app.schemas.comprobantes import (
     ComprobanteConOrdenes,
     ComprobanteOut,
     NotaDeCreditoIn,
-    TotalDeRazonSocial,
+    TotalDeComprobantes,
 )
 from app.servicios import auditoria, comprobantes, cuentas, emision_arca, notas_de_credito
 from app.servicios.comprobantes import (
     TIPOS_NOTA,
     etiqueta,
     sumar_ordenes,
-    totales_por_razon_social,
+    totales_facturados,
 )
 
 router = APIRouter(prefix="/api/comprobantes", tags=["comprobantes"],
@@ -73,14 +74,14 @@ def _ordenes_de(sesion: Session, comprobante_id: int) -> list[OrdenCarga]:
 # ⚠️ `/totales` va declarada **antes** que `/{id_}`: FastAPI resuelve por orden
 # de declaración, y con `/{id_}` primero la palabra "totales" entraría como id y
 # el gate de la fase contestaría un 422 de parseo.
-@router.get("/totales", response_model=list[TotalDeRazonSocial])
+@router.get("/totales", response_model=TotalDeComprobantes)
 def totales(
     sesion: Session = Depends(obtener_sesion),
     desde: date | None = Query(default=None, description="fecha del comprobante, inclusive"),
     hasta: date | None = Query(default=None, description="fecha del comprobante, inclusive"),
 ):
-    """El gate de F5: lo facturado por razón social, contado por los dos lados."""
-    return totales_por_razon_social(sesion, desde, hasta)
+    """El gate de F5: lo facturado, contado por los dos lados."""
+    return totales_facturados(sesion, desde, hasta)
 
 
 @router.get("", response_model=list[ComprobanteOut])
@@ -88,7 +89,6 @@ def listar(
     sesion: Session = Depends(obtener_sesion),
     desde: date | None = None,
     hasta: date | None = None,
-    razon_social_id: int | None = None,
     cliente_id: int | None = None,
     tipo: TipoComprobante | None = None,
     # `None` es "todos", y es distinto de `False`: el default muestra los dos,
@@ -100,7 +100,6 @@ def listar(
 ):
     consulta = select(Comprobante)
     for columna, valor in (
-        (Comprobante.razon_social_id, razon_social_id),
         (Comprobante.cliente_id, cliente_id),
         (Comprobante.tipo, tipo),
         (Comprobante.anulado, anulado),
@@ -120,7 +119,6 @@ def listar(
 
 @router.get("/fce/corresponde")
 def fce_corresponde(
-    razon_social_id: int,
     cliente_id: int,
     total: Decimal = Query(..., gt=0, description="total del comprobante, con IVA"),
     fecha: date | None = Query(default=None, description="fecha de emisión; hoy si no viene"),
@@ -130,17 +128,15 @@ def fce_corresponde(
 
     La regla es del motor (`libracore.arca_wsfecred.corresponde_fce`, ADR-019 de allá): consulta el registro de FCE
     de ARCA, que no frena una factura común a un receptor obligado. Lo propio de acá es **con qué configuración**:
-    la de la razón social elegida (`configuracion_activa`, que sólo devuelve una si esa razón social emite por ARCA con
-    su CUIT) y el CUIT del cliente. Es un aviso: nunca falla por ARCA (`disponible: false` y el motivo).
-    `fce_habilitada` dice si esta razón social ya puede emitir FCE (emite por ARCA y tiene CBU y modalidad cargados).
+    la de ARCA (`configuracion_activa`, que sólo devuelve una si su CUIT es el de la empresa) y el CUIT del
+    cliente. Es un aviso: nunca falla por ARCA (`disponible: false` y el motivo).
+    `fce_habilitada` dice si la empresa ya puede emitir FCE (emite por ARCA y tiene CBU y modalidad cargados).
     """
-    if sesion.get(RazonSocial, razon_social_id) is None:
-        raise HTTPException(404, f"no existe la razon social {razon_social_id}")
     cliente = sesion.get(Tercero, cliente_id)
     if cliente is None:
         raise HTTPException(404, f"no existe el tercero {cliente_id}")
     try:
-        cfg = emision_arca.configuracion_activa(sesion, razon_social_id)
+        cfg = emision_arca.configuracion_activa(sesion)
     except emision_arca.ArcaAmbiguo as e:
         return {"disponible": False, "motivo": str(e), "fce_habilitada": False}
     if not "".join(c for c in (cliente.cuit or "") if c.isdigit()):
@@ -208,7 +204,7 @@ def anular(id_: int, sesion: Session = Depends(obtener_sesion),
     una cuenta impresa antes de la anulación no se pueda reconstruir después.
 
     > La contrapartida lleva **la fecha del comprobante**, no la de hoy. Los
-    > anulados quedan fuera de los totales por razón social en todo el rango, así
+    > anulados quedan fuera de los totales en todo el rango, así
     > que fechar la reversión hoy dejaría a la cuenta corriente mostrando una
     > deuda —entre la factura y su anulación— que los totales ya no reconocen.
     """

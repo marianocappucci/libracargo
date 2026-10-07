@@ -20,15 +20,14 @@ esto no es un historial.
 ## Próximas
 
 - [ ] **F2** — ABM de maestros sobre el esquema ya migrado.
-- [ ] Cargar las dos razones sociales reales (`Suitrans`, `Mauricio`) con CUIT
-      y punto de venta — hoy sólo se conocen sus códigos del legado, `1` y `2`.
+- [ ] Verificar en cada instancia que «Datos de la empresa» tenga el CUIT y la condición de IVA, y que
+      el CUIT de Configuración → ARCA sea el mismo (ADR-035: ya no hay razones sociales).
 - [ ] Definir el catálogo inicial de `tipos_carga` con los valores distintos que
       haya en `carga_tipo` del legado.
 
 ## Bloqueadas
 
-- [ ] **Relevamiento con el cliente**: qué pantallas usa de verdad, si las dos
-      razones sociales están activas, y si hay operaciones con alícuota
+- [ ] **Relevamiento con el cliente**: qué pantallas usa de verdad, y si hay operaciones con alícuota
       distinta del 21% que hoy se corrigen a mano.
 
 ## Deuda asumida a propósito

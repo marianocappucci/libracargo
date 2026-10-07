@@ -21,14 +21,12 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user, require_staff
 from app.db import obtener_sesion
 from app.models.enums import AccionAuditoria
-from app.models.maestros import Chofer, Localidad, RazonSocial, Tercero, TipoCarga, Vehiculo
+from app.models.maestros import Chofer, Localidad, Tercero, TipoCarga, Vehiculo
 from app.schemas.maestros import (
     ChoferIn,
     ChoferOut,
     LocalidadIn,
     LocalidadOut,
-    RazonSocialIn,
-    RazonSocialOut,
     TerceroIn,
     TerceroOut,
     TipoCargaIn,
@@ -43,7 +41,7 @@ def _a_salida(obj, salida, campo_activo: str):
     """La fila como la ve la API, con `activo` normalizado.
 
     Ver la nota de `app/schemas/maestros.py`: en la base esa columna se llama
-    `activa` en dos de las seis tablas.
+    `activa` en una de las cinco tablas.
     """
     datos = {c.name: getattr(obj, c.name) for c in obj.__table__.columns}
     datos["activo"] = getattr(obj, campo_activo)
@@ -214,12 +212,6 @@ vehiculos = construir_router(
     buscar_en=("patente_chasis", "patente_acoplado"),
 )
 
-razones_sociales = construir_router(
-    prefijo="razones-sociales", etiqueta="razones sociales", modelo=RazonSocial,
-    entrada=RazonSocialIn, salida=RazonSocialOut, campo_activo="activa",
-    campo_orden="nombre", buscar_en=("nombre", "cuit"),
-)
-
 tipos_carga = construir_router(
     prefijo="tipos-carga", etiqueta="tipos de carga", modelo=TipoCarga,
     entrada=TipoCargaIn, salida=TipoCargaOut, campo_orden="nombre",
@@ -227,4 +219,4 @@ tipos_carga = construir_router(
 )
 
 #: El orden es el del menú, no alfabético.
-TODOS = [terceros, localidades, choferes, vehiculos, razones_sociales, tipos_carga]
+TODOS = [terceros, localidades, choferes, vehiculos, tipos_carga]

@@ -13,14 +13,14 @@ numera, así que no se corren en cada push.
 
     ARCA_HOMO_CERT=~/.arca-certs/suitrans-wscpe/wscpe-homologacion.crt \\
     ARCA_HOMO_KEY=~/.arca-certs/suitrans-wscpe/wscpe-homologacion.key \\
-    ARCA_HOMO_CUIT=23277071614 \\
+    ARCA_HOMO_CUIT=<cuit-del-certificado> \\
     ARCA_HOMO_TICKET=~/.arca-certs/suitrans-wscpe/ta-homologacion-wsfe.json \\
     pytest tests/test_ensayo_homologacion.py -v
 
 - `ARCA_HOMO_CERT` / `ARCA_HOMO_KEY`: el par de **homologación**, con el servicio
   `wsfe` asociado en WSASS. Nunca el de producción.
-- `ARCA_HOMO_CUIT`: el CUIT del certificado, que es el de la razón social que emite
-  (la guarda de `emision_arca.configuracion_activa` los exige iguales).
+- `ARCA_HOMO_CUIT`: el CUIT que factura, que es el de «Datos de la empresa» (el certificado puede estar a
+  nombre de quien la representa). La guarda de `emision_arca.problema_de_emision` exige que sea el de la empresa.
 - `ARCA_HOMO_PV`: el punto de venta. Por defecto 1, que homologación acepta.
 - `ARCA_HOMO_TICKET` (opcional): un ticket de WSAA **vigente** de ese certificado.
   WSAA rechaza pedir uno nuevo mientras haya otro válido (`coe.alreadyAuthenticated`),
@@ -45,6 +45,7 @@ import pytest
 from libracore import arca_credenciales, arca_wsaa
 
 from app.servicios import emision_arca
+from tests.conftest import cargar_empresa
 from tests.test_comprobantes import orden
 
 CERT = os.environ.get("ARCA_HOMO_CERT")
@@ -99,14 +100,10 @@ def _sembrar_ticket(tmp_path, monkeypatch):
 
 @pytest.fixture
 def instancia(cliente, datos, tmp_path, monkeypatch):
-    """Una instancia **de prueba**, con una razón social que tiene el CUIT del certificado."""
-    razon = cliente.post("/api/razones-sociales", json={
-        "nombre": "Razón de ensayo", "cuit": CUIT, "punto_venta": PUNTO_VENTA,
-    })
-    assert razon.status_code == 201, razon.text
+    """Una instancia **de prueba**, con la empresa con el CUIT que factura (el de `arca_config`)."""
+    cargar_empresa(cliente, razon_social="Empresa de ensayo", cuit=CUIT)
     _cargar_par_real(cliente)
     _sembrar_ticket(tmp_path, monkeypatch)
-    return razon.json()["id"]
 
 
 def _receptor(cliente, datos, **campos):
@@ -123,10 +120,10 @@ def _hoy() -> str:
 
 
 def _ensayar(cliente, datos, instancia, tipo, **extra):
-    a = orden(cliente, datos, "1000.00", razon_social_id=instancia, fecha=_hoy())
-    # Pre factura y después ARCA, como en producción: el punto de venta es el de la razón social.
+    a = orden(cliente, datos, "1000.00", fecha=_hoy())
+    # Pre factura y después ARCA, como en producción: el punto de venta es el de la configuración de ARCA.
     pf = cliente.post("/api/pre-facturas", json={
-        "fecha": _hoy(), "razon_social_id": instancia, "cliente_id": datos["cliente"],
+        "fecha": _hoy(), "cliente_id": datos["cliente"],
         "tipo": tipo, "orden_ids": [a["id"]], **extra})
     if pf.status_code != 201:
         return a, pf

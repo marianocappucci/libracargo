@@ -4,7 +4,7 @@
  * confirme los datos. La factura sale después, de la pre factura, por ARCA (pantalla `PreFactura`). Por eso
  * no hay punto de venta ni número: el de la pre factura (`PF-0001`) lo pone el motor, y el de la factura lo
  * pone ARCA. Es la misma pantalla para **editar** una pre factura abierta (`/pre-facturas/:id/editar`):
- * cambian las órdenes, la razón social, el tipo y las fechas, pero no el cliente.
+ * cambian las órdenes, el tipo y las fechas, pero no el cliente. El emisor es siempre la empresa (ADR-035).
  *
  * 🔑 **Era un `<Dialog>` y el humano pidió sacarlo de ahí.** Con razón: un
  * cliente tiene hasta **82 órdenes pendientes** —AGROPECUARIA PEREIRO, medido
@@ -39,7 +39,6 @@ import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 type Borrador = {
   fecha: string
-  razon_social_id: string
   tipo: string
   /** Sólo la FCE lo lleva, y ARCA la rechaza sin él. */
   vencimiento: string
@@ -59,7 +58,7 @@ const esFce = (tipo: string) => tipo.startsWith('fce_')
 // La fecha por defecto sale de la de Argentina y no de `toISOString`: un
 // comprobante cargado de noche nacía con la fecha de mañana.
 const VACIO: Borrador = {
-  fecha: hoyEnArgentina(), razon_social_id: '',
+  fecha: hoyEnArgentina(),
   tipo: 'factura_a', vencimiento: '',
 }
 
@@ -128,7 +127,7 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
         if (!vigente) return
         setExistente(p)
         setBorrador({
-          fecha: p.fecha_sugerida, razon_social_id: String(p.razon_social_id ?? ''),
+          fecha: p.fecha_sugerida,
           tipo: tipoDe(p) ?? 'factura_a', vencimiento: p.fecha_vencimiento_pago ?? '',
         })
         setElegidas(p.orden_ids)
@@ -159,16 +158,11 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
     return () => { vigente = false }
   }, [clienteId, editandoId])
 
-  const razon = borrador.razon_social_id ? Number(borrador.razon_social_id) : null
-  // Una orden que ya tiene OTRA razón social no entra en este comprobante: el
-  // backend la rechaza, y ofrecerla en la lista invita a mandarla. Las que no
-  // tienen ninguna heredan la del comprobante.
-  const visibles = useMemo(() => pendientes.filter(
-    (o) => razon != null && (o.razon_social_id == null || o.razon_social_id === razon),
-  ), [pendientes, razon])
+  // Todas las pendientes libres del cliente se pueden facturar: hay un solo emisor.
+  const visibles = pendientes
 
-  // Se factura lo elegido **y visible**: si cambia la razón social, lo que dejó
-  // de poder facturarse deja de contar, en la vista previa y en el envío.
+  // Se factura lo elegido **y visible**: si cambia el cliente, lo que dejó de
+  // estar a la vista deja de contar, en la vista previa y en el envío.
   const aFacturar = visibles.filter((o) => elegidas.includes(o.id))
   const totalPrevio = sumarImportes(aFacturar.map((o) => o.total))
   const todasElegidas = visibles.length > 0 && aFacturar.length === visibles.length
@@ -185,20 +179,19 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
   const clienteNumero = clienteId ? Number(clienteId) : null
   useEffect(() => {
     setAvisoFce(null)
-    if (clienteNumero == null || razon == null || fce || totalPrevio === '0.00') return
+    if (clienteNumero == null || fce || totalPrevio === '0.00') return
     let vigente = true
     // Un respiro: marcar diez órdenes seguidas no tiene que ser diez consultas a ARCA.
     const espera = setTimeout(() => {
       comprobantes
-        .fceCorresponde({ razon_social_id: razon, cliente_id: clienteNumero,
-                          total: totalPrevio, fecha: borrador.fecha })
+        .fceCorresponde({ cliente_id: clienteNumero, total: totalPrevio, fecha: borrador.fecha })
         .then((r) => {
           if (vigente && r && typeof r === 'object' && 'disponible' in r) setAvisoFce(r)
         })
         .catch(() => { /* es un aviso: si falla, se factura como siempre */ })
     }, 400)
     return () => { vigente = false; clearTimeout(espera) }
-  }, [clienteNumero, razon, fce, totalPrevio, borrador.fecha])
+  }, [clienteNumero, fce, totalPrevio, borrador.fecha])
   const correspondeFce = !fce && avisoFce?.disponible === true && avisoFce.corresponde === true
 
   const alternar = (id: number) => setElegidas((previas) => (
@@ -244,7 +237,6 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
       // Sin ítems, importes, punto de venta ni número: salen de las órdenes, y la pre factura lleva el suyo.
       const datos = {
         fecha: borrador.fecha,
-        razon_social_id: Number(borrador.razon_social_id),
         tipo: borrador.tipo,
         // Sólo la FCE lleva vencimiento de pago; `undefined` no viaja en el JSON.
         fecha_vencimiento_pago: fce ? borrador.vencimiento : undefined,
@@ -265,7 +257,6 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
   const cerrada = editando && existente != null && !ESTADOS_ABIERTOS.includes(existente.estado)
 
   const faltan = !clienteId ? 'Elegí el cliente.'
-    : !borrador.razon_social_id ? 'Elegí la razón social.'
     : fce && !borrador.vencimiento ? 'Falta el vencimiento de pago.'
     // `AAAA-MM-DD` ordena como texto. Se mira acá y no sólo en el backend porque la
     // fecha puede cambiar **después** de que se propuso el vencimiento a 30 días.
@@ -335,7 +326,7 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
             </Button>
           ) : (
             <p>
-              Esta razón social todavía no puede emitirla: cargá el CBU y la modalidad de
+              La empresa todavía no puede emitirla: cargá el CBU y la modalidad de
               transmisión en Configuración → ARCA.
             </p>
           )}
@@ -353,13 +344,6 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
                     setElegidas([])
                     setParams(v ? { cliente: v } : {}, { replace: true })
                   }} />
-          <Eleccion id="n-razon" etiqueta="Razón social" valor={borrador.razon_social_id}
-                    alCambiar={(v) => set({ razon_social_id: v })}>
-            <option value="">Elegir…</option>
-            {(opciones?.razones ?? []).map((r) => (
-              <option key={r.id} value={r.id}>{r.etiqueta}</option>
-            ))}
-          </Eleccion>
           <Eleccion id="n-tipo" etiqueta="Tipo" valor={borrador.tipo}
                     alCambiar={(v) => set({
                       tipo: v,
@@ -391,9 +375,9 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
             </span>
           )}
         </div>
-        {!clienteId || !borrador.razon_social_id ? (
+        {!clienteId ? (
           <p className="text-muted-foreground rounded border p-4 text-sm">
-            Elegí el cliente y la razón social para ver qué se puede facturar.
+            Elegí el cliente para ver qué se puede facturar.
           </p>
         ) : (
           <DataTable
@@ -401,7 +385,7 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
             data={visibles}
             onRowClick={(o: Orden) => alternar(o.id)}
             emptyMessage={cargando ? 'Cargando…'
-              : 'Este cliente no tiene órdenes pendientes y libres para esa razón social.'}
+              : 'Este cliente no tiene órdenes pendientes y libres.'}
           />
         )}
       </section>

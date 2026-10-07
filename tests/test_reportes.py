@@ -13,7 +13,14 @@ from fastapi.testclient import TestClient
 from libraauth.testing import crear_schema_de_auth
 
 from app.main import crear_app
-from tests.conftest import CUIT_EMISOR, arca_responde, config_de_prueba, configurar_arca, vaciar_auth
+from tests.conftest import (
+    CUIT_EMISOR,
+    arca_responde,
+    cargar_empresa,
+    config_de_prueba,
+    configurar_arca,
+    vaciar_auth,
+)
 
 USUARIO, CLAVE = "admin", "clave-de-prueba"
 
@@ -56,7 +63,6 @@ def escenario(cliente, monkeypatch):
         "suipacha": crear(cliente, "/api/localidades", {"nombre": "Suipacha"})["id"],
         "rosario": crear(cliente, "/api/localidades", {"nombre": "Rosario"})["id"],
         "mercedes": crear(cliente, "/api/localidades", {"nombre": "Mercedes"})["id"],
-        "razon": crear(cliente, "/api/razones-sociales", {"nombre": "Suitrans"})["id"],
     }
 
     def orden(fecha, cliente_id, tarifa, comision, origen, destino, fletero=True):
@@ -76,12 +82,11 @@ def escenario(cliente, monkeypatch):
 
     # Una factura de julio sobre las dos órdenes del cliente A: pre factura y después ARCA (simulada).
     # Es Factura B porque el cliente A no tiene CUIT: una A exige el del receptor.
-    assert cliente.put(f"/api/razones-sociales/{d['razon']}", json={
-        "nombre": "Suitrans", "cuit": CUIT_EMISOR, "punto_venta": 1}).status_code == 200
+    cargar_empresa(cliente)
     configurar_arca(cliente, cuit=CUIT_EMISOR, punto_venta=1)
     arca_responde(monkeypatch)
     pf = cliente.post("/api/pre-facturas", json={
-        "fecha": "2026-07-31", "razon_social_id": d["razon"], "cliente_id": d["cliente_a"],
+        "fecha": "2026-07-31", "cliente_id": d["cliente_a"],
         "tipo": "factura_b", "orden_ids": [d["o1"]["id"], d["o2"]["id"]]})
     assert pf.status_code == 201, pf.text
     d["comprobante"] = cliente.post(f"/api/pre-facturas/{pf.json()['id']}/facturar").json()
@@ -203,12 +208,15 @@ def test_las_rutas_se_agrupan_por_par_origen_destino(cliente, escenario):
     assert sum(f["ordenes"] for f in filas) == 4
 
 
-def test_lo_facturado_por_razon_social(cliente, escenario):
-    filas = cliente.get("/api/reportes/por-razon-social").json()
-    assert len(filas) == 1
-    assert filas[0]["razon_social"] == "Suitrans"
-    assert filas[0]["comprobantes"] == 1
-    assert Decimal(filas[0]["total"]) == Decimal("3630.00")
+def test_ya_no_hay_reporte_por_razon_social(cliente, escenario):
+    """ADR-035: el emisor es uno solo, así que el reporte por razón social se retiró del catálogo y de la API."""
+    assert cliente.get("/api/reportes/por-razon-social").status_code == 404
+    catalogo = cliente.get("/api/reportes").json()
+    assert "por-razon-social" not in {r["slug"] for r in catalogo}
+    assert all("razon_social" not in r["parametros"] for r in catalogo)
+    # Lo facturado sigue saliendo en el resumen, que no abre por razón social.
+    resumen = cliente.get("/api/reportes/resumen?desde=2026-07-01&hasta=2026-07-31").json()
+    assert resumen["comprobantes"] == 1 and Decimal(resumen["facturado"]) == Decimal("3630.00")
 
 
 def test_sin_sesion_no_se_ven_los_reportes(engine, monkeypatch):

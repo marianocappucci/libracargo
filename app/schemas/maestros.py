@@ -1,8 +1,8 @@
 """Esquemas de entrada y salida de los maestros.
 
 > 🔑 **`activo` es uniforme en la API aunque no lo sea en la base.**
-> `localidades` y `razones_sociales` tienen la columna en femenino (`activa`);
-> las otras cuatro, en masculino. Exponer esa diferencia obligaría a cada
+> `localidades` tiene la columna en femenino (`activa`); las otras cuatro, en
+> masculino. Exponer esa diferencia obligaría a cada
 > consumidor a saber de memoria cuál es cuál, y la primera pantalla que se
 > equivoque va a mostrar todo como inactivo sin fallar. El mapeo vive acá, en
 > un solo lugar, y hay tests que lo prueban en las dos direcciones.
@@ -139,23 +139,6 @@ class VehiculoIn(_Base):
 
 class VehiculoOut(VehiculoIn):
     id: int
-
-
-# ---------------------------------------------------------- razones sociales
-
-class RazonSocialIn(_Base):
-    nombre: str = Field(min_length=1, max_length=120)
-    cuit: str | None = CUIT
-    condicion_iva: CondicionIVA = CondicionIVA.RESPONSABLE_INSCRIPTO
-    punto_venta: int = Field(default=1, ge=1)
-    activo: bool = True
-
-    _limpiar = field_validator("*", mode="before")(_vacio_es_nulo)
-
-
-class RazonSocialOut(RazonSocialIn):
-    id: int
-    codigo_legado: int | None = None
 
 
 # --------------------------------------------------------------- tipos carga

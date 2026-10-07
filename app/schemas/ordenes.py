@@ -55,7 +55,6 @@ class CamposDeOrden(BaseModel):
     chofer_id: int | None = None
     vehiculo_id: int | None = None
     tipo_carga_id: int | None = None
-    razon_social_id: int | None = None
 
     remito: str | None = Field(default=None, max_length=30)
     cantidad: Decimal | None = Field(default=None, ge=0)

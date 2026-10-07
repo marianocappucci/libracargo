@@ -13,10 +13,10 @@ from zoneinfo import ZoneInfo
 import pytest
 from libracore import arca_wsfe
 
-from app.models import RazonSocial, Tercero, TipoComprobante
+from app.models import Tercero, TipoComprobante
 from app.models.enums import CondicionIVA
 from app.servicios import comprobantes, emision_arca
-from tests.conftest import _crear
+from tests.conftest import cargar_empresa
 from tests.test_comprobantes import facturar, orden, pre_factura
 from tests.test_emision_arca import CUIT, _arca_responde, _configurar_arca
 
@@ -29,9 +29,9 @@ FECHA = HOY.isoformat()
 VENCIMIENTO = (HOY + timedelta(days=30)).isoformat()
 
 
-def _facturar(cliente, datos, ordenes, razon, *, tipo="fce_a", vencimiento=VENCIMIENTO):
+def _facturar(cliente, datos, ordenes, *, tipo="fce_a", vencimiento=VENCIMIENTO):
     """Genera la pre factura y la factura por ARCA; devuelve la respuesta de lo último que se hizo."""
-    return facturar(cliente, datos, ordenes, razon=razon, tipo=tipo, fecha=FECHA, vencimiento=vencimiento)
+    return facturar(cliente, datos, ordenes, tipo=tipo, fecha=FECHA, vencimiento=vencimiento)
 
 
 def _receptor_con_cuit(cliente, datos):
@@ -53,26 +53,23 @@ def _configurar_fce(cliente, *, cbu=CBU, transmision="SCA"):
 
 
 @pytest.fixture
-def razon_con_fce(cliente, datos):
-    """Una razón social que emite por ARCA, con el CBU y la modalidad cargados."""
-    razon = _crear(cliente, "/api/razones-sociales", {
-        "nombre": "Suitrans SA", "cuit": CUIT, "punto_venta": 5,
-    })
+def empresa_con_fce(cliente, datos):
+    """La empresa, que emite por ARCA, con el CBU y la modalidad cargados."""
+    cargar_empresa(cliente)
     _configurar_arca(cliente)
     _configurar_fce(cliente)
     _receptor_con_cuit(cliente, datos)
-    return razon
 
 
 # ── Emitir ──────────────────────────────────────────────────────────────────
 
-def test_una_fce_viaja_a_arca_con_su_codigo_y_lo_que_exige(cliente, datos, razon_con_fce,
+def test_una_fce_viaja_a_arca_con_su_codigo_y_lo_que_exige(cliente, datos, empresa_con_fce,
                                                           monkeypatch):
     """Código 201, vencimiento de pago, y el CBU y la transmisión de la configuración."""
     pedidos = _arca_responde(monkeypatch, ultimo=41)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+    a = orden(cliente, datos, "1000.00")
 
-    r = _facturar(cliente, datos, [a], razon_con_fce)
+    r = _facturar(cliente, datos, [a])
 
     assert r.status_code == 201, r.text
     assert ("ultimo", 5, 201, CUIT) in pedidos, "el número se pide para el tipo 201"
@@ -84,12 +81,12 @@ def test_una_fce_viaja_a_arca_con_su_codigo_y_lo_que_exige(cliente, datos, razon
     assert arca_wsfe.cuit_del_receptor(factura) == "30123456781"
 
 
-def test_la_fce_guarda_con_que_salio(cliente, datos, razon_con_fce, monkeypatch):
+def test_la_fce_guarda_con_que_salio(cliente, datos, empresa_con_fce, monkeypatch):
     """El CBU y la modalidad quedan **en el comprobante**, no sólo en la configuración."""
     _arca_responde(monkeypatch, ultimo=41)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+    a = orden(cliente, datos, "1000.00")
 
-    comp = _facturar(cliente, datos, [a], razon_con_fce).json()
+    comp = _facturar(cliente, datos, [a]).json()
 
     assert comp["tipo"] == "fce_a"
     assert comp["numero"] == 42 and comp["cae"]
@@ -103,36 +100,35 @@ def test_la_fce_guarda_con_que_salio(cliente, datos, razon_con_fce, monkeypatch)
 
 
 @pytest.mark.parametrize("tipo, codigo", [("fce_a", 201), ("fce_b", 206), ("fce_c", 211)])
-def test_los_tres_tipos_tienen_su_codigo(cliente, datos, razon_con_fce, monkeypatch,
+def test_los_tres_tipos_tienen_su_codigo(cliente, datos, empresa_con_fce, monkeypatch,
                                          tipo, codigo):
     pedidos = _arca_responde(monkeypatch, ultimo=0)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+    a = orden(cliente, datos, "1000.00")
 
-    assert _facturar(cliente, datos, [a], razon_con_fce, tipo=tipo).status_code == 201
+    assert _facturar(cliente, datos, [a], tipo=tipo).status_code == 201
     assert ("ultimo", 5, codigo, CUIT) in pedidos
 
 
-def test_una_fce_c_no_discrimina_el_iva(cliente, datos, razon_con_fce, monkeypatch):
+def test_una_fce_c_no_discrimina_el_iva(cliente, datos, empresa_con_fce, monkeypatch):
     """Como cualquier clase C: todo el importe va como neto y no hay alícuota."""
     pedidos = _arca_responde(monkeypatch, ultimo=0)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+    a = orden(cliente, datos, "1000.00")
 
-    _facturar(cliente, datos, [a], razon_con_fce, tipo="fce_c")
+    _facturar(cliente, datos, [a], tipo="fce_c")
 
     (factura,) = [p[1] for p in pedidos if p[0] == "cae"]
     assert factura["iva_amount"] == 0.0
     assert factura["subtotal"] == float(Decimal("1210.00"))
 
 
-def test_la_fce_entra_en_los_totales_y_en_la_cuenta_corriente(cliente, datos, razon_con_fce,
+def test_la_fce_entra_en_los_totales_y_en_la_cuenta_corriente(cliente, datos, empresa_con_fce,
                                                               monkeypatch):
     """Lo que la FCE no puede hacer es desaparecer de un listado."""
     _arca_responde(monkeypatch, ultimo=41)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
-    assert _facturar(cliente, datos, [a], razon_con_fce).status_code == 201
+    a = orden(cliente, datos, "1000.00")
+    assert _facturar(cliente, datos, [a]).status_code == 201
 
-    totales = cliente.get("/api/comprobantes/totales").json()
-    suyo = next(t for t in totales if t["razon_social_id"] == razon_con_fce)
+    suyo = cliente.get("/api/comprobantes/totales").json()
     assert Decimal(suyo["total_comprobantes"]) == Decimal("1210.00")
     assert suyo["coinciden"] is True
 
@@ -143,7 +139,7 @@ def test_la_fce_entra_en_los_totales_y_en_la_cuenta_corriente(cliente, datos, ra
 
 @pytest.mark.parametrize("cuit", ["30-12345678-1", "30.12345678.1", "30 12345678 1", "30123456781"])
 def test_el_cuit_viaja_a_arca_en_digitos_sea_cual_sea_como_se_cargo(
-        cliente, datos, razon_con_fce, monkeypatch, cuit):
+        cliente, datos, empresa_con_fce, monkeypatch, cuit):
     """El CUIT llega a ARCA en dígitos sea cual sea como se cargó (con guiones, puntos o espacios).
 
     Lo normaliza **el motor** (`arca_wsfe.cuit_del_receptor`, libracore v1.124.0): antes sólo quitaba
@@ -155,43 +151,43 @@ def test_el_cuit_viaja_a_arca_en_digitos_sea_cual_sea_como_se_cargo(
         "condicion_iva": "responsable_inscripto", "cuit": cuit,
     })
     pedidos = _arca_responde(monkeypatch, ultimo=41)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+    a = orden(cliente, datos, "1000.00")
 
-    assert _facturar(cliente, datos, [a], razon_con_fce).status_code == 201
+    assert _facturar(cliente, datos, [a]).status_code == 201
     (factura,) = [p[1] for p in pedidos if p[0] == "cae"]
     assert arca_wsfe.cuit_del_receptor(factura) == "30123456781"
 
 
 # ── Lo que se rechaza, y dónde ──────────────────────────────────────────────
 
-def test_una_fce_sin_vencimiento_de_pago_se_rechaza(cliente, datos, razon_con_fce):
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+def test_una_fce_sin_vencimiento_de_pago_se_rechaza(cliente, datos, empresa_con_fce):
+    a = orden(cliente, datos, "1000.00")
 
-    r = _facturar(cliente, datos, [a], razon_con_fce, vencimiento=None)
+    r = _facturar(cliente, datos, [a], vencimiento=None)
 
     assert r.status_code == 422, r.text
     assert "vencimiento de pago" in r.text
 
 
-def test_el_vencimiento_no_puede_ser_anterior_a_la_fecha(cliente, datos, razon_con_fce):
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+def test_el_vencimiento_no_puede_ser_anterior_a_la_fecha(cliente, datos, empresa_con_fce):
+    a = orden(cliente, datos, "1000.00")
 
     ayer = (HOY - timedelta(days=1)).isoformat()
-    r = _facturar(cliente, datos, [a], razon_con_fce, vencimiento=ayer)
+    r = _facturar(cliente, datos, [a], vencimiento=ayer)
 
     assert r.status_code == 422, r.text
     assert "anterior a la fecha" in r.text
 
 
 def test_el_vencimiento_no_puede_estar_ya_vencido_aunque_la_fecha_sea_atrasada(
-        cliente, datos, razon_con_fce, monkeypatch):
+        cliente, datos, empresa_con_fce, monkeypatch):
     """ARCA compara el vencimiento contra hoy (10164): una FCE con fecha de hace 3 días y un
     vencimiento de ayer es posterior a la fecha y aun así se rechaza. Se dice antes de pedir
     el número, no como un 502."""
     pedidos = _arca_responde(monkeypatch)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+    a = orden(cliente, datos, "1000.00")
 
-    r = pre_factura(cliente, datos, [a], razon=razon_con_fce, tipo="fce_a",
+    r = pre_factura(cliente, datos, [a], tipo="fce_a",
                     fecha=(HOY - timedelta(days=3)).isoformat(),
                     vencimiento=(HOY - timedelta(days=1)).isoformat())
 
@@ -200,34 +196,34 @@ def test_el_vencimiento_no_puede_estar_ya_vencido_aunque_la_fecha_sea_atrasada(
     assert pedidos == [], "no tenía que ir a ARCA"
 
 
-def test_el_vencimiento_igual_a_hoy_es_valido(cliente, datos, razon_con_fce, monkeypatch):
+def test_el_vencimiento_igual_a_hoy_es_valido(cliente, datos, empresa_con_fce, monkeypatch):
     """Medido en homologación el 2026-10-02: el mismo día se autoriza; sólo uno anterior se rechaza."""
     _arca_responde(monkeypatch, ultimo=41)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+    a = orden(cliente, datos, "1000.00")
 
-    assert _facturar(cliente, datos, [a], razon_con_fce, vencimiento=FECHA).status_code == 201
+    assert _facturar(cliente, datos, [a], vencimiento=FECHA).status_code == 201
 
 
-def test_una_factura_comun_no_lleva_vencimiento_de_pago(cliente, datos, razon_con_fce):
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+def test_una_factura_comun_no_lleva_vencimiento_de_pago(cliente, datos, empresa_con_fce):
+    a = orden(cliente, datos, "1000.00")
 
-    r = _facturar(cliente, datos, [a], razon_con_fce, tipo="factura_a", vencimiento=VENCIMIENTO)
+    r = _facturar(cliente, datos, [a], tipo="factura_a", vencimiento=VENCIMIENTO)
 
     assert r.status_code == 422, r.text
 
 
 @pytest.mark.parametrize("cuit", ["", "1", "30-7093328", "30.7093328.2"])
 def test_una_fce_a_un_cliente_sin_un_cuit_valido_se_rechaza_antes_de_ir_a_arca(
-        cliente, datos, razon_con_fce, monkeypatch, cuit):
+        cliente, datos, empresa_con_fce, monkeypatch, cuit):
     """ARCA contestaría 10015, o un 502 por un CUIT a medio cargar: acá se dice qué cargar
     y no se le pregunta nada. «Algún dígito» no alcanza: tienen que ser los 11."""
     cliente.put(f"/api/terceros/{datos['cliente']}", json={
         "razon_social": "Agro Norte", "es_cliente": True, "cuit": cuit,
     })
     pedidos = _arca_responde(monkeypatch)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+    a = orden(cliente, datos, "1000.00")
 
-    r = _facturar(cliente, datos, [a], razon_con_fce)
+    r = _facturar(cliente, datos, [a])
 
     assert r.status_code == 422, r.text
     assert "CUIT de 11 digitos" in r.text and "ficha del cliente" in r.text
@@ -237,22 +233,23 @@ def test_una_fce_a_un_cliente_sin_un_cuit_valido_se_rechaza_antes_de_ir_a_arca(
 def test_una_fce_sin_arca_habilitado_no_se_factura(cliente, datos):
     """Una FCE sin CAE no existe: sin certificado de ARCA la pre factura se genera y espera, y no hay camino
     de «registrar con el número que tengo»."""
+    cargar_empresa(cliente)
     _receptor_con_cuit(cliente, datos)
     a = orden(cliente, datos, "1000.00")
 
-    r = _facturar(cliente, datos, [a], datos["razon"])
+    r = _facturar(cliente, datos, [a])
 
     assert r.status_code == 409, r.text
-    assert "no tiene configurado el certificado de ARCA" in r.text
+    assert "ARCA no está configurado" in r.text
     assert cliente.get("/api/comprobantes").json() == []
     assert cliente.get("/api/pre-facturas").json()["counts"]["pendiente"] == 1
 
 
-def test_si_arca_rechaza_la_fce_no_queda_comprobante(cliente, datos, razon_con_fce, monkeypatch):
+def test_si_arca_rechaza_la_fce_no_queda_comprobante(cliente, datos, empresa_con_fce, monkeypatch):
     _arca_responde(monkeypatch, falla_cae="FchVtoPago debe ser posterior a la fecha")
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+    a = orden(cliente, datos, "1000.00")
 
-    r = _facturar(cliente, datos, [a], razon_con_fce)
+    r = _facturar(cliente, datos, [a])
 
     assert r.status_code == 502, r.text
     assert cliente.get("/api/comprobantes").json() == []
@@ -282,12 +279,12 @@ def _soap_de_arca(monkeypatch):
 
 
 def test_el_sobre_de_una_fce_lleva_vencimiento_cbu_y_transmision(
-        cliente, datos, razon_con_fce, monkeypatch):
+        cliente, datos, empresa_con_fce, monkeypatch):
     """El test que no mockea el motor: mira el SOAP real, que es lo que ARCA valida."""
     enviados = _soap_de_arca(monkeypatch)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
+    a = orden(cliente, datos, "1000.00")
 
-    r = _facturar(cliente, datos, [a], razon_con_fce)
+    r = _facturar(cliente, datos, [a])
 
     assert r.status_code == 201, r.text
     (pedido,) = [c for acc, c in enviados if acc == "FECAESolicitar"]
@@ -300,14 +297,13 @@ def test_el_sobre_de_una_fce_lleva_vencimiento_cbu_y_transmision(
 
 def test_una_fce_sin_cbu_cargado_dice_que_cargar(cliente, datos, monkeypatch):
     """Sin el CBU en la configuración el motor falla y el mensaje llega a la pantalla."""
-    razon = _crear(cliente, "/api/razones-sociales", {
-        "nombre": "Suitrans SA", "cuit": CUIT, "punto_venta": 5})
+    cargar_empresa(cliente)
     _configurar_arca(cliente)           # ARCA sí, pero sin CBU ni transmisión
     _receptor_con_cuit(cliente, datos)
     _soap_de_arca(monkeypatch)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon)
+    a = orden(cliente, datos, "1000.00")
 
-    r = _facturar(cliente, datos, [a], razon)
+    r = _facturar(cliente, datos, [a])
 
     assert r.status_code == 502, r.text
     assert "CBU" in r.text and "configuración de ARCA" in r.text
@@ -318,12 +314,11 @@ def test_una_fce_sin_cbu_cargado_dice_que_cargar(cliente, datos, monkeypatch):
 
 def _comprobante(sesion, **campos):
     """Un comprobante creado por la única puerta que tiene (`servicios.comprobantes.crear`)."""
-    razon = RazonSocial(nombre="Suitrans", punto_venta=1, codigo_legado=1)
     cli = Tercero(razon_social="ACOPIO SUR SA", es_cliente=True,
                   condicion_iva=CondicionIVA.RESPONSABLE_INSCRIPTO)
-    sesion.add_all([razon, cli])
+    sesion.add(cli)
     sesion.commit()
-    base = dict(razon_social_id=razon.id, tipo=TipoComprobante.FCE_A, punto_venta=1,
+    base = dict(tipo=TipoComprobante.FCE_A, punto_venta=1,
                 numero=1, fecha=date(2026, 8, 15), cliente_id=cli.id,
                 neto=Decimal("100"), iva=Decimal("21"), total=Decimal("121"), items=[])
     return comprobantes.crear(sesion, **{**base, **campos})
@@ -340,7 +335,7 @@ def test_se_crea_una_fce_con_vencimiento_y_una_factura_comun_sin_el(sesion):
     sesion.commit()
     assert (fce.fch_vto_pago, fce.fce_cbu, fce.fce_transmision) == (date(2026, 9, 14), CBU, "SCA")
     comprobantes.crear(
-        sesion, razon_social_id=fce.razon_social_id, tipo=TipoComprobante.FACTURA_A, punto_venta=1,
+        sesion, tipo=TipoComprobante.FACTURA_A, punto_venta=1,
         numero=2, fecha=date(2026, 8, 15), cliente_id=fce.cliente_id,
         neto=Decimal("1"), iva=Decimal("0.21"), total=Decimal("1.21"), items=[])
     sesion.commit()
@@ -348,12 +343,12 @@ def test_se_crea_una_fce_con_vencimiento_y_una_factura_comun_sin_el(sesion):
 
 # ── Anular ──────────────────────────────────────────────────────────────────
 
-def test_una_fce_emitida_no_se_anula_desde_aca(cliente, datos, razon_con_fce, monkeypatch):
+def test_una_fce_emitida_no_se_anula_desde_aca(cliente, datos, empresa_con_fce, monkeypatch):
     """🔴 Anular localmente no llega a ARCA: la FCE seguiría vigente allá mientras las
     órdenes vuelven a pendientes y se pueden facturar otra vez."""
     _arca_responde(monkeypatch, ultimo=41)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_fce)
-    comp = _facturar(cliente, datos, [a], razon_con_fce).json()
+    a = orden(cliente, datos, "1000.00")
+    comp = _facturar(cliente, datos, [a]).json()
 
     r = cliente.delete(f"/api/comprobantes/{comp['id']}")
 

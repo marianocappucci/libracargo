@@ -8,13 +8,13 @@ exigiera rol admin, la orden de carga saldría sin membrete para quien la imprim
 """
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.auth import require_admin, require_staff
 from app.db import obtener_sesion
 from app.models.configuracion import ConfiguracionEmpresa
-from app.models.enums import AccionAuditoria
+from app.models.enums import AccionAuditoria, CondicionIVA
 from app.servicios import auditoria
 
 router = APIRouter(prefix="/api/configuracion", tags=["configuracion"])
@@ -46,7 +46,8 @@ class CamposDeConfiguracion(BaseModel):
     razon_social: str = ""
     nombre_fantasia: str | None = Field(default=None, max_length=120)
     cuit: str | None = Field(default=None, max_length=13)
-    condicion_iva: str | None = Field(default=None, max_length=60)
+    #: La enumeración del tercero, y no texto libre: de ella depende qué clase de comprobante se emite.
+    condicion_iva: CondicionIVA | None = None
     ingresos_brutos: str | None = Field(default=None, max_length=30)
     inicio_actividades: str | None = Field(default=None, max_length=10)
     domicilio: str | None = Field(default=None, max_length=160)
@@ -57,6 +58,12 @@ class CamposDeConfiguracion(BaseModel):
     email: str | None = Field(default=None, max_length=120)
     sitio_web: str | None = Field(default=None, max_length=120)
     pie_de_impresion: str | None = None
+
+    @field_validator("condicion_iva", mode="before")
+    @classmethod
+    def _vacio_es_sin_condicion(cls, valor):
+        """`""` es «sin cargar»: un `<select>` sin elegir manda texto vacío, y no es una condición inventada."""
+        return None if valor == "" else valor
 
 
 class ConfiguracionIn(CamposDeConfiguracion):

@@ -19,12 +19,11 @@ const OPCIONES = {
   choferes: [{ id: 5, etiqueta: 'Ramón Ferreyra' }],
   vehiculos: [{ id: 6, etiqueta: 'AB123CD' }],
   tipos: [{ id: 7, etiqueta: 'Cereal' }],
-  razones: [{ id: 8, etiqueta: 'Suitrans' }],
 }
 
 const ORDEN = {
   id: 4337, fecha: '2026-07-29', cliente_id: 1, origen_id: 3, destino_id: 4,
-  fletero_id: 2, chofer_id: 5, vehiculo_id: 6, tipo_carga_id: 7, razon_social_id: 8,
+  fletero_id: 2, chofer_id: 5, vehiculo_id: 6, tipo_carga_id: 7,
   remito: '0001-00012345', cantidad: '30.360', unidad: 'tn',
   tarifa: '585778.00', alicuota_iva: '21.00', iva: '123013.38', total: '708791.38',
   comision: '468622.38', estado: 'facturada' as const, comprobante_id: 741,

@@ -1,16 +1,16 @@
-"""El PDF de los comprobantes de LibraCargo (ADR-034): el logo, la razón social que emitió, y el correo.
+"""El PDF de los comprobantes de LibraCargo (ADR-034, ADR-035): el logo, la empresa que emitió, y el correo.
 
-> 🔑 **Los datos son ficticios**: «Transportes Demo SRL» (30-50000001-1), «Juan Pérez» (20-12345678-6),
-> «Agro Norte» (el cliente de la suite, 30-12345678-1). Ni un nombre ni un CUIT real entran en una suite.
+> 🔑 **Los datos son ficticios**: «Transportes de Prueba SRL» (20-12345678-6), «Agro Norte» (el cliente de la
+> suite, 30-12345678-1). Ni un nombre ni un CUIT real entran en una suite.
 
 Lo que se mide, en el orden del flujo:
 
-1. Emitir deja el PDF guardado, con la razón social que emitió y **el logo de la base**; un fallo del PDF no deshace
-   la emisión, y un comprobante sin PDF guardado se arma al pedirlo.
-2. Cada razón social imprime el membrete **suyo** (dos razones sociales, cada PDF con la suya), y la nota de crédito
-   tiene el suyo.
+1. Emitir deja el PDF guardado, con la empresa de «Datos de la empresa» y **el logo de la base**; un fallo del PDF no
+   deshace la emisión, y un comprobante sin PDF guardado se arma al pedirlo.
+2. **Hay un solo emisor**: todo documento (emitido por ARCA o registrado antes, factura, nota o pre factura) sale con la
+   empresa y con su logo, **siempre**. Ya no hay una regla de «mismo CUIT» que deje el logo afuera.
 3. Qué comprobantes se ven (`puede_ver`): los de LibraCargo, con CAE y que no sean de homologación; el resto es 404.
-4. El correo: sale el mismo PDF, firmado por la razón social, con un SMTP falso.
+4. El correo: sale el mismo PDF, firmado por la empresa, con un SMTP falso.
 5. El resolvedor único: lo que decide, sin pasar por HTTP. Y que **la pre factura** lleva el logo.
 
 Cómo se lee el PDF: `fpdf2` comprime los flujos, así que el texto se busca después de descomprimirlos, y el logo
@@ -34,12 +34,11 @@ from PIL import Image
 
 from app.models import TipoComprobante
 from app.servicios import emisor_del_pdf as emisor_de_cargo
-from tests.conftest import CUIT_EMISOR, URL_CORE, arca_responde, configurar_arca
+from tests.conftest import CUIT_EMISOR, URL_CORE, arca_responde, cargar_empresa, configurar_arca
 from tests.test_comprobantes import facturar, orden, pre_factura
 
-#: Los datos de una segunda razón social. Ficticios.
-CUIT_DEMO = "30-50000001-1"
-CUIT_OTRA = "20-12345678-6"
+#: El nombre de la empresa que carga `cargar_empresa` (la fixture `emisor`). Ficticio.
+EMPRESA = "Transportes de Prueba"
 
 
 # ── Leer un PDF ─────────────────────────────────────────────────────────────
@@ -71,19 +70,16 @@ def un_logo() -> bytes:
 # ── Armar el escenario ──────────────────────────────────────────────────────
 
 
-def cargar_logo(cliente, *, cuit=None):
+def cargar_logo(cliente, **empresa):
     """Datos de la empresa de la instancia y su logo, como los carga la pantalla «Datos de la empresa»."""
-    cuerpo = {"razon_social": "Suitrans SA", "domicilio": "Calle Falsa 123", "localidad": "Suipacha",
-              "provincia": "Buenos Aires", "ingresos_brutos": "123-456", "inicio_actividades": "01/01/2020"}
-    if cuit:
-        cuerpo["cuit"] = cuit
-    assert cliente.put("/api/configuracion", json=cuerpo).status_code == 200
+    cargar_empresa(cliente, domicilio="Calle Falsa 123", localidad="Suipacha", provincia="Buenos Aires",
+                   ingresos_brutos="123-456", inicio_actividades="01/01/2020", **empresa)
     r = cliente.post("/api/configuracion/logo", files={"archivo": ("logo.png", un_logo(), "image/png")})
     assert r.status_code == 200, r.text
 
 
 def emitida(cliente, datos, tarifa="1000.00", **kw):
-    """Una factura emitida por ARCA (simulada) para la razón social que emite (`con_emisor`)."""
+    """Una factura emitida por ARCA (simulada) por la empresa (`con_emisor`)."""
     r = facturar(cliente, datos, [orden(cliente, datos, tarifa)], **kw)
     assert r.status_code == 201, r.text
     return r.json()
@@ -103,20 +99,13 @@ def factura_del_motor(factura_id):
         return db_facturas.get_factura(factura_id, conn=conn)
 
 
-def segunda_razon(cliente, datos, *, nombre="Transportes Demo SRL", cuit=CUIT_DEMO):
-    r = cliente.put(f"/api/razones-sociales/{datos['otra_razon']}", json={
-        "nombre": nombre, "cuit": cuit, "punto_venta": 2})
-    assert r.status_code == 200, r.text
-    return datos["otra_razon"]
-
-
-def a_mano(sesion, datos, razon_id, *, numero, cae="75123456789012", tipo=TipoComprobante.FACTURA_A,
+def a_mano(sesion, datos, *, numero, cae="75123456789012", tipo=TipoComprobante.FACTURA_A,
            ambiente=None, **kw):
-    """Un comprobante de una razón social que no emite por ARCA, creado por la misma puerta que usa la emisión."""
+    """Un comprobante registrado sin pasar por ARCA (sin `emisor_id`), creado por la misma puerta que la emisión."""
     from app.servicios import comprobantes
 
     comp = comprobantes.crear(
-        sesion, razon_social_id=razon_id, tipo=tipo, punto_venta=2, numero=numero, fecha=date(2026, 8, 15),
+        sesion, tipo=tipo, punto_venta=2, numero=numero, fecha=date(2026, 8, 15),
         cliente_id=datos["cliente"], neto=Decimal("100.00"), iva=Decimal("21.00"), total=Decimal("121.00"),
         items=[{"description": "Flete", "qty": 1, "unit_price": 100.0, "subtotal": 100.0, "iva_pct": 21}],
         ambiente=ambiente, **kw)
@@ -130,7 +119,7 @@ def a_mano(sesion, datos, razon_id, *, numero, cae="75123456789012", tipo=TipoCo
 
 
 @pytest.mark.con_emisor
-def test_emitir_guarda_el_pdf_con_la_razon_social_que_emitio(cliente, datos):
+def test_emitir_guarda_el_pdf_con_la_empresa_que_emitio(cliente, datos):
     comp = emitida(cliente, datos)
 
     guardado = factura_del_motor(comp["id"])["pdf_path"]
@@ -138,7 +127,7 @@ def test_emitir_guarda_el_pdf_con_la_razon_social_que_emitio(cliente, datos):
     contenido = pdf_de(cliente, comp["id"])
     assert contenido == open(guardado, "rb").read(), "se sirve el que se guardó, no uno nuevo"
     texto = texto_del_pdf(contenido)
-    assert "Suitrans" in texto and CUIT_EMISOR in texto
+    assert EMPRESA in texto and CUIT_EMISOR in texto
     assert "Responsable Inscripto" in texto
     # El `empresa` de `arca_config` es un slug interno ("agencia"): nunca es el nombre de quien emite.
     assert "agencia" not in texto
@@ -147,7 +136,7 @@ def test_emitir_guarda_el_pdf_con_la_razon_social_que_emitio(cliente, datos):
 
 @pytest.mark.con_emisor
 def test_el_pdf_lleva_el_logo_de_la_base_y_el_domicilio_de_la_empresa(cliente, datos):
-    cargar_logo(cliente, cuit=CUIT_EMISOR)
+    cargar_logo(cliente)
     comp = emitida(cliente, datos)
 
     contenido = pdf_de(cliente, comp["id"])
@@ -164,7 +153,7 @@ def test_el_pdf_guardado_es_lo_que_salio_y_no_cambia_si_cambia_el_logo(cliente, 
     comp = emitida(cliente, datos)
     assert imagenes_del_pdf(pdf_de(cliente, comp["id"])) == 0
 
-    cargar_logo(cliente, cuit=CUIT_EMISOR)
+    cargar_logo(cliente)
 
     assert imagenes_del_pdf(pdf_de(cliente, comp["id"])) == 0
     # Uno nuevo sí sale con el logo.
@@ -191,7 +180,7 @@ def test_si_el_pdf_no_sale_la_emision_no_se_deshace_y_el_pdf_se_arma_al_pedirlo(
 
     # Cuando el generador vuelve, el endpoint lo arma al vuelo y **no** lo guarda: es lo que dice el motor.
     monkeypatch.setattr(pdf_generator, "generate_pdf_factura", real)
-    assert "Suitrans" in texto_del_pdf(pdf_de(cliente, comp["id"]))
+    assert EMPRESA in texto_del_pdf(pdf_de(cliente, comp["id"]))
     assert not factura_del_motor(comp["id"])["pdf_path"]
 
 
@@ -200,14 +189,12 @@ def test_un_pdf_perdido_se_arma_de_nuevo(cliente, datos):
     """Un redeploy que borra el disco del contenedor: el archivo no está, el comprobante sí."""
     comp = emitida(cliente, datos)
     os.remove(factura_del_motor(comp["id"])["pdf_path"])
-    assert "Suitrans" in texto_del_pdf(pdf_de(cliente, comp["id"]))
+    assert EMPRESA in texto_del_pdf(pdf_de(cliente, comp["id"]))
 
 
 def test_contra_homologacion_no_se_guarda_ningun_pdf(cliente, datos, monkeypatch):
     """El ensayo se revierte entero: no hay comprobante, y por lo tanto no hay PDF."""
-    r = cliente.put(f"/api/razones-sociales/{datos['razon']}", json={
-        "nombre": "Suitrans", "cuit": CUIT_EMISOR, "punto_venta": 1})
-    assert r.status_code == 200
+    cargar_empresa(cliente)
     configurar_arca(cliente, cuit=CUIT_EMISOR, punto_venta=1, ambiente="homologacion")
     arca_responde(monkeypatch)
 
@@ -216,36 +203,41 @@ def test_contra_homologacion_no_se_guarda_ningun_pdf(cliente, datos, monkeypatch
     assert not os.path.exists(pdf_generator.FACTURAS_PDF_DIR) or not os.listdir(pdf_generator.FACTURAS_PDF_DIR)
 
 
-# ── 2. Cada razón social, la suya ───────────────────────────────────────────
+# ── 2. Un solo emisor: la empresa, con su logo, siempre ─────────────────────
 
 
 @pytest.mark.con_emisor
-def test_dos_razones_sociales_cada_pdf_con_la_suya(cliente, datos, sesion):
-    """Suitrans emite por ARCA (tiene `emisor_id`); la otra no (`emisor_id` vacío): ninguna imprime la de la otra."""
-    cargar_logo(cliente)  # la empresa sin CUIT: el logo vale para las dos
-    otra = segunda_razon(cliente, datos)
+def test_todo_documento_sale_con_la_empresa_y_su_logo(cliente, datos, sesion):
+    """Uno emitido por ARCA (tiene `emisor_id`) y otro registrado antes (sin él): el mismo membrete, con logo."""
+    cargar_logo(cliente)
     propia = emitida(cliente, datos)
-    ajena = a_mano(sesion, datos, otra, numero=7)
+    antes = a_mano(sesion, datos, numero=7)
 
-    primero = pdf_de(cliente, propia["id"])
-    segundo = pdf_de(cliente, ajena.id)
-    t1, t2 = texto_del_pdf(primero), texto_del_pdf(segundo)
-    assert "Suitrans" in t1 and CUIT_EMISOR in t1
-    assert "Transportes Demo SRL" not in t1 and CUIT_DEMO not in t1
-    assert "Transportes Demo SRL" in t2 and CUIT_DEMO in t2
-    assert "Suitrans" not in t2 and CUIT_EMISOR not in t2
+    t1 = texto_del_pdf(primero := pdf_de(cliente, propia["id"]))
+    t2 = texto_del_pdf(segundo := pdf_de(cliente, antes.id))
+    for texto in (t1, t2):
+        assert EMPRESA in texto and CUIT_EMISOR in texto
+        assert "Calle Falsa 123, Suipacha" in texto
     assert imagenes_del_pdf(primero) == imagenes_del_pdf(segundo) == 1
 
 
-@pytest.mark.con_emisor
-def test_la_condicion_de_iva_es_la_de_cada_razon_social(cliente, datos, sesion):
-    otra = segunda_razon(cliente, datos, nombre="Juan Pérez", cuit=CUIT_OTRA)
-    assert cliente.put(f"/api/razones-sociales/{otra}", json={
-        "nombre": "Juan Pérez", "cuit": CUIT_OTRA, "punto_venta": 2,
-        "condicion_iva": "monotributo"}).status_code == 200
-    ajena = a_mano(sesion, datos, otra, numero=3, tipo=TipoComprobante.FACTURA_C)
+def test_el_logo_sale_aunque_el_cuit_de_la_empresa_no_sea_el_de_arca(cliente, datos, sesion):
+    """🔑 Era el defecto de Suitrans: la razón social sin CUIT dejaba al PDF sin logo. Ya no hay esa comparación."""
+    cargar_logo(cliente, cuit="30-50000001-1")
+    configurar_arca(cliente, cuit=CUIT_EMISOR, punto_venta=1)    # otro CUIT: no emite, pero el PDF no lo mira
+    ajena = a_mano(sesion, datos, numero=9)
+
+    contenido = pdf_de(cliente, ajena.id)
+    assert imagenes_del_pdf(contenido) == 1
+    texto = texto_del_pdf(contenido)
+    assert "30-50000001-1" in texto and "Calle Falsa 123" in texto
+
+
+def test_la_condicion_de_iva_es_la_de_la_empresa(cliente, datos, sesion):
+    cargar_empresa(cliente, condicion_iva="monotributo")
+    ajena = a_mano(sesion, datos, numero=3, tipo=TipoComprobante.FACTURA_C)
     texto = texto_del_pdf(pdf_de(cliente, ajena.id))
-    assert "Monotributo" in texto and "Juan P" in texto
+    assert "Monotributo" in texto and "Responsable Inscripto" not in texto
 
 
 @pytest.mark.parametrize("cargado, para_el_pdf", [
@@ -257,20 +249,8 @@ def test_el_inicio_de_actividades_llega_al_motor_en_iso(cargado, para_el_pdf):
 
 
 @pytest.mark.con_emisor
-def test_la_empresa_de_otro_cuit_no_presta_su_domicilio_ni_su_logo(cliente, datos, sesion):
-    """Una razón social que no es la empresa de la instancia no sale con el domicilio ni el logo de la otra."""
-    cargar_logo(cliente, cuit=CUIT_EMISOR)
-    otra = segunda_razon(cliente, datos)
-    ajena = a_mano(sesion, datos, otra, numero=9)
-
-    contenido = pdf_de(cliente, ajena.id)
-    assert imagenes_del_pdf(contenido) == 0
-    assert "Calle Falsa 123" not in texto_del_pdf(contenido)
-
-
-@pytest.mark.con_emisor
 def test_la_nota_de_credito_tiene_su_pdf_con_el_membrete_de_quien_emitio(cliente, datos):
-    cargar_logo(cliente, cuit=CUIT_EMISOR)
+    cargar_logo(cliente)
     factura = emitida(cliente, datos)
 
     r = cliente.post(f"/api/comprobantes/{factura['id']}/nota-de-credito", json={"motivo": "Error de tarifa"})
@@ -283,7 +263,7 @@ def test_la_nota_de_credito_tiene_su_pdf_con_el_membrete_de_quien_emitio(cliente
     contenido = pdf_de(cliente, nota["id"])
     texto = texto_del_pdf(contenido)
     assert "Nota De Cr" in texto and "Código 003" in texto, "el título y el código de ARCA de una nota de crédito A"
-    assert "Suitrans" in texto and CUIT_EMISOR in texto
+    assert EMPRESA in texto and CUIT_EMISOR in texto
     assert imagenes_del_pdf(contenido) == 1
     # Y la factura sigue siendo su PDF.
     assert "Código 001" in texto_del_pdf(pdf_de(cliente, factura["id"]))
@@ -317,7 +297,7 @@ def test_un_comprobante_que_no_es_de_libracargo_no_existe_para_este_router(clien
 
 def test_sin_cae_no_hay_pdf(cliente, datos, sesion):
     """Lo registrado a mano y lo migrado del legado: ARCA no lo conoce, y un PDF suyo parecería una factura."""
-    a_mano_sin_cae = a_mano(sesion, datos, datos["razon"], numero=5, cae=None)
+    a_mano_sin_cae = a_mano(sesion, datos, numero=5, cae=None)
     assert cliente.get(f"/api/comprobantes/{a_mano_sin_cae.id}").status_code == 200
     assert cliente.get(f"/api/comprobantes/{a_mano_sin_cae.id}/pdf").status_code == 404
     r = cliente.post(f"/api/comprobantes/{a_mano_sin_cae.id}/enviar-email", json={"email": "compras@agronorte.test"})
@@ -326,7 +306,7 @@ def test_sin_cae_no_hay_pdf(cliente, datos, sesion):
 
 def test_uno_de_homologacion_no_se_imprime(cliente, datos, sesion):
     """No queda ninguno por el camino normal (el ensayo se revierte); si apareciera uno, su CAE no vale."""
-    de_prueba = a_mano(sesion, datos, datos["razon"], numero=6, ambiente="homologacion")
+    de_prueba = a_mano(sesion, datos, numero=6, ambiente="homologacion")
     assert cliente.get(f"/api/comprobantes/{de_prueba.id}").status_code == 200
     assert cliente.get(f"/api/comprobantes/{de_prueba.id}/pdf").status_code == 404
 
@@ -334,7 +314,7 @@ def test_uno_de_homologacion_no_se_imprime(cliente, datos, sesion):
 def test_sin_sesion_no_hay_pdf(cliente, datos, sesion):
     from fastapi.testclient import TestClient
 
-    comp = a_mano(sesion, datos, datos["razon"], numero=8)
+    comp = a_mano(sesion, datos, numero=8)
     anonimo = TestClient(cliente.app, base_url="https://testserver")
     assert anonimo.get(f"/api/comprobantes/{comp.id}/pdf").status_code == 401
     assert anonimo.post(f"/api/comprobantes/{comp.id}/enviar-email", json={"email": "a@b.test"}).status_code == 401
@@ -365,7 +345,7 @@ def smtp_falso(monkeypatch):
 
 
 @pytest.mark.con_emisor
-def test_enviar_por_correo_manda_el_mismo_pdf_firmado_por_la_razon_social(cliente, datos, smtp_falso):
+def test_enviar_por_correo_manda_el_mismo_pdf_firmado_por_la_empresa(cliente, datos, smtp_falso):
     comp = emitida(cliente, datos)
 
     r = cliente.post(f"/api/comprobantes/{comp['id']}/enviar-email", json={"email": " compras@agronorte.test "})
@@ -374,7 +354,7 @@ def test_enviar_por_correo_manda_el_mismo_pdf_firmado_por_la_razon_social(client
     [enviado] = smtp_falso
     assert enviado["to_email"] == "compras@agronorte.test"
     assert enviado["to_name"] == "Agro Norte"
-    assert enviado["empresa_nombre"] == "Suitrans", "firma la razón social que emitió, no el slug de ARCA"
+    assert enviado["empresa_nombre"] == EMPRESA + " SRL", "firma la empresa que emitió, no el slug de ARCA"
     assert enviado["factura_label"] == "FACTURA A 0001-00000001"
     assert open(enviado["pdf_path"], "rb").read() == pdf_de(cliente, comp["id"]), "el que se ve es el que se manda"
 
@@ -410,59 +390,41 @@ def test_crear_app_registra_el_resolvedor_en_el_motor(cliente):
 
 
 @pytest.mark.con_emisor
-def test_la_pre_factura_lleva_el_logo_y_la_razon_social(cliente, datos):
+def test_la_pre_factura_lleva_el_logo_y_la_empresa(cliente, datos):
     """El mismo resolvedor que los comprobantes: antes la pre factura armaba su emisor aparte y sin logo."""
     pf = pre_factura(cliente, datos, [orden(cliente, datos, "1000.00")]).json()
     sin_logo = cliente.get(f"/api/pre-facturas/{pf['id']}/pdf").content
     assert imagenes_del_pdf(sin_logo) == 0
 
-    cargar_logo(cliente, cuit=CUIT_EMISOR)
+    cargar_logo(cliente)
     con_logo = cliente.get(f"/api/pre-facturas/{pf['id']}/pdf")
     assert con_logo.status_code == 200
     assert imagenes_del_pdf(con_logo.content) == 1
     texto = texto_del_pdf(con_logo.content)
-    assert "Suitrans" in texto and CUIT_EMISOR in texto
+    assert EMPRESA in texto and CUIT_EMISOR in texto
     assert "Calle Falsa 123, Suipacha" in texto
 
 
-@pytest.mark.con_emisor
-def test_la_pre_factura_de_otra_razon_social_sale_con_la_suya(cliente, datos):
-    otra = segunda_razon(cliente, datos)
-    pf = pre_factura(cliente, datos, [orden(cliente, datos, "100.00", razon_social_id=otra)], razon=otra).json()
-    texto = texto_del_pdf(cliente.get(f"/api/pre-facturas/{pf['id']}/pdf").content)
-    assert "Transportes Demo SRL" in texto and CUIT_DEMO in texto
-    assert CUIT_EMISOR not in texto
-
-
-def test_el_resolvedor_sin_razon_social_conocida_no_agrega_nada(cliente, sesion):
-    assert emisor_de_cargo.emisor_de(sesion, {}) is None
+def test_el_resolvedor_sin_empresa_cargada_no_agrega_nada(cliente, sesion):
+    """Instancia recién entregada, sin «Datos de la empresa»: el motor cae a su membrete por defecto."""
     assert emisor_de_cargo.emisor_de(sesion, {"id": 123456}) is None
-    # Una pre factura de otro producto no es de acá: su `id` es de otra tabla.
-    assert emisor_de_cargo.emisor_de(
-        sesion, {"id": 1, "numero_interno": "PF-0001", "origen_producto": "otro-producto"}) is None
 
 
-@pytest.mark.con_emisor
-def test_sin_fila_propia_la_razon_social_sale_del_cuit_del_emisor(cliente, datos, sesion):
-    """Un documento con `emisor_id` y nada más: la razón social cuyo CUIT es el del `arca_config`."""
-    emisor_id = _id_de_arca()
-    elegido = emisor_de_cargo.emisor_de(sesion, {"id": 123456, "emisor_id": emisor_id})
-    assert elegido["nombre"] == "Suitrans" and elegido["cuit"] == CUIT_EMISOR
-
-    # Con dos razones sociales del mismo CUIT no se adivina cuál es.
-    segunda_razon(cliente, datos, nombre="Suitrans Dos", cuit=CUIT_EMISOR)
-    assert emisor_de_cargo.emisor_de(sesion, {"id": 123456, "emisor_id": emisor_id}) is None
-
-
-def _id_de_arca() -> int:
-    from libracore.db import arca_config as db_arca_config
-
-    libracore_core.configure(URL_CORE)
-    [cfg] = db_arca_config.obtener_todas_arca_configs()
-    return cfg["id"]
+def test_el_resolvedor_da_la_empresa_para_cualquier_documento(cliente, sesion):
+    """Hay un solo emisor: un comprobante, una pre factura, una de otro producto o un `emisor_id` ajeno, lo mismo."""
+    cargar_logo(cliente)
+    esperado = emisor_de_cargo.emisor_de(sesion, {})
+    assert esperado["nombre"] == EMPRESA + " SRL" and esperado["cuit"] == CUIT_EMISOR
+    assert esperado["iva_condition"] == "Responsable Inscripto"
+    assert esperado["logo_bytes"].startswith(b"\x89PNG")
+    for documento in ({"id": 123456}, {"id": 123456, "emisor_id": 9999},
+                      {"id": 1, "numero_interno": "PF-0001", "origen_producto": "libracargo"},
+                      {"id": 1, "numero_interno": "PF-0001", "origen_producto": "otro-producto"}):
+        assert emisor_de_cargo.emisor_de(sesion, documento) == esperado, documento
 
 
 def test_el_resolvedor_registrado_abre_su_propia_sesion(cliente, datos, sesion):
     """Lo llama el motor sin la sesión del pedido: lee la base por su cuenta."""
-    comp = a_mano(sesion, datos, datos["razon"], numero=11)
-    assert emisor_de_cargo.resolvedor({"id": comp.id})["nombre"] == "Suitrans"
+    cargar_empresa(cliente)
+    comp = a_mano(sesion, datos, numero=11)
+    assert emisor_de_cargo.resolvedor({"id": comp.id})["nombre"] == "Transportes de Prueba SRL"

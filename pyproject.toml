@@ -123,7 +123,7 @@ extend-immutable-calls = [
 [tool.pytest.ini_options]
 markers = [
     "sin_aceptar_terminos: deja al test afuera de la excepcion autouse del conftest, para medir el gate de Terminos con el corte puesto de verdad",
-    "con_emisor: el test arranca con `datos[\"razon\"]` lista para emitir por ARCA (certificado cargado y ARCA simulada); ver la fixture `emisor` del conftest",
+    "con_emisor: el test arranca con la empresa lista para emitir por ARCA (certificado cargado y ARCA simulada); ver la fixture `emisor` del conftest",
 ]
 testpaths = ["tests"]
 addopts = "-q"

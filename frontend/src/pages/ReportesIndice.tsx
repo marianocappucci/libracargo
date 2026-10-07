@@ -20,7 +20,7 @@ import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 const NOMBRE_DE_PARAMETRO: Record<string, string> = {
   rango: 'fechas', cliente: 'cliente', fletero: 'fletero/transporte',
-  proveedor: 'proveedor', tercero: 'tercero', razon_social: 'razón social',
+  proveedor: 'proveedor', tercero: 'tercero',
   origen: 'origen', destino: 'destino', medio_pago: 'medio de pago',
   tipo_caja: 'ingreso/egreso', rol: 'tipo de cuenta',
   incluir_en_cero: 'cuentas en cero', limite: 'cuántas filas',

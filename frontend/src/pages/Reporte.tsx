@@ -99,13 +99,6 @@ function columnasDe(slug: string, o: Opciones | null): Columna<Fila>[] {
       { encabezado: 'Movimientos', valor: (f) => f.movimientos, numerica: true },
       { encabezado: 'Importe', valor: (f) => f.importe, numerica: true, moneda: true },
     ],
-    'por-razon-social': [
-      { encabezado: 'Razón social', valor: (f) => f.razon_social },
-      { encabezado: 'Comprobantes', valor: (f) => f.comprobantes, numerica: true },
-      { encabezado: 'Neto', valor: (f) => f.neto, numerica: true, moneda: true },
-      { encabezado: 'IVA', valor: (f) => f.iva, numerica: true, moneda: true },
-      { encabezado: 'Total', valor: (f) => f.total, numerica: true, moneda: true },
-    ],
     'por-ruta': [
       { encabezado: 'Origen', valor: (f) => f.origen },
       { encabezado: 'Destino', valor: (f) => f.destino },
@@ -138,7 +131,6 @@ function columnasDe(slug: string, o: Opciones | null): Columna<Fila>[] {
           const c = f as unknown as Comprobante
           return `${NOMBRE_DE_TIPO[c.tipo] ?? c.tipo} ${numeroDe(c)}`
         } },
-      { encabezado: 'Razón social', valor: (f) => nombre(o?.razones, f.razon_social_id) },
       { encabezado: 'Cliente', valor: (f) => nombre(o?.clientes, f.cliente_id) },
       { encabezado: 'Estado', valor: (f) => (f.anulado ? 'anulado' : 'vigente') },
       { encabezado: 'Neto', valor: (f) => f.neto, numerica: true, moneda: true },
@@ -401,11 +393,6 @@ export default function Reporte() {
                   valor={texto('tercero_id')}
                   opciones={opciones?.terceros ?? []}
                   alCambiar={(v) => set({ tercero_id: v })} />
-        )}
-        {tiene('razon_social') && (
-          <Elegir id="f-razon" etiqueta="Razón social" vacio="Todas"
-                  valor={texto('razon_social_id')} opciones={opciones?.razones ?? []}
-                  alCambiar={(v) => set({ razon_social_id: v })} />
         )}
         {tiene('origen') && (
           <Elegir id="f-origen" etiqueta="Origen" vacio="Todos"

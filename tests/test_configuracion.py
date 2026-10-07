@@ -61,6 +61,30 @@ def test_se_guarda_y_se_lee(cliente):
     assert cliente.get("/api/configuracion").json()["telefono"] == "2324-999999"
 
 
+@pytest.mark.parametrize("valor", ["responsable_inscripto", "monotributo", "exento", "consumidor_final",
+                                   "no_categorizado"])
+def test_la_condicion_de_iva_es_la_enumeracion_del_tercero(cliente, valor):
+    """ADR-035: la empresa es el emisor, y de su condición depende qué clase de comprobante se emite."""
+    r = cliente.put("/api/configuracion", json={**EMPRESA, "condicion_iva": valor})
+    assert r.status_code == 200, r.text
+    assert r.json()["condicion_iva"] == valor
+    assert cliente.get("/api/configuracion").json()["condicion_iva"] == valor
+
+
+@pytest.mark.parametrize("texto", ["Responsable Inscripto", "RI", "cualquier cosa"])
+def test_la_condicion_de_iva_ya_no_es_texto_libre(cliente, texto):
+    """Antes era `String(60)`: entraba cualquier cosa. Ahora lo que no es del enum se rechaza."""
+    r = cliente.put("/api/configuracion", json={**EMPRESA, "condicion_iva": texto})
+    assert r.status_code == 422, r.text
+
+
+def test_sin_condicion_de_iva_queda_en_nulo_y_vacio_cuenta_como_sin_cargar(cliente):
+    assert cliente.put("/api/configuracion", json=EMPRESA).json()["condicion_iva"] is None
+    # El `<select>` sin elegir manda texto vacío: no es una condición inventada.
+    r = cliente.put("/api/configuracion", json={**EMPRESA, "condicion_iva": ""})
+    assert r.status_code == 200 and r.json()["condicion_iva"] is None
+
+
 def test_el_logo_va_y_vuelve_con_su_tipo(cliente):
     cliente.put("/api/configuracion", json=EMPRESA)
     r = cliente.post("/api/configuracion/logo",

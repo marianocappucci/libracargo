@@ -1,6 +1,6 @@
 import { api } from 'libra-ui/api-client'
 
-/** Lo que devuelven los seis ABM. Los campos propios de cada uno se agregan
+/** Lo que devuelven los cinco ABM. Los campos propios de cada uno se agregan
  *  con una intersección en su pantalla: acá está lo que comparten. */
 export type Maestro = {
   id: number
@@ -8,14 +8,13 @@ export type Maestro = {
   [campo: string]: unknown
 }
 
-/** El `activo` es uniforme en la API aunque en la base dos tablas lo tengan
+/** El `activo` es uniforme en la API aunque en la base una tabla lo tenga
  *  en femenino — el mapeo vive en el backend, ver `app/schemas/maestros.py`. */
 export type Recurso =
   | 'terceros'
   | 'localidades'
   | 'choferes'
   | 'vehiculos'
-  | 'razones-sociales'
   | 'tipos-carga'
 
 export function clienteDe<T extends Maestro>(recurso: Recurso) {

@@ -1,4 +1,4 @@
-"""Maestros: terceros, localidades, choferes, vehículos, razones sociales."""
+"""Maestros: terceros, localidades, choferes, vehículos y tipos de carga."""
 
 from __future__ import annotations
 
@@ -143,34 +143,6 @@ class Vehiculo(Base, Auditable, Anotable):
             postgresql_nulls_not_distinct=True,
         ),
         Index("ix_vehiculos_fletero", "fletero_id"),
-    )
-
-
-class RazonSocial(Base, Auditable):
-    """Las razones sociales propias con las que se factura.
-
-    En el legado eran dos enteros sin tabla, hardcodeados en un `<select>`:
-    `1 = Suitrans`, `2 = Mauricio`, más un `0` que usaba `bajarpendientes.php`.
-    """
-
-    __tablename__ = "razones_sociales"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    nombre: Mapped[str] = mapped_column(String(120), nullable=False)
-    cuit: Mapped[str | None] = mapped_column(String(13), nullable=True)
-    condicion_iva: Mapped[CondicionIVA] = mapped_column(
-        Enum(CondicionIVA, name="condicion_iva",
-             values_callable=lambda e: [m.value for m in e]),
-        nullable=False,
-        default=CondicionIVA.RESPONSABLE_INSCRIPTO,
-    )
-    punto_venta: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    activa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    codigo_legado: Mapped[int | None] = mapped_column(Integer, nullable=True)
-
-    __table_args__ = (
-        UniqueConstraint("nombre", name="uq_razones_sociales_nombre"),
-        UniqueConstraint("codigo_legado", name="uq_razones_sociales_codigo_legado"),
     )
 
 

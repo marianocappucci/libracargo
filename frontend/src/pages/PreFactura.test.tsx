@@ -1,6 +1,6 @@
 /** El detalle de una pre factura: lo que se puede hacer según el estado, y qué pasa al hacerlo.
  *
- * Datos ficticios (Agro Norte, Suitrans). Lo que más importa es **facturar**: que pida confirmación, que
+ * Datos ficticios (Agro Norte). Lo que más importa es **facturar**: que pida confirmación, que
  * mande la fecha, que muestre la factura emitida, el error tal cual lo dice el servidor (sin certificado,
  * ARCA que rechaza) y que un ensayo no se confunda con una factura.
  */
@@ -27,7 +27,7 @@ const { ApiError } = await import('libra-ui/api-client')
 function pf(estado = 'pendiente', extra: Record<string, unknown> = {}) {
   return {
     id: 7, numero_interno: 'PF-0007', estado, cliente_id: 1, cliente_razon: 'Agro Norte',
-    cliente_cuit: '30-12345678-1', razon_social_id: 5, razon_social: 'Suitrans',
+    cliente_cuit: '30-12345678-1',
     tipo_comprobante: 1, fecha_sugerida: '2026-08-20', fecha_vencimiento_pago: null,
     observaciones: '', orden_ids: [3, 4], total: '2420.00', created_at: '2026-08-20 10:15:00',
     enviado_at: null, enviado_a: null, aceptado_at: null, aceptado_por: null, factura_id: null,
@@ -76,7 +76,7 @@ describe('Pre factura', () => {
     expect(await screen.findByRole('heading', { name: 'Pre factura PF-0007' })).toBeInTheDocument()
     expect(screen.getByText('Pendiente')).toBeInTheDocument()
     expect(screen.getByText('Agro Norte')).toBeInTheDocument()
-    expect(screen.getByText('Suitrans')).toBeInTheDocument()
+    expect(screen.getByText('Comprobante')).toBeInTheDocument()
     expect(screen.getByText('Factura A')).toBeInTheDocument()
     expect(screen.getByText('$ 2.420,00')).toBeInTheDocument()
     expect(screen.getByText(/Orden 4 del 11\/08\/2026, remito 0001-1/)).toBeInTheDocument()
@@ -260,12 +260,12 @@ describe('Pre factura', () => {
   it('sin certificado de ARCA muestra el error tal cual, y la pre factura sigue abierta', async () => {
     const dialogo = await abrirFacturar()
     post.mockRejectedValue(new ApiError(
-      409, 'La razon social Suitrans no tiene configurado el certificado de ARCA: la pre factura '
-        + 'queda lista para facturar cuando este'))
+      409, 'ARCA no está configurado: cargá el certificado y la clave en Configuración → ARCA. La pre '
+        + 'factura queda lista para facturar cuando esté resuelto'))
     fireEvent.click(within(dialogo).getByText('Confirmar y facturar'))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'La razon social Suitrans no tiene configurado el certificado de ARCA')
+      'ARCA no está configurado: cargá el certificado y la clave en Configuración → ARCA')
     expect(screen.queryByRole('status', { name: 'Factura emitida' })).toBeNull()
     expect(screen.getByText('Aceptada')).toBeInTheDocument()
     expect(screen.getByText('Facturar por ARCA')).toBeInTheDocument()

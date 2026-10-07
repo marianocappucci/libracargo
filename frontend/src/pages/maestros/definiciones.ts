@@ -11,7 +11,7 @@ export const CONDICIONES_IVA = [
   { valor: 'no_categorizado', etiqueta: 'No categorizado' },
 ]
 
-/** Va en los seis formularios, al final: es lo que permite reactivar desde el
+/** Va en los cinco formularios, al final: es lo que permite reactivar desde el
  *  formulario además de desde el botón de la fila. */
 export const ACTIVO: Campo = { nombre: 'activo', etiqueta: 'Activo', tipo: 'booleano' }
 
@@ -66,15 +66,6 @@ export const CAMPOS_VEHICULO: Campo[] = [
   { nombre: 'patente_acoplado', etiqueta: 'Patente del acoplado' },
   { nombre: 'fletero_id', etiqueta: 'ID del fletero', tipo: 'numero' },
   { nombre: 'observaciones', etiqueta: 'Observaciones' },
-  ACTIVO,
-]
-
-export const CAMPOS_RAZON_SOCIAL: Campo[] = [
-  { nombre: 'nombre', etiqueta: 'Nombre' },
-  { nombre: 'cuit', etiqueta: 'CUIT' },
-  { nombre: 'condicion_iva', etiqueta: 'Condición de IVA', tipo: 'opciones',
-    opciones: CONDICIONES_IVA },
-  { nombre: 'punto_venta', etiqueta: 'Punto de venta', tipo: 'numero' },
   ACTIVO,
 ]
 

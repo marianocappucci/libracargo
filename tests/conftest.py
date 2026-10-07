@@ -449,8 +449,6 @@ def datos(cliente):
                                {"razon_social": "Molino Sur", "es_cliente": True}),
         "origen": _crear(cliente, "/api/localidades", {"nombre": "Suipacha"}),
         "destino": _crear(cliente, "/api/localidades", {"nombre": "Rosario"}),
-        "razon": _crear(cliente, "/api/razones-sociales", {"nombre": "Suitrans"}),
-        "otra_razon": _crear(cliente, "/api/razones-sociales", {"nombre": "Juan Pérez"}),
     }
 
 
@@ -459,15 +457,24 @@ def datos(cliente):
 # Desde ADR-032 no hay forma de registrar un comprobante a mano: se genera una pre factura y se la factura
 # por ARCA. Los tests que necesitan «un comprobante» lo hacen así, con ARCA simulada.
 
-#: El CUIT de la razón social que emite en los tests. Ficticio, con dígito verificador válido.
+#: El CUIT de la empresa que emite en los tests. Ficticio, con dígito verificador válido.
 CUIT_EMISOR = "20-12345678-6"
+
+
+def cargar_empresa(cliente, *, cuit=CUIT_EMISOR, razon_social="Transportes de Prueba SRL",
+                   condicion_iva="responsable_inscripto", **extra):
+    """Carga «Datos de la empresa», el único emisor (ADR-035). Ficticia, con CUIT de dígito verificador válido."""
+    r = cliente.put("/api/configuracion", json={
+        "razon_social": razon_social, "cuit": cuit, "condicion_iva": condicion_iva, **extra})
+    assert r.status_code == 200, r.text
+    return r.json()
 
 
 def configurar_arca(cliente, *, cuit, punto_venta=5, ambiente="produccion", empresa=None):
     """Deja la instancia lista para emitir: el par en disco y el CUIT cargado.
 
-    Es **una configuración por instancia**, no una por razón social: así la guarda el motor. Cuál de las
-    razones sociales emite lo dice el CUIT.
+    Es **una configuración por instancia**: así la guarda el motor. Sólo emite si `cuit` es el de «Datos de
+    la empresa» (`cargar_empresa`).
 
     ⚠️ **El `PUT` va primero, y no es indistinto.** El upload también crea la fila si no existe, pero con
     el slug por defecto del producto; un `PUT` posterior con otro `empresa` crea una **segunda** fila en vez
@@ -524,21 +531,19 @@ def arca_responde(monkeypatch, *, ultimo=0, cae="75123456789012", cae_vto="20261
 
 @pytest.fixture
 def emisor(cliente, datos, monkeypatch):
-    """`datos["razon"]` lista para emitir por ARCA, con ARCA simulada (punto de venta 1, el último número es 0).
+    """La empresa lista para emitir por ARCA, con ARCA simulada (punto de venta 1, el último número es 0).
 
     Devuelve la lista de lo que se le pidió a ARCA. Los tests que usan sólo `facturar()` la piden con la marca
     `con_emisor` (ver `_emisor_listo`) en vez de declararla en cada firma.
     """
-    r = cliente.put(f"/api/razones-sociales/{datos['razon']}", json={
-        "nombre": "Suitrans", "cuit": CUIT_EMISOR, "punto_venta": 1})
-    assert r.status_code == 200, r.text
+    cargar_empresa(cliente)
     configurar_arca(cliente, cuit=CUIT_EMISOR, punto_venta=1)
     return arca_responde(monkeypatch)
 
 
 @pytest.fixture(autouse=True)
 def _emisor_listo(request, _terminos_ya_aceptados, _captcha_aprobado, _secreto_de_sesion):
-    """Los tests marcados `con_emisor` arrancan con la razón social lista para emitir.
+    """Los tests marcados `con_emisor` arrancan con la empresa lista para emitir.
 
     Pide **a mano** las autouse que `cliente` necesita (términos, captcha y secreto de sesión): entre
     autouse el orden no es el de definición, y sin esto el login de `cliente` corre antes que ellas.

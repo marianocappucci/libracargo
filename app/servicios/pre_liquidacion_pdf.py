@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app import tiempo
 from app.models.configuracion import ConfiguracionEmpresa
+from app.servicios.emisor_del_pdf import CONDICION_IVA
 
 #: La leyenda que no puede faltar: es lo que impide que esto se tome por una factura.
 LEYENDA = "Pre liquidación — no es un comprobante"
@@ -253,7 +254,7 @@ def _datos_de_empresa(sesion: Session, directorio_del_logo: Path) -> tuple[dict,
                           if p and p.strip())
     fiscal = "  ·  ".join(p for p in (
         cfg.razon_social if cfg.nombre_fantasia else "",
-        f"CUIT {cfg.cuit}" if cfg.cuit else "", cfg.condicion_iva or "",
+        f"CUIT {cfg.cuit}" if cfg.cuit else "", CONDICION_IVA.get(cfg.condicion_iva, ""),
         f"IIBB {cfg.ingresos_brutos}" if cfg.ingresos_brutos else "") if p)
     contacto = "  ·  ".join(p for p in (cfg.telefono, cfg.email) if p)
     return emisor, [t for t in (domicilio, fiscal, contacto) if t]

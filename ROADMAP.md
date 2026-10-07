@@ -29,8 +29,8 @@ Dirección estratégica. Las tareas concretas están en `TASKS.md`.
 
 ### F2 — Maestros
 
-- Resultado: ABM de terceros, localidades, choferes, vehículos, razones
-  sociales y tipos de carga.
+- Resultado: ABM de terceros, localidades, choferes, vehículos y
+  tipos de carga (las razones sociales se retiraron en ADR-035).
 - Criterio: cobertura de tests sobre cada ABM.
 
 ### F3 — Órdenes de carga

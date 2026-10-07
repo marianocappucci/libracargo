@@ -19,7 +19,7 @@ const { default: PreFacturas } = await import('./PreFacturas')
 function pf(id: number, estado: string, extra: Record<string, unknown> = {}) {
   return {
     id, numero_interno: `PF-000${id}`, estado, cliente_id: 1, cliente_razon: 'Agro Norte',
-    cliente_cuit: '30-12345678-1', razon_social_id: 5, razon_social: 'Suitrans',
+    cliente_cuit: '30-12345678-1',
     tipo_comprobante: 1, fecha_sugerida: '2026-08-20', fecha_vencimiento_pago: null,
     observaciones: '', items: [], orden_ids: [id], total: '1210.00', ...extra,
   }

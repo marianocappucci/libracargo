@@ -22,7 +22,6 @@ export const esquemaOrden = z
     chofer_id: z.coerce.number().int().positive().nullable().optional(),
     vehiculo_id: z.coerce.number().int().positive().nullable().optional(),
     tipo_carga_id: z.coerce.number().int().positive().nullable().optional(),
-    razon_social_id: z.coerce.number().int().positive().nullable().optional(),
     remito: z.string().max(30).optional(),
     cantidad: z.string().optional(),
     unidad: z.string().max(20).optional(),

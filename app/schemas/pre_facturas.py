@@ -25,7 +25,6 @@ class PreFacturaEditarIn(BaseModel):
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    razon_social_id: int
     tipo: TipoComprobante
     fecha: date
     #: Sólo la FCE lo lleva, y toda FCE lo exige (lo valida `servicios.pre_facturas`).

@@ -5,8 +5,8 @@
  * anterior (registrado a mano y migrado del legado) y deja anular lo que no
  * tiene CAE o acreditarlo con una nota de crédito.
  *
- * 🔑 **El panel de totales muestra los dos lados, no uno.** El total por razón
- * social se cuenta por los encabezados de los comprobantes y por las órdenes
+ * 🔑 **El panel de totales muestra los dos lados, no uno.** El total facturado
+ * se cuenta por los encabezados de los comprobantes y por las órdenes
  * que agrupan. Mostrar sólo uno haría que un total divergente se viera igual de
  * confiable que uno sano — que es justo cuando no hay que usarlo.
  */
@@ -15,7 +15,7 @@ import { Download, ExternalLink, FileText, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
-import type { Comprobante, ComprobanteConOrdenes, TotalDeRazonSocial } from '@/api/comprobantes'
+import type { Comprobante, ComprobanteConOrdenes, TotalDeComprobantes } from '@/api/comprobantes'
 import { NOMBRE_DE_TIPO, comprobantes, numeroDe } from '@/api/comprobantes'
 import type { Opcion, Opciones } from '@/api/ordenes'
 import { cargarOpciones } from '@/api/ordenes'
@@ -44,37 +44,21 @@ function Campo({ id, etiqueta, valor, alCambiar, tipo = 'text' }: {
   )
 }
 
-function Eleccion({ id, etiqueta, valor, alCambiar, children }: {
-  id: string; etiqueta: string; valor: string
-  alCambiar: (v: string) => void; children: React.ReactNode
-}) {
-  return (
-    <div className="grid gap-1">
-      <Label htmlFor={id}>{etiqueta}</Label>
-      <select id={id} className="h-9 w-full min-w-0 rounded-md border px-2 text-sm" value={valor}
-              onChange={(e) => alCambiar(e.target.value)}>
-        {children}
-      </select>
-    </div>
-  )
-}
-
 function nombre(opciones: Opcion[], id: number | null): string {
   return opciones.find((o) => o.id === id)?.etiqueta ?? ''
 }
 
-/** El panel del gate: cada razón social, contada por los dos lados. */
-function Totales({ filas, razones }: { filas: TotalDeRazonSocial[]; razones: Opcion[] }) {
-  if (filas.length === 0) return null
-  const divergen = filas.filter((f) => !f.coinciden)
+/** El panel del gate: lo facturado, contado por los dos lados. Hay un solo emisor (ADR-035). */
+function Totales({ total }: { total: TotalDeComprobantes | null }) {
+  if (total === null || (total.cantidad_comprobantes === 0 && total.cantidad_ordenes === 0
+      && total.coinciden)) return null
   return (
     <section className="mb-6 rounded border p-4">
-      <h2 className="mb-3 text-sm font-semibold">Total facturado por razón social</h2>
+      <h2 className="mb-3 text-sm font-semibold">Total facturado</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-muted-foreground text-xs">
             <tr>
-              <th className="p-1 text-left">Razón social</th>
               <th className="p-1 text-right">Comprobantes</th>
               <th className="p-1 text-right">Total por comprobantes</th>
               <th className="p-1 text-right">Órdenes</th>
@@ -82,28 +66,19 @@ function Totales({ filas, razones }: { filas: TotalDeRazonSocial[]; razones: Opc
             </tr>
           </thead>
           <tbody>
-            {filas.map((f) => (
-              <tr key={String(f.razon_social_id)}
-                  className={f.coinciden ? '' : 'text-destructive font-semibold'}>
-                <td className="p-1">
-                  {f.razon_social_id == null
-                    ? 'Sin razón social'
-                    : nombre(razones, f.razon_social_id) || `#${f.razon_social_id}`}
-                </td>
-                <td className="p-1 text-right">{f.cantidad_comprobantes}</td>
-                <td className="p-1 text-right">{f.total_comprobantes}</td>
-                <td className="p-1 text-right">{f.cantidad_ordenes}</td>
-                <td className="p-1 text-right">{f.total_ordenes}</td>
-              </tr>
-            ))}
+            <tr className={total.coinciden ? '' : 'text-destructive font-semibold'}>
+              <td className="p-1 text-right">{total.cantidad_comprobantes}</td>
+              <td className="p-1 text-right">{total.total_comprobantes}</td>
+              <td className="p-1 text-right">{total.cantidad_ordenes}</td>
+              <td className="p-1 text-right">{total.total_ordenes}</td>
+            </tr>
           </tbody>
         </table>
       </div>
-      {divergen.length > 0 && (
+      {!total.coinciden && (
         <p role="alert" className="text-destructive mt-3 text-sm font-semibold">
-          🔴 Hay {divergen.length} razón/es social/es donde los dos lados NO
-          coinciden. No usar estos totales: hay importes que están en una razón
-          social por los comprobantes y en otra por las órdenes.
+          🔴 Los dos lados NO coinciden. No usar estos totales: hay importes que
+          dicen una cosa por los comprobantes y otra por las órdenes.
         </p>
       )}
     </section>
@@ -130,11 +105,10 @@ function deCentavos(centavos: number): string {
 
 export default function Comprobantes() {
   const [filas, setFilas] = useState<Comprobante[]>([])
-  const [totales, setTotales] = useState<TotalDeRazonSocial[]>([])
+  const [totales, setTotales] = useState<TotalDeComprobantes | null>(null)
   const [opciones, setOpciones] = useState<Opciones | null>(null)
   const [desde, setDesde] = useState('')
   const [hasta, setHasta] = useState('')
-  const [razonFiltro, setRazonFiltro] = useState('')
   const [detalle, setDetalle] = useState<ComprobanteConOrdenes | null>(null)
   const [params, setParams] = useSearchParams()
   const [confirmando, setConfirmando] = useState(false)
@@ -173,13 +147,13 @@ export default function Comprobantes() {
   const recargar = useCallback(() => {
     setCargando(true)
     Promise.all([
-      comprobantes.listar({ desde, hasta, razon_social_id: razonFiltro }),
+      comprobantes.listar({ desde, hasta }),
       comprobantes.totales(desde || undefined, hasta || undefined),
     ])
       .then(([lista, tot]) => { setFilas(lista); setTotales(tot) })
       .catch((e) => setError(mensajeDeError(e)))
       .finally(() => setCargando(false))
-  }, [desde, hasta, razonFiltro])
+  }, [desde, hasta])
 
   useEffect(recargar, [recargar])
 
@@ -283,8 +257,6 @@ export default function Comprobantes() {
     { accessorKey: 'fecha', header: sortableHeader('Fecha') },
     { id: 'comprobante', header: 'Comprobante',
       accessorFn: (c: Comprobante) => `${NOMBRE_DE_TIPO[c.tipo]} ${numeroDe(c)}` },
-    { id: 'razon', header: 'Razón social',
-      accessorFn: (c: Comprobante) => nombre(opciones?.razones ?? [], c.razon_social_id) },
     { id: 'cliente', header: 'Cliente',
       accessorFn: (c: Comprobante) => nombre(opciones?.clientes ?? [], c.cliente_id) },
     { id: 'neto', header: 'Neto',
@@ -335,12 +307,6 @@ export default function Comprobantes() {
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Campo id="f-desde" etiqueta="Desde" tipo="date" valor={desde} alCambiar={setDesde} />
         <Campo id="f-hasta" etiqueta="Hasta" tipo="date" valor={hasta} alCambiar={setHasta} />
-        <Eleccion id="f-razon" etiqueta="Razón social" valor={razonFiltro} alCambiar={setRazonFiltro}>
-          <option value="">Todas</option>
-          {(opciones?.razones ?? []).map((r) => (
-            <option key={r.id} value={r.id}>{r.etiqueta}</option>
-          ))}
-        </Eleccion>
       </div>
 
       {error && (
@@ -349,7 +315,7 @@ export default function Comprobantes() {
         </p>
       )}
 
-      <Totales filas={totales} razones={opciones?.razones ?? []} />
+      <Totales total={totales} />
 
       <DataTable
         columns={columnas}

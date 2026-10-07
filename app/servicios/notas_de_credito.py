@@ -95,21 +95,20 @@ async def emitir(
     **No hace `commit`**: lo hace quien llama, igual que `facturar`. Si ARCA rechaza (o cualquier paso falla),
     levanta y no queda nada; el `rollback` también es de quien llama.
 
-    Levanta `NotaNoPermitida` (del motor) si la nota no corresponde, `ArcaNoConfigurado` si la razón social ya
+    Levanta `NotaNoPermitida` (del motor) si la nota no corresponde, `ArcaNoConfigurado` si la empresa ya
     no puede emitir, y `ArcaRechazo` si ARCA dijo que no.
     """
     estado: dict = {}
 
     async def numerar(tipo_nota: int, _punto_venta: int):
-        # El punto de venta de la nota es el de la razón social (`numero_que_sigue` lo lee de ahí), como
-        # en `facturar`; el que viene del original es el mismo salvo que se haya cambiado después.
-        numero, ta, cfg, razon = await emision_arca.numero_que_sigue(
-            sesion, original.razon_social_id, TIPO_DE_CODIGO[tipo_nota])
+        # El punto de venta de la nota es el de la configuración de ARCA (`numero_que_sigue` lo lee de ahí),
+        # como en `facturar`; el que viene del original es el mismo salvo que se haya cambiado después.
+        numero, ta, cfg, emisor = await emision_arca.numero_que_sigue(sesion, TIPO_DE_CODIGO[tipo_nota])
         estado["cfg"] = cfg
-        return numero, (ta, cfg, razon)
+        return numero, (ta, cfg, emisor)
 
     def registrar(nota: dict, contexto) -> Comprobante:
-        _ta, cfg, razon = contexto
+        _ta, cfg, emisor = contexto
         importes = _importes(original, nota)
         # La crea el motor en `facturas`, en el ambiente con el que se numeró y asociada a su
         # comprobante (ADR-030). Los importes son **los que armó el motor**: la nota total copia
@@ -117,9 +116,9 @@ async def emitir(
         # en una C todo es neto). Son los que van a ARCA, porque `pedir_cae` arma el pedido
         # desde esta fila.
         return comprobantes.crear(
-            sesion, razon_social_id=original.razon_social_id, tipo=TIPO_DE_CODIGO[nota["tipo"]],
+            sesion, tipo=TIPO_DE_CODIGO[nota["tipo"]],
             # El punto de venta con el que se numeró, no el que traía el original.
-            punto_venta=razon.punto_venta, numero=nota["numero"], fecha=hoy,
+            punto_venta=emisor.punto_venta, numero=nota["numero"], fecha=hoy,
             cliente_id=original.cliente_id, **importes,
             items=[{"description": motivo or "Nota de credito", "qty": 1,
                     "unit_price": float(importes["neto"]), "subtotal": float(importes["neto"])}],
@@ -127,8 +126,8 @@ async def emitir(
         )
 
     async def pedir_cae(registro: Comprobante, nota: dict, contexto) -> Comprobante:
-        ta, cfg, razon = contexto
-        return await emision_arca.pedir_cae(sesion, registro, ta, cfg, razon, nota=nota)
+        ta, cfg, emisor = contexto
+        return await emision_arca.pedir_cae(sesion, registro, ta, cfg, emisor, nota=nota)
 
     emitida = await motor.emitir_nota_de_credito(
         _en_forma_del_motor(sesion, original),
