@@ -15,10 +15,12 @@ sin tabla ni clave foránea que los ate.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+from libracore import pdf_generator
 from libracore.db import arca_config as db_arca_config
 from libracore.db import facturas as db_facturas
 from libracore.db.migraciones import conexion_libracore
@@ -34,6 +36,8 @@ from app.schemas.comprobantes import (
     TotalDeRazonSocial,
 )
 from app.servicios.emision_arca import CODIGO_IVA_DE_LA_FAMILIA, ArcaAmbiguo
+
+log = logging.getLogger(__name__)
 
 CERO = Decimal("0.00")
 
@@ -362,3 +366,32 @@ def anular(sesion: Session, comprobante: Comprobante, usuario_id: int | None,
     sesion.flush()
     sesion.expire(comprobante)
     return comprobante
+
+
+def guardar_pdf(sesion: Session, comprobante: Comprobante) -> str | None:
+    """Genera el PDF del comprobante y guarda su ruta en `facturas.pdf_path`. Devuelve la ruta, o `None` si falló.
+
+    🔑 **Se llama DESPUÉS del `commit` de la emisión, y un fallo no la deshace.** Cuando esto corre, ARCA ya
+    autorizó el comprobante y la transacción ya lo guardó: revertirlo por un PDF que no salió dejaría a ARCA con
+    una factura que acá no existe. Es el criterio del motor, que en su propio router genera el PDF recién
+    después de guardar el CAE (y si el PDF falla, el comprobante queda con CAE). Acá además no corta la
+    respuesta: el error se loguea, `pdf_path` queda vacío y el PDF se arma al vuelo la primera vez que se pide
+    (`build_comprobantes_pdf_router`), con el emisor de ese día.
+
+    Lo que se guarda es **lo que salió**: con el emisor y el logo del momento de emitir. El endpoint no lo
+    regenera mientras el archivo esté en disco, aunque después cambie el logo o el domicilio de la empresa.
+
+    El emisor lo resuelve el resolvedor registrado (`servicios.emisor_del_pdf`), que lee la base en su propia
+    sesión: por eso tiene que correr con la emisión ya commiteada.
+    """
+    try:
+        conn = _conexion_del_motor(sesion)
+        factura = db_facturas.get_factura(comprobante.id, conn=conn)
+        ruta = pdf_generator.generate_pdf_factura(factura)
+        db_facturas.update_factura_pdf_path(comprobante.id, ruta, conn=conn)
+        sesion.commit()
+        return ruta
+    except Exception:
+        sesion.rollback()
+        log.exception("no se pudo generar el PDF del comprobante %s; se arma al pedirlo", comprobante.id)
+        return None

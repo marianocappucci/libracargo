@@ -6,6 +6,14 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ### Agregado
 
+- **PDF de los comprobantes, con el logo y la razón social** (ADR-034). Antes los comprobantes no tenían PDF y el de la pre factura salía sin logo. Ahora la factura, la FCE y la nota de crédito emitidas por ARCA tienen su PDF (el mismo generador que usa toda la familia), y **todos los PDF** —también el de la pre factura— llevan el **logo cargado en «Datos de la empresa»** y los datos de **la razón social que emitió** (nombre, CUIT y condición de IVA; el domicilio, los ingresos brutos y el inicio de actividades de la empresa si son de esa razón social).
+  - **En la pantalla** (detalle de un comprobante): «Ver PDF», «Descargar PDF» y «Enviar por correo» (con el correo del cliente prellenado), y un enlace «PDF» en cada nota de crédito. Sólo para lo que tiene **CAE**: lo registrado a mano y lo migrado del legado no tienen PDF, porque ARCA no los conoce.
+  - **API**: `GET /api/comprobantes/{id}/pdf` y `POST /api/comprobantes/{id}/enviar-email` (`{"email": ...}`); 404 para un comprobante sin CAE, de homologación o que no es de LibraCargo.
+  - **Al emitir** (factura y nota de crédito) el PDF se genera y se guarda **después** de guardar el comprobante: si el PDF falla, el comprobante queda emitido igual y el PDF se arma al pedirlo. Lo guardado es lo que salió: cambiar el logo después no reescribe los ya emitidos.
+  - **Los comprobantes anteriores** se arman al pedirlos, con el membrete de hoy.
+  - El inicio de actividades se imprime bien aunque se haya cargado como `31/01/2020` (antes salía `20-/1-31/0` en el PDF).
+  - Sin migración. Pide libracore **v1.141.0** o posterior.
+
 - **Reporte «Pre liquidación de transportistas»** (ADR-033). Con un rango de fechas obligatorio (por la fecha de la orden, extremos incluidos) y un transportista opcional, arma **un bloque por transportista** con sus fletes —fecha, orden, remito, cliente, origen → destino, cantidad, comisión, IVA y total—, el subtotal de cada uno y el total general. Se abre desde «Reportes» y se **imprime o se baja en PDF** (con el encabezado de la empresa y la leyenda «Pre liquidación — no es un comprobante»), para mandárselo al transportista antes de que facture.
   - **El valor de cada flete es la comisión de la orden** (lo que cobra el transportista y lo que se le asienta en su cuenta), no la tarifa. Entran las órdenes con fletero y comisión mayor que cero, pendientes o facturadas; **no entran** las anuladas ni las sin fletero.
   - **IVA según el transportista**: al **responsable inscripto** se le suma `comisión × alícuota de la orden`, redondeado a centavos por flete; al **monotributista y al exento**, nada. Un transportista **sin categorizar** o cargado como consumidor final va sin IVA y con un aviso para corregirlo en el maestro de terceros.

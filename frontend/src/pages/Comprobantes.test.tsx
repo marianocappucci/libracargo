@@ -16,6 +16,7 @@ vi.mock('libra-ui/api-client', async () => {
 })
 
 const { default: Comprobantes } = await import('./Comprobantes')
+const { ApiError } = await import('libra-ui/api-client')
 
 const TERCEROS = [{ id: 1, razon_social: 'Agro Norte', es_cliente: true }]
 const RAZONES = [
@@ -218,6 +219,94 @@ describe('Comprobantes', () => {
 
     expect(await screen.findByText('Anular comprobante')).toBeInTheDocument()
     expect(screen.queryByRole('note')).toBeNull()
+  })
+
+  // ── El PDF del comprobante (ADR-034) ──
+  it('un comprobante con CAE ofrece ver y bajar el PDF, que se piden por enlace', async () => {
+    abrirDetalle('75123456789012')
+
+    const ver = (await screen.findByText('Ver PDF')).closest('a')!
+    expect(ver).toHaveAttribute('href', '/api/comprobantes/9/pdf')
+    expect(ver).toHaveAttribute('target', '_blank')
+    const bajar = screen.getByText('Descargar PDF').closest('a')!
+    expect(bajar).toHaveAttribute('href', '/api/comprobantes/9/pdf')
+    expect(bajar).toHaveAttribute('download', 'Factura A 0005-00000042.pdf')
+    expect(screen.getByText('Enviar por correo')).toBeInTheDocument()
+  })
+
+  it('una nota de crédito con CAE también tiene su PDF', async () => {
+    abrirDetalle('75123456789012', 'nota_credito_a', { comprobante: {
+      ...detalleDe('75123456789012', 'nota_credito_a').comprobante, comprobante_asociado_id: 3 } })
+    const ver = (await screen.findByText('Ver PDF')).closest('a')!
+    expect(ver).toHaveAttribute('href', '/api/comprobantes/9/pdf')
+  })
+
+  it('cada nota de la lista lleva el enlace a su PDF', async () => {
+    abrirDetalle('75123456789012', 'factura_a', {
+      notas: [{ id: 11, tipo: 'nota_credito_a', punto_venta: 5, numero: 43, fecha: '2026-10-05',
+                total: '121.00', motivo: 'Kilos', anulado: false, cae: '75123456789099' }],
+      acreditado: '121.00', saldo_acreditable: '1089.00',
+    })
+    const enlace = await screen.findByLabelText('PDF de la nota 0005-00000043')
+    expect(enlace).toHaveAttribute('href', '/api/comprobantes/11/pdf')
+  })
+
+  it('🔴 un comprobante sin CAE (a mano o del legado) no ofrece PDF: parecería una factura que ARCA no conoce', async () => {
+    abrirDetalle(null)
+
+    expect(await screen.findByText('Anular comprobante')).toBeInTheDocument()
+    expect(screen.queryByText('Ver PDF')).toBeNull()
+    expect(screen.queryByText('Descargar PDF')).toBeNull()
+    expect(screen.queryByText('Enviar por correo')).toBeNull()
+  })
+
+  it('enviar por correo prellena el correo del cliente y manda el PDF a ese destino', async () => {
+    abrirDetalle('75123456789012')
+    const base = get.getMockImplementation()!
+    get.mockImplementation((ruta?: string) =>
+      ruta === '/api/terceros/1' ? Promise.resolve({ id: 1, email: 'compras@agronorte.test' }) : base(ruta))
+    post.mockResolvedValue({ ok: true })
+
+    fireEvent.click(await screen.findByText('Enviar por correo'))
+    const campo = await screen.findByLabelText('Correo del cliente')
+    await waitFor(() => expect(campo).toHaveValue('compras@agronorte.test'))
+    fireEvent.click(screen.getByText('Enviar'))
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/api/comprobantes/9/enviar-email', { email: 'compras@agronorte.test' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Enviado a compras@agronorte.test')
+    expect(screen.queryByLabelText('Correo del cliente')).toBeNull()
+  })
+
+  it('sin correo cargado se tipea a mano, y no deja enviar uno que no es un correo', async () => {
+    abrirDetalle('75123456789012')
+    post.mockResolvedValue({ ok: true })
+
+    fireEvent.click(await screen.findByText('Enviar por correo'))
+    const campo = await screen.findByLabelText('Correo del cliente')
+    expect(campo).toHaveValue('')
+    expect(screen.getByText('Enviar')).toBeDisabled()
+    fireEvent.change(campo, { target: { value: 'compras' } })
+    expect(screen.getByText('Enviar')).toBeDisabled()
+    fireEvent.change(campo, { target: { value: ' otro@agronorte.test ' } })
+    fireEvent.click(screen.getByText('Enviar'))
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/api/comprobantes/9/enviar-email', { email: 'otro@agronorte.test' }))
+  })
+
+  it('si el correo no sale, el error del servidor se ve en el detalle y el campo queda para reintentar', async () => {
+    abrirDetalle('75123456789012')
+    post.mockRejectedValue(new ApiError(400, 'Configurá el servidor SMTP en Configuración → Email.'))
+
+    fireEvent.click(await screen.findByText('Enviar por correo'))
+    fireEvent.change(await screen.findByLabelText('Correo del cliente'),
+      { target: { value: 'compras@agronorte.test' } })
+    fireEvent.click(screen.getByText('Enviar'))
+
+    expect(await screen.findByText(/Configuración → Email/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Correo del cliente')).toHaveValue('compras@agronorte.test')
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('hay un acceso a las pre facturas, de donde sale todo comprobante', async () => {

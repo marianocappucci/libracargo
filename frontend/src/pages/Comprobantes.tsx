@@ -11,7 +11,7 @@
  * confiable que uno sano — que es justo cuando no hay que usarlo.
  */
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
-import { FileText, Plus } from 'lucide-react'
+import { Download, ExternalLink, FileText, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
@@ -19,6 +19,7 @@ import type { Comprobante, ComprobanteConOrdenes, TotalDeRazonSocial } from '@/a
 import { NOMBRE_DE_TIPO, comprobantes, numeroDe } from '@/api/comprobantes'
 import type { Opcion, Opciones } from '@/api/ordenes'
 import { cargarOpciones } from '@/api/ordenes'
+import { api } from 'libra-ui/api-client'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { formatearImporte } from '@/components/esquema-orden'
 import { BadgeEstado } from 'libra-ui/badge-estado'
@@ -143,6 +144,12 @@ export default function Comprobantes() {
   const [parcial, setParcial] = useState(false)
   const [importe, setImporte] = useState('')
   const [emitiendo, setEmitiendo] = useState(false)
+  // El PDF por correo (ADR-034): un campo en el mismo detalle, con el correo del cliente prellenado.
+  const [correoAbierto, setCorreoAbierto] = useState(false)
+  const [correo, setCorreo] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  // El error del envío va **dentro** del detalle: el del resto de la pantalla queda tapado por el diálogo.
+  const [errorDeCorreo, setErrorDeCorreo] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -181,12 +188,39 @@ export default function Comprobantes() {
     setAviso(null)
     setConfirmando(false)
     setNotaAbierta(false)
+    setCorreoAbierto(false)
     setMotivo('')
     setImporte('')
     try {
       setDetalle(await comprobantes.ver(id))
     } catch (e) {
       setError(mensajeDeError(e))
+    }
+  }
+
+  function abrirCorreo(clienteId: number) {
+    setErrorDeCorreo(null)
+    setAviso(null)
+    setCorreo('')
+    setCorreoAbierto(true)
+    // El correo del cliente, si lo tiene cargado: es lo que se prellena. Si no se puede leer, se tipea.
+    api.get<{ email?: string | null }>(`/api/terceros/${clienteId}`)
+      .then((t) => setCorreo((previo) => previo || t?.email || ''))
+      .catch(() => { /* es una comodidad: si no se pudo leer, se escribe a mano */ })
+  }
+
+  async function enviarPdf(id: number) {
+    setErrorDeCorreo(null)
+    setEnviando(true)
+    try {
+      await comprobantes.enviarPorCorreo(id, correo.trim())
+      setAviso(`Enviado a ${correo.trim()}.`)
+      setCorreoAbierto(false)
+    } catch (e) {
+      // El mensaje es el del servidor, tal cual: dice dónde falta configurar el correo.
+      setErrorDeCorreo(mensajeDeError(e))
+    } finally {
+      setEnviando(false)
     }
   }
 
@@ -328,6 +362,7 @@ export default function Comprobantes() {
               onOpenChange={(v) => {
                 if (v) return
                 setDetalle(null)
+                setCorreoAbierto(false)
                 if (params.has('ver')) {
                   const otros = new URLSearchParams(params)
                   otros.delete('ver')
@@ -376,6 +411,10 @@ export default function Comprobantes() {
                           {NOMBRE_DE_TIPO[n.tipo]} {numeroDe(n)} · {formatearFecha(n.fecha)}
                           {n.motivo ? ` · ${n.motivo}` : ''}
                         </span>
+                        {n.cae && (
+                          <a className="underline" href={comprobantes.urlDelPdf(n.id)} target="_blank"
+                             rel="noreferrer" aria-label={`PDF de la nota ${numeroDe(n)}`}>PDF</a>
+                        )}
                         <span className="tabular-nums">{formatearImporte(n.total)}</span>
                       </li>
                     ))}
@@ -403,6 +442,45 @@ export default function Comprobantes() {
                   </li>
                 ))}
               </ul>
+              {/* El PDF es de lo que ARCA autorizó: sin CAE (lo registrado a mano y lo migrado del legado) no
+                  hay PDF, porque parecería una factura que ARCA no conoce. Las notas de crédito tienen el suyo. */}
+              {detalle.comprobante.cae && (
+                <div className="grid gap-2 border-t pt-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={comprobantes.urlDelPdf(detalle.comprobante.id)} target="_blank" rel="noreferrer">
+                        <ExternalLink className="size-4" /> Ver PDF
+                      </a>
+                    </Button>
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={comprobantes.urlDelPdf(detalle.comprobante.id)}
+                         download={`${NOMBRE_DE_TIPO[detalle.comprobante.tipo]} ${numeroDe(detalle.comprobante)}.pdf`}>
+                        <Download className="size-4" /> Descargar PDF
+                      </a>
+                    </Button>
+                    {!correoAbierto && (
+                      <Button variant="outline" size="sm"
+                              onClick={() => abrirCorreo(detalle.comprobante.cliente_id)}>
+                        Enviar por correo
+                      </Button>
+                    )}
+                  </div>
+                  {correoAbierto && (
+                    <div className="grid gap-2">
+                      <Campo id="correo-pdf" etiqueta="Correo del cliente" tipo="email" valor={correo}
+                             alCambiar={setCorreo} />
+                      {errorDeCorreo && <p role="alert" className="text-destructive text-xs">{errorDeCorreo}</p>}
+                      <div className="flex justify-end gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => setCorreoAbierto(false)}>Cancelar</Button>
+                        <Button size="sm" disabled={enviando || !correo.includes('@')}
+                                onClick={() => enviarPdf(detalle.comprobante.id)}>
+                          Enviar
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
           <DialogFooter>
