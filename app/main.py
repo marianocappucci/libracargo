@@ -48,6 +48,7 @@ from app.auth import (
 from app.config import Config
 from app.routers import (
     auditoria,
+    cartas_porte,
     comprobantes,
     comprobantes_pdf,
     configuracion,
@@ -338,6 +339,7 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     for router in maestros.TODOS:
         app.include_router(router)
     app.include_router(ordenes.router)
+    app.include_router(cartas_porte.router)
     app.include_router(cuentas.router)
     # Gastos de proveedor: el bloque que el legado llamaba COMPROBANTES
     # PROVEEDORES. Deja dos asientos -proveedor al debe, fletero al haber-
