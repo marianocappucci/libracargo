@@ -71,13 +71,13 @@ export function origenDelMovimiento(fila: FilaDeCuenta): string | null {
   return null
 }
 
-/** Los seis maestros. El `prefijo` del ABM del backend **es** la ruta del
+/** Los cinco maestros. El `prefijo` del ABM del backend **es** la ruta del
  *  frontend y **es** el nombre con el que se audita: `app/routers/maestros.py`
  *  registra con `prefijo`, por eso en el log aparecen en plural
  *  (`localidades`, no `localidad`). Que sean la misma cadena no es casualidad,
  *  pero tampoco está garantizado por nada — hay un test que lo ata. */
 const MAESTROS = [
-  'terceros', 'localidades', 'choferes', 'vehiculos', 'razones-sociales', 'tipos-carga',
+  'terceros', 'localidades', 'choferes', 'vehiculos', 'tipos-carga',
 ] as const
 
 /** Qué pantalla corresponde a cada entidad del log de actividad.

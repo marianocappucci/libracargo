@@ -5,16 +5,16 @@ LibraCore (ADR-030 de allá), montado con el gate de auth y el SMTP de este prod
 que **las pre facturas se arman desde órdenes**: el motor las crea desde ítems tipeados, y una pre factura
 de LibraCargo con ítems que no son de ninguna orden no se podría facturar. Por eso el router del motor
 llega **sin** `POST /` y `PUT /{id}` (que ve el ítem como dato) y **sin** `GET /` y `GET /{id}` (que no
-conocen la razón social ni las órdenes); acá van las propias, en los mismos caminos:
+conocen el tercero ni las órdenes); acá van las propias, en los mismos caminos:
 
 - `POST /api/pre-facturas`: genera la pre factura de unas órdenes del cliente y las reserva.
-- `PUT /api/pre-facturas/{id}`: cambia razón social, tipo, fecha y órdenes.
+- `PUT /api/pre-facturas/{id}`: cambia tipo, fecha y órdenes.
 - `POST /api/pre-facturas/{id}/facturar`: la emite por ARCA y la cierra.
-- `GET /api/pre-facturas` y `GET /api/pre-facturas/{id}`: lo del motor, más la razón social y las órdenes.
+- `GET /api/pre-facturas` y `GET /api/pre-facturas/{id}`: lo del motor, más las órdenes.
 
 Del motor quedan tal cual `GET /{id}/pdf`, `POST /{id}/enviar-email`, `POST /{id}/aceptar` y
-`POST /{id}/anular` (que libera las órdenes por el gancho `al_anular`). El emisor de los PDF (razón social,
-domicilio y logo) lo pone el resolvedor único del producto (`servicios/emisor_del_pdf.py`, ADR-034), que
+`POST /{id}/anular` (que libera las órdenes por el gancho `al_anular`). El emisor de los PDF (los datos de la empresa)
+lo pone el resolvedor único del producto (`servicios/emisor_del_pdf.py`, ADR-034), que
 registra `crear_app` para todos los PDF: este router ya no pasa uno propio.
 
 🔴 **`def` y no `async def`, a propósito**, como `comprobantes.facturar` hasta ahora: la `Session` y
@@ -102,7 +102,7 @@ def construir_router():
         """Genera la pre factura de las órdenes del cliente y las reserva, en una sola transacción."""
         try:
             pf = servicio.crear(
-                sesion, actual, cliente_id=datos.cliente_id, razon_social_id=datos.razon_social_id,
+                sesion, actual, cliente_id=datos.cliente_id,
                 tipo=datos.tipo, fecha=datos.fecha, vencimiento=datos.fecha_vencimiento_pago,
                 orden_ids=datos.orden_ids, observaciones=datos.observaciones)
             sesion.commit()
@@ -117,10 +117,10 @@ def construir_router():
     @router.put("/{pre_factura_id}")
     def editar(pre_factura_id: int, datos: PreFacturaEditarIn, sesion: Session = Depends(obtener_sesion),
                actual: dict = Depends(get_current_user)):
-        """Cambia razón social, tipo, fecha y órdenes. Una enviada o aceptada vuelve a pendiente."""
+        """Cambia tipo, fecha y órdenes. Una enviada o aceptada vuelve a pendiente."""
         try:
             pf = servicio.editar(
-                sesion, actual, pre_factura_id, razon_social_id=datos.razon_social_id, tipo=datos.tipo,
+                sesion, actual, pre_factura_id, tipo=datos.tipo,
                 fecha=datos.fecha, vencimiento=datos.fecha_vencimiento_pago, orden_ids=datos.orden_ids,
                 observaciones=datos.observaciones)
             sesion.commit()
@@ -137,9 +137,10 @@ def construir_router():
                  sesion: Session = Depends(obtener_sesion), actual: dict = Depends(get_current_user)):
         """Emite por ARCA el comprobante de la pre factura y la cierra, en una sola transacción.
 
-        El número y el punto de venta los pone ARCA y la razón social. **Sin certificado de ARCA para la
-        razón social no se toca nada** (409). Si ARCA rechaza, no queda nada (502). Contra homologación se
-        corre todo y se revierte, y contesta 200 con el resultado del ensayo.
+        El número lo pone ARCA y el punto de venta es el de su configuración. **Si la empresa no puede
+        emitir (sin CUIT, sin certificado o con otro CUIT) no se toca nada** (409, y dice cuál).
+        Si ARCA rechaza, no queda nada (502). Contra homologación se corre
+        todo y se revierte, y contesta 200 con el resultado del ensayo.
         """
         try:
             comprobante = servicio.facturar(sesion, actual, pre_factura_id,

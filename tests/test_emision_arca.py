@@ -1,8 +1,8 @@
 """Emitir por ARCA: F8.
 
 Hasta acá este producto **registraba** comprobantes con un número tipeado a
-mano. Ahora, cuando la razón social tiene ARCA habilitado, el número lo da ARCA
-y el comprobante nace con CAE.
+mano. Ahora el número lo da ARCA y el comprobante nace con CAE, siempre con el
+CUIT de «Datos de la empresa» (ADR-035): si no es el del certificado, no se emite.
 
 > 🔑 **El test que manda es el del rechazo**: si ARCA dice que no, **no puede
 > quedar comprobante**. Un comprobante con un número que ARCA no autorizó deja
@@ -23,7 +23,7 @@ from app.servicios import emision_arca
 
 # Las fixtures `cliente` y `datos` salen del conftest; de acá sólo los
 # helpers, que son funciones normales.
-from tests.conftest import _crear, par_de_arca
+from tests.conftest import cargar_empresa, par_de_arca
 from tests.test_comprobantes import facturado_a_mano, facturar, orden, pre_factura
 
 CUIT = "20-12345678-6"
@@ -33,8 +33,8 @@ def _configurar_arca(cliente, *, cuit=CUIT, punto_venta=5,
                      ambiente="produccion", empresa=emision_arca.EMPRESA_ARCA):
     """Deja la instancia lista para emitir: el par en disco y el CUIT cargado.
 
-    Es **una configuración por instancia**, no una por razón social: así la
-    guarda el motor. Cuál de las razones sociales emite lo dice el CUIT.
+    Es **una configuración por instancia**: así la guarda el motor. Sólo emite
+    si su CUIT es el de la empresa (`cargar_empresa`).
 
     ⚠️ **El `PUT` va primero, y no es indistinto.** El upload también crea la
     fila si no existe, pero con el slug por defecto del producto; un `PUT`
@@ -56,13 +56,10 @@ def _configurar_arca(cliente, *, cuit=CUIT, punto_venta=5,
 
 
 @pytest.fixture
-def razon_con_arca(cliente, datos):
-    """Una razón social cuyo CUIT es el del certificado cargado."""
-    razon = _crear(cliente, "/api/razones-sociales", {
-        "nombre": "Suitrans SA", "cuit": CUIT, "punto_venta": 5,
-    })
+def empresa_con_arca(cliente, datos):
+    """La empresa, con el CUIT del certificado cargado (punto de venta 5)."""
+    cargar_empresa(cliente)
     _configurar_arca(cliente)
-    return razon
 
 
 def _arca_responde(monkeypatch, *, ultimo=41, cae="75123456789012",
@@ -103,41 +100,42 @@ def test_sin_arca_no_se_factura_y_lo_dice(cliente, datos):
     La instancia del cliente **no tiene ningún certificado cargado** (ADR-032): hasta entonces genera y
     manda pre facturas, y el botón de facturar contesta qué falta sin tocar nada.
     """
+    cargar_empresa(cliente)
     a = orden(cliente, datos, "1000.00")
     r = facturar(cliente, datos, [a])
     assert r.status_code == 409, r.text
-    assert "no tiene configurado el certificado de ARCA" in r.json()["detail"]
+    assert "ARCA no está configurado" in r.json()["detail"]
     assert cliente.get("/api/comprobantes").json() == []
     assert cliente.get(f"/api/ordenes/{a['id']}").json()["estado"] == "pendiente"
 
 
 # ── Emitir ──────────────────────────────────────────────────────────────────
 
-def test_con_arca_el_numero_lo_da_arca(cliente, datos, razon_con_arca, monkeypatch):
+def test_con_arca_el_numero_lo_da_arca(cliente, datos, empresa_con_arca, monkeypatch):
     """El número no se tipea: es el que sigue al último que autorizó ARCA, y el punto de venta el de la
-    razón social."""
+    configuración de ARCA."""
     pedidos = _arca_responde(monkeypatch, ultimo=41)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+    a = orden(cliente, datos, "1000.00")
 
-    r = facturar(cliente, datos, [a], razon=razon_con_arca)
+    r = facturar(cliente, datos, [a])
     assert r.status_code == 201, r.text
     comp = r.json()
     assert comp["numero"] == 42, "tenia que ser el ultimo autorizado + 1"
     assert comp["cae"] == "75123456789012"
     assert comp["cae_vencimiento"] == "2026-12-31"
-    # El punto de venta sale de la razon social, no del payload.
+    # El punto de venta sale de la configuración de ARCA, no del payload.
     assert comp["punto_venta"] == 5
     assert ("ultimo", 5, 1, "20-12345678-6") in pedidos
 
 
-def test_la_cuenta_corriente_nombra_el_numero_real(cliente, datos, razon_con_arca,
+def test_la_cuenta_corriente_nombra_el_numero_real(cliente, datos, empresa_con_arca,
                                                    monkeypatch):
     """🔑 El concepto del movimiento se armaba con el número del payload. Con
     ARCA ese viene vacío, así que la cuenta corriente nombraría un comprobante
     inexistente."""
     _arca_responde(monkeypatch, ultimo=41)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
-    comp = facturar(cliente, datos, [a], razon=razon_con_arca).json()
+    a = orden(cliente, datos, "1000.00")
+    comp = facturar(cliente, datos, [a]).json()
 
     cuenta = cliente.get(f"/api/cuentas/cliente/{datos['cliente']}").json()
     concepto = cuenta["movimientos"][0]["movimiento"]["concepto"]
@@ -147,7 +145,7 @@ def test_la_cuenta_corriente_nombra_el_numero_real(cliente, datos, razon_con_arc
 
 # ── El rechazo, que es lo que importa ───────────────────────────────────────
 
-def test_si_arca_rechaza_el_cae_no_queda_comprobante(cliente, datos, razon_con_arca,
+def test_si_arca_rechaza_el_cae_no_queda_comprobante(cliente, datos, empresa_con_arca,
                                                      monkeypatch):
     """🔴 Ni comprobante, ni movimiento de cuenta, y las órdenes vuelven a
     pendientes.
@@ -157,9 +155,9 @@ def test_si_arca_rechaza_el_cae_no_queda_comprobante(cliente, datos, razon_con_a
     unicidad de la base sin que nadie entienda por qué.
     """
     _arca_responde(monkeypatch, falla_cae="El comprobante ya fue autorizado")
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+    a = orden(cliente, datos, "1000.00")
 
-    r = facturar(cliente, datos, [a], razon=razon_con_arca)
+    r = facturar(cliente, datos, [a])
     assert r.status_code == 502, r.text
     assert "ya fue autorizado" in r.json()["detail"]
 
@@ -170,18 +168,18 @@ def test_si_arca_rechaza_el_cae_no_queda_comprobante(cliente, datos, razon_con_a
     assert quedo["comprobante_id"] is None
 
 
-def test_si_arca_no_da_el_numero_tampoco_queda_nada(cliente, datos, razon_con_arca,
+def test_si_arca_no_da_el_numero_tampoco_queda_nada(cliente, datos, empresa_con_arca,
                                                     monkeypatch):
     _arca_responde(monkeypatch, falla_numero="Computador no autorizado")
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+    a = orden(cliente, datos, "1000.00")
 
-    r = facturar(cliente, datos, [a], razon=razon_con_arca)
+    r = facturar(cliente, datos, [a])
     assert r.status_code == 502
     assert "no autorizado" in r.json()["detail"]
     assert cliente.get("/api/comprobantes").json() == [], "no puede haber quedado comprobante"
 
 
-# ── La guarda: factura UNA razón social, y la elige el CUIT ────────────────
+# ── La guarda: sólo se emite con el CUIT de «Datos de la empresa» (ADR-035) ──
 #
 # 🔴 **Acá se perdió el `habilitado`.** La tabla propia tenía una bandera para
 # "cargué el par y todavía no quiero emitir", y `arca_config` no la tiene. Lo
@@ -189,61 +187,100 @@ def test_si_arca_no_da_el_numero_tampoco_queda_nada(cliente, datos, razon_con_ar
 # de homologación y dejar el selector ahí es el estado de "todavía no emito de
 # verdad", y es mejor que la bandera porque además deja probar.
 
-def test_una_razon_social_con_otro_cuit_no_emite(cliente, datos, monkeypatch):
-    """🔑 La guarda que reemplaza al `habilitado`, y por qué es el CUIT.
+def test_si_el_cuit_de_arca_no_es_el_de_la_empresa_no_emite(cliente, datos, monkeypatch):
+    """🔑 La guarda, y por qué es el CUIT: la empresa tiene uno y la configuración de ARCA, otro.
 
-    El certificado de ARCA es **de un CUIT**. Una razón social con otro CUIT no
-    puede emitir con ese par —ARCA lo rechazaría—: su pre factura espera, y el
-    error dice cuál razón social no tiene certificado.
+    La configuración de ARCA lleva el CUIT **que factura**, que es el de la empresa (aunque el certificado esté
+    a nombre de otra persona que la representa). Si no coinciden, ARCA firmaría por un contribuyente que no es
+    el emisor: la pre factura espera, y el mensaje dice los dos CUIT y cómo se corrige.
 
-    Y el control importa tanto como el caso: la instancia SÍ tiene ARCA
-    configurado. Sin eso, "no emitió" pasaría igual con la configuración vacía.
+    Y el control importa tanto como el caso: la instancia SÍ tiene ARCA configurado. Sin eso, "no emitió"
+    pasaría igual con la configuración vacía (ver `test_con_el_cuit_de_la_empresa_se_emite`).
     """
-    _configurar_arca(cliente)
-    otra = _crear(cliente, "/api/razones-sociales", {
-        "nombre": "Otra SA", "cuit": "30-99999999-7", "punto_venta": 3,
-    })
+    cargar_empresa(cliente, cuit="30-99999999-7")
+    _configurar_arca(cliente)   # el de CUIT = 20-12345678-6
 
     pedidos = _arca_responde(monkeypatch)
-    a = orden(cliente, datos, "1000.00", razon_social_id=otra)
-    r = facturar(cliente, datos, [a], razon=otra)
+    a = orden(cliente, datos, "1000.00")
+    r = facturar(cliente, datos, [a])
     assert r.status_code == 409, r.text
-    assert "La razon social Otra SA no tiene configurado el certificado de ARCA" in r.json()["detail"]
+    detalle = r.json()["detail"]
+    assert "20-12345678-6" in detalle and "30-99999999-7" in detalle
+    assert "CUIT que factura" in detalle
+    assert "aunque el certificado esté a nombre de otra persona que la representa" in detalle
     assert pedidos == [], "no tenia que hablar con ARCA"
     assert cliente.get("/api/comprobantes").json() == []
+    assert cliente.get(f"/api/ordenes/{a['id']}").json()["estado"] == "pendiente"
+
+
+def test_con_el_cuit_de_la_empresa_se_emite(cliente, datos, monkeypatch):
+    """El control de la guarda: el mismo escenario con los dos CUIT iguales emite."""
+    cargar_empresa(cliente, cuit="20-12345678-6")
+    _configurar_arca(cliente, punto_venta=7)
+
+    _arca_responde(monkeypatch, ultimo=10)
+    a = orden(cliente, datos, "1000.00")
+    r = facturar(cliente, datos, [a])
+    assert r.status_code == 201, r.text
+    assert r.json()["numero"] == 11 and r.json()["punto_venta"] == 7
 
 
 def test_el_cuit_matchea_con_guiones_y_sin_guiones(cliente, datos, monkeypatch):
     """El mismo CUIT escrito de las dos formas es el mismo CUIT.
 
-    `razones_sociales.cuit` admite `20-12345678-6`; en la pantalla compartida se
-    tipea como salga. Comparar los textos crudos haría que la razón social
-    correcta **deje de emitir** — un rojo que antes no se veía, porque el alta a
-    mano seguía andando, y ahora se vería como un 409 de «sin certificado».
+    `configuracion_empresa.cuit` admite `20-12345678-6`; en la pantalla de ARCA se tipea como salga. Comparar
+    los textos crudos haría que la empresa correcta **deje de poder emitir** con un 409 que dice que los dos
+    CUIT difieren cuando son el mismo.
     """
-    razon = _crear(cliente, "/api/razones-sociales", {
-        "nombre": "Con Guiones SA", "cuit": "20-12345678-6", "punto_venta": 5,
-    })
+    cargar_empresa(cliente, cuit="20-12345678-6")
     _configurar_arca(cliente, cuit="20123456786")
 
     _arca_responde(monkeypatch, ultimo=7)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon)
-    r = facturar(cliente, datos, [a], razon=razon)
+    a = orden(cliente, datos, "1000.00")
+    r = facturar(cliente, datos, [a])
     assert r.status_code == 201, r.text
     assert r.json()["numero"] == 8
 
 
-def test_una_razon_social_sin_cuit_no_emite(cliente, datos, monkeypatch):
-    """Sin CUIT no hay con qué comparar, y adivinar sería facturar por otro."""
+def test_una_empresa_sin_cuit_no_emite(cliente, datos, monkeypatch):
+    """Sin CUIT en la empresa no hay con qué comparar, y adivinar sería facturar por otro."""
+    cliente.put("/api/configuracion", json={"razon_social": "Sin CUIT SA"})
     _configurar_arca(cliente)
-    sin_cuit = _crear(cliente, "/api/razones-sociales", {"nombre": "Sin CUIT SA"})
 
     pedidos = _arca_responde(monkeypatch)
-    a = orden(cliente, datos, "1000.00", razon_social_id=sin_cuit)
-    r = facturar(cliente, datos, [a], razon=sin_cuit)
+    a = orden(cliente, datos, "1000.00")
+    r = facturar(cliente, datos, [a])
     assert r.status_code == 409, r.text
-    assert "Sin CUIT SA no tiene configurado el certificado" in r.json()["detail"]
+    assert "cargá el CUIT en Configuración → Datos de la empresa" in r.json()["detail"]
     assert pedidos == [], "no tenia que hablar con ARCA"
+    assert cliente.get("/api/comprobantes").json() == []
+
+
+def test_sin_los_datos_de_la_empresa_tampoco_emite(cliente, datos, monkeypatch):
+    """La instancia recién entregada, sin «Datos de la empresa» cargados: el mismo mensaje."""
+    _configurar_arca(cliente)
+
+    pedidos = _arca_responde(monkeypatch)
+    a = orden(cliente, datos, "1000.00")
+    r = facturar(cliente, datos, [a])
+    assert r.status_code == 409, r.text
+    assert "cargá el CUIT en Configuración → Datos de la empresa" in r.json()["detail"]
+    assert pedidos == []
+
+
+def test_el_cuit_de_arca_no_se_compara_con_el_titular_del_certificado(cliente, datos, monkeypatch):
+    """🔑 Una persona física puede tener el certificado y facturar por la empresa (delegación).
+
+    El certificado de `par_de_arca()` es de un sujeto cualquiera (`CN=test`), que no es el CUIT de la empresa
+    ni el de `arca_config`; si la guarda mirara el sujeto del `.crt`, esto no emitiría. Emite porque la regla es
+    **sólo** `arca_config.cuit == empresa.cuit`.
+    """
+    cargar_empresa(cliente)
+    _configurar_arca(cliente)
+
+    _arca_responde(monkeypatch, ultimo=3)
+    a = orden(cliente, datos, "1000.00")
+    assert facturar(cliente, datos, [a]).status_code == 201
 
 
 def test_con_dos_configuraciones_activas_no_elige_por_indice(cliente, datos,
@@ -260,9 +297,7 @@ def test_con_dos_configuraciones_activas_no_elige_por_indice(cliente, datos,
     script, un `curl` o un restore de otra instancia. Por eso la guarda está en
     el camino de emisión, que es el que hace daño.
     """
-    razon = _crear(cliente, "/api/razones-sociales", {
-        "nombre": "Suitrans SA", "cuit": CUIT, "punto_venta": 5,
-    })
+    cargar_empresa(cliente)
     _configurar_arca(cliente)
     db_arca_config.crear_arca_config(
         empresa="colada", cuit="30-99999999-7", punto_venta=9,
@@ -270,8 +305,8 @@ def test_con_dos_configuraciones_activas_no_elige_por_indice(cliente, datos,
     )
 
     pedidos = _arca_responde(monkeypatch)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon)
-    r = facturar(cliente, datos, [a], razon=razon)
+    a = orden(cliente, datos, "1000.00")
+    r = facturar(cliente, datos, [a])
     assert r.status_code == 409, r.text
     assert "colada" in r.json()["detail"], "el mensaje tiene que nombrar las filas"
     assert pedidos == [], "salio a ARCA sin saber con que CUIT"
@@ -314,14 +349,12 @@ def test_la_emision_encuentra_la_fila_aunque_el_slug_sea_otro(cliente, datos,
     activa** y no el slug, justamente para que un literal de más en el frontend
     —que vive en otro lenguaje y no lo mira ningún import— no pueda causarlo.
     """
-    razon = _crear(cliente, "/api/razones-sociales", {
-        "nombre": "Suitrans SA", "cuit": CUIT, "punto_venta": 5,
-    })
+    cargar_empresa(cliente)
     _configurar_arca(cliente, empresa="un-slug-que-nadie-espera")
 
     _arca_responde(monkeypatch, ultimo=99)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon)
-    r = facturar(cliente, datos, [a], razon=razon)
+    a = orden(cliente, datos, "1000.00")
+    r = facturar(cliente, datos, [a])
     assert r.status_code == 201, r.text
     assert r.json()["numero"] == 100
 
@@ -334,9 +367,7 @@ def test_sin_el_par_en_disco_no_emite_aunque_la_fila_exista(cliente, datos,
     nada. Salir a ARCA desde ahí da un error de autenticación que no habla de la
     causa; lo correcto es decir que falta el certificado.
     """
-    razon = _crear(cliente, "/api/razones-sociales", {
-        "nombre": "Suitrans SA", "cuit": CUIT, "punto_venta": 5,
-    })
+    cargar_empresa(cliente)
     r = cliente.put("/api/arca", json={
         "empresa": emision_arca.EMPRESA_ARCA, "cuit": CUIT, "punto_venta": 5,
         "ambiente": "homologacion", "alias": "",
@@ -344,10 +375,10 @@ def test_sin_el_par_en_disco_no_emite_aunque_la_fila_exista(cliente, datos,
     assert r.status_code == 200, r.text
 
     pedidos = _arca_responde(monkeypatch)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon)
-    r = facturar(cliente, datos, [a], razon=razon)
+    a = orden(cliente, datos, "1000.00")
+    r = facturar(cliente, datos, [a])
     assert r.status_code == 409, r.text
-    assert "no tiene configurado el certificado de ARCA" in r.json()["detail"]
+    assert "falta el certificado o la clave de ARCA" in r.json()["detail"]
     assert pedidos == [], "no tenia que hablar con ARCA"
 
 
@@ -360,9 +391,7 @@ def test_el_selector_manda_cual_de_los_dos_pares_firma(cliente, datos, monkeypat
     coincide en los dos casos por venir del mismo lugar, así que asertar sólo
     sobre él pasaría con el par equivocado.
     """
-    razon = _crear(cliente, "/api/razones-sociales", {
-        "nombre": "Suitrans SA", "cuit": CUIT, "punto_venta": 5,
-    })
+    cargar_empresa(cliente)
     _configurar_arca(cliente, ambiente="homologacion")
     certificado, clave = par_de_arca()
     for tramo, archivo in (("certificado", certificado), ("clave", clave)):
@@ -371,8 +400,8 @@ def test_el_selector_manda_cual_de_los_dos_pares_firma(cliente, datos, monkeypat
                             ).status_code == 200
 
     pedidos = _arca_responde(monkeypatch, ultimo=1)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon)
-    facturar(cliente, datos, [a], razon=razon)
+    a = orden(cliente, datos, "1000.00")
+    facturar(cliente, datos, [a])
     con_homologacion = [p for p in pedidos if p[0] == "autenticar"][0]
     assert con_homologacion[1] == "homologacion"
 
@@ -382,8 +411,8 @@ def test_el_selector_manda_cual_de_los_dos_pares_firma(cliente, datos, monkeypat
     }).status_code == 200
 
     pedidos = _arca_responde(monkeypatch, ultimo=1)
-    b = orden(cliente, datos, "1000.00", razon_social_id=razon)
-    facturar(cliente, datos, [b], razon=razon)
+    b = orden(cliente, datos, "1000.00")
+    facturar(cliente, datos, [b])
     con_produccion = [p for p in pedidos if p[0] == "autenticar"][0]
     assert con_produccion[1] == "produccion"
     assert con_produccion[2] != con_homologacion[2], (
@@ -394,17 +423,14 @@ def test_el_selector_manda_cual_de_los_dos_pares_firma(cliente, datos, monkeypat
 
 
 @pytest.fixture
-def razon_en_homologacion(cliente, datos):
+def empresa_en_homologacion(cliente, datos):
     """La instancia configurada para PROBAR: el selector en homologación."""
-    razon = _crear(cliente, "/api/razones-sociales", {
-        "nombre": "Suitrans SA", "cuit": CUIT, "punto_venta": 5,
-    })
+    cargar_empresa(cliente)
     _configurar_arca(cliente, ambiente="homologacion")
-    return razon
 
 
 def test_el_ensayo_recorre_el_camino_entero_contra_arca(cliente, datos,
-                                                        razon_en_homologacion,
+                                                        empresa_en_homologacion,
                                                         monkeypatch):
     """🔑 El valor del ensayo es que NO es una simulación local.
 
@@ -413,9 +439,9 @@ def test_el_ensayo_recorre_el_camino_entero_contra_arca(cliente, datos,
     que se rompe al cortar a producción.
     """
     pedidos = _arca_responde(monkeypatch, ultimo=41)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_en_homologacion)
+    a = orden(cliente, datos, "1000.00")
 
-    r = facturar(cliente, datos, [a], razon=razon_en_homologacion)
+    r = facturar(cliente, datos, [a])
 
     assert r.status_code == 200, r.text   # 200 y no 201: no se creó nada
     cuerpo = r.json()
@@ -430,7 +456,7 @@ def test_el_ensayo_recorre_el_camino_entero_contra_arca(cliente, datos,
     assert pedidos[0][1] == "homologacion"
 
 
-def test_el_ensayo_NO_deja_nada(cliente, datos, razon_en_homologacion, monkeypatch):
+def test_el_ensayo_NO_deja_nada(cliente, datos, empresa_en_homologacion, monkeypatch):
     """🔴 Las tres mitades del daño que un comprobante de prueba haría acá.
 
     En otro producto alcanzaría con marcar la fila y filtrarla. Acá el
@@ -439,9 +465,9 @@ def test_el_ensayo_NO_deja_nada(cliente, datos, razon_en_homologacion, monkeypat
     con una sola, aflojar el rollback pasaría en verde.
     """
     _arca_responde(monkeypatch, ultimo=41)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_en_homologacion)
+    a = orden(cliente, datos, "1000.00")
 
-    assert facturar(cliente, datos, [a], razon=razon_en_homologacion).status_code == 200
+    assert facturar(cliente, datos, [a]).status_code == 200
 
     assert cliente.get("/api/comprobantes").json() == [], "quedó el comprobante"
     assert cliente.get(f"/api/cuentas/cliente/{datos['cliente']}").json()[
@@ -454,22 +480,22 @@ def test_el_ensayo_NO_deja_nada(cliente, datos, razon_en_homologacion, monkeypat
 
 
 def test_el_ensayo_no_deja_asiento_de_auditoria(cliente, datos,
-                                                razon_en_homologacion, monkeypatch):
+                                                empresa_en_homologacion, monkeypatch):
     """Un alta que se revirtió no es un alta.
 
     Registrarla sería un log que miente en la dirección más cara: dice que
     existe un comprobante que nadie va a encontrar.
     """
     _arca_responde(monkeypatch, ultimo=41)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_en_homologacion)
-    facturar(cliente, datos, [a], razon=razon_en_homologacion)
+    a = orden(cliente, datos, "1000.00")
+    facturar(cliente, datos, [a])
 
     r = cliente.get("/api/auditoria", params={"entidad": "comprobante"})
     assert r.json()["registros"] == [], r.json()
 
 
 def test_la_misma_pre_factura_se_puede_facturar_de_verdad_despues_del_ensayo(
-        cliente, datos, razon_en_homologacion, monkeypatch):
+        cliente, datos, empresa_en_homologacion, monkeypatch):
     """🔑 Lo que el ensayo tiene que dejar posible, y es el punto de todo esto.
 
     Probar con el cliente y **después** cortar a facturación real sobre la
@@ -477,8 +503,8 @@ def test_la_misma_pre_factura_se_puede_facturar_de_verdad_despues_del_ensayo(
     corte empezaría con la operación a medio facturar.
     """
     _arca_responde(monkeypatch, ultimo=41)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_en_homologacion)
-    pf = pre_factura(cliente, datos, [a], razon=razon_en_homologacion).json()
+    a = orden(cliente, datos, "1000.00")
+    pf = pre_factura(cliente, datos, [a]).json()
     ensayo = cliente.post(f"/api/pre-facturas/{pf['id']}/facturar")
     assert ensayo.status_code == 200, ensayo.text
     abierta = cliente.get(f"/api/pre-facturas/{pf['id']}").json()
@@ -504,16 +530,16 @@ def test_la_misma_pre_factura_se_puede_facturar_de_verdad_despues_del_ensayo(
 
 
 def test_con_el_selector_en_produccion_se_guarda_como_siempre(cliente, datos,
-                                                              razon_con_arca,
+                                                              empresa_con_arca,
                                                               monkeypatch):
     """El control que hace que los de arriba signifiquen algo.
 
     Sin esto, "no queda nada" pasaría igual con un alta que no guarda nunca.
     """
     _arca_responde(monkeypatch, ultimo=41)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+    a = orden(cliente, datos, "1000.00")
 
-    r = facturar(cliente, datos, [a], razon=razon_con_arca)
+    r = facturar(cliente, datos, [a])
     assert r.status_code == 201, r.text
     assert r.json()["cae"] == "75123456789012"
     assert len(cliente.get("/api/comprobantes").json()) == 1
@@ -522,13 +548,13 @@ def test_con_el_selector_en_produccion_se_guarda_como_siempre(cliente, datos,
 
 # ── Los importes que se le mandan ───────────────────────────────────────────
 
-def test_la_factura_c_va_sin_iva_discriminado(cliente, datos, razon_con_arca,
+def test_la_factura_c_va_sin_iva_discriminado(cliente, datos, empresa_con_arca,
                                               monkeypatch):
     """No es una simplificación: ARCA exige `ImpIVA = 0` e `ImpNeto = ImpTotal`
     para los tipos C, y rechaza el comprobante si se manda el IVA aparte."""
     pedidos = _arca_responde(monkeypatch, ultimo=0)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
-    facturar(cliente, datos, [a], razon=razon_con_arca, tipo="factura_c")
+    a = orden(cliente, datos, "1000.00")
+    facturar(cliente, datos, [a], tipo="factura_c")
 
     enviado = [p[1] for p in pedidos if p[0] == "cae"][0]
     assert enviado["tipo"] == 11
@@ -536,12 +562,12 @@ def test_la_factura_c_va_sin_iva_discriminado(cliente, datos, razon_con_arca,
     assert enviado["subtotal"] == enviado["total"]
 
 
-def test_la_factura_a_manda_el_iva_aparte(cliente, datos, razon_con_arca, monkeypatch):
+def test_la_factura_a_manda_el_iva_aparte(cliente, datos, empresa_con_arca, monkeypatch):
     """La otra mitad: sin esto, "el IVA va en cero" pasaría igual con un
     servicio que siempre manda cero."""
     pedidos = _arca_responde(monkeypatch, ultimo=0)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
-    comp = facturar(cliente, datos, [a], razon=razon_con_arca, tipo="factura_a").json()
+    a = orden(cliente, datos, "1000.00")
+    comp = facturar(cliente, datos, [a], tipo="factura_a").json()
 
     enviado = [p[1] for p in pedidos if p[0] == "cae"][0]
     assert enviado["tipo"] == 1
@@ -561,7 +587,7 @@ def test_la_factura_a_manda_el_iva_aparte(cliente, datos, razon_con_arca, monkey
     ("no_categorizado", 0),
 ])
 def test_el_pedido_de_cae_lleva_la_condicion_de_iva_del_cliente(
-        cliente, datos, razon_con_arca, monkeypatch, condicion, codigo):
+        cliente, datos, empresa_con_arca, monkeypatch, condicion, codigo):
     """ARCA rechaza el comprobante sin la condición del receptor. LibraCargo se
     la pasa al motor con el código de la familia (`cliente_iva_cond`)."""
     r = cliente.put(f"/api/terceros/{datos['cliente']}", json={
@@ -570,9 +596,9 @@ def test_el_pedido_de_cae_lleva_la_condicion_de_iva_del_cliente(
     })
     assert r.status_code == 200, r.text
     pedidos = _arca_responde(monkeypatch, ultimo=41)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+    a = orden(cliente, datos, "1000.00")
 
-    r = facturar(cliente, datos, [a], razon=razon_con_arca)
+    r = facturar(cliente, datos, [a])
     assert r.status_code == 201, r.text
     (factura,) = [p[1] for p in pedidos if p[0] == "cae"]
     assert factura["cliente_iva_cond"] == codigo
@@ -586,7 +612,7 @@ def test_todas_las_condiciones_del_dominio_tienen_codigo():
 
 
 def test_el_sobre_que_sale_hacia_arca_lleva_la_condicion_de_iva_del_receptor(
-        cliente, datos, razon_con_arca, monkeypatch):
+        cliente, datos, empresa_con_arca, monkeypatch):
     """**El test que no mockea `solicitar_cae`**: corre el del motor y mira el
     SOAP que sale. Los de arriba prueban que LibraCargo pasa el dato; éste prueba
     que **llega a ARCA**, que es lo que la RG 5616 exige.
@@ -617,9 +643,9 @@ def test_el_sobre_que_sale_hacia_arca_lleva_la_condicion_de_iva_del_receptor(
 
     monkeypatch.setattr(emision_arca.arca_wsaa, "autenticar", autenticar)
     monkeypatch.setattr(emision_arca.arca_wsfe, "_soap", soap)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+    a = orden(cliente, datos, "1000.00")
 
-    r = facturar(cliente, datos, [a], razon=razon_con_arca)
+    r = facturar(cliente, datos, [a])
     assert r.status_code == 201, r.text
     (pedido,) = [c for acc, c in enviados if acc == "FECAESolicitar"]
     assert "<CondicionIVAReceptorId>1</CondicionIVAReceptorId>" in pedido
@@ -628,14 +654,14 @@ def test_el_sobre_que_sale_hacia_arca_lleva_la_condicion_de_iva_del_receptor(
 # ── Anular ──────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("tipo", ["factura_a", "factura_b", "factura_c"])
-def test_un_comprobante_con_cae_no_se_anula_desde_aca(cliente, datos, razon_con_arca,
+def test_un_comprobante_con_cae_no_se_anula_desde_aca(cliente, datos, empresa_con_arca,
                                                       monkeypatch, tipo):
     """🔴 Anular acá no llega a ARCA: el comprobante seguiría vigente allá mientras las órdenes
     vuelven a pendientes y se pueden facturar otra vez —dos facturas por lo mismo—, y la cuenta
     corriente quedaría revertida contra algo que ARCA y el cliente siguen teniendo."""
     _arca_responde(monkeypatch, ultimo=41)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
-    comp = facturar(cliente, datos, [a], razon=razon_con_arca, tipo=tipo).json()
+    a = orden(cliente, datos, "1000.00")
+    comp = facturar(cliente, datos, [a], tipo=tipo).json()
     assert comp["cae"], "el punto de partida: un comprobante con CAE"
 
     r = cliente.delete(f"/api/comprobantes/{comp['id']}")
@@ -717,12 +743,12 @@ def _cliente_con_cuit(cliente, datos, cuit, condicion="responsable_inscripto"):
     ("30-7093", "'30-7093'"),  # a medio cargar
 ])
 def test_una_factura_a_sin_cuit_valido_se_rechaza_antes_de_ir_a_arca(
-        cliente, datos, razon_con_arca, monkeypatch, cuit, dice):
+        cliente, datos, empresa_con_arca, monkeypatch, cuit, dice):
     pedidos = _arca_responde(monkeypatch)
     _cliente_con_cuit(cliente, datos, cuit)
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+    a = orden(cliente, datos, "1000.00")
 
-    r = facturar(cliente, datos, [a], razon=razon_con_arca, tipo="factura_a")
+    r = facturar(cliente, datos, [a], tipo="factura_a")
 
     assert r.status_code == 422, r.text
     assert "Agro Norte" in r.text and dice in r.text and "ficha del cliente" in r.text, r.text
@@ -733,29 +759,29 @@ def test_una_factura_a_sin_cuit_valido_se_rechaza_antes_de_ir_a_arca(
 
 @pytest.mark.parametrize("tipo", ["factura_a", "factura_b", "factura_c"])
 def test_un_cuit_de_11_digitos_con_verificador_mal_se_rechaza_en_toda_clase(
-        cliente, datos, razon_con_arca, monkeypatch, tipo):
+        cliente, datos, empresa_con_arca, monkeypatch, tipo):
     """Con 11 dígitos el verificador tiene que cerrar **en toda clase**: una B se rechaza en ARCA y una A se
     autoriza con una observación («la CUIT no existe»), y esa factura habría que anularla después."""
     pedidos = _arca_responde(monkeypatch)
-    _cliente_con_cuit(cliente, datos, "20-10580053-9")   # un CUIT real de Suitrans, mal cargado
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+    _cliente_con_cuit(cliente, datos, "20-12345678-0")   # CUIT ficticio con el dígito verificador mal
+    a = orden(cliente, datos, "1000.00")
 
-    r = facturar(cliente, datos, [a], razon=razon_con_arca, tipo=tipo)
+    r = facturar(cliente, datos, [a], tipo=tipo)
 
     assert r.status_code == 422, r.text
-    assert "dígito verificador" in r.text and "20-10580053-9" in r.text, r.text
+    assert "dígito verificador" in r.text and "20-12345678-0" in r.text, r.text
     assert pedidos == []
 
 
 def test_una_fce_con_el_verificador_mal_tambien_se_rechaza_antes_de_ir_a_arca(
-        cliente, datos, razon_con_arca, monkeypatch):
+        cliente, datos, empresa_con_arca, monkeypatch):
     from tests.test_fce import _facturar
 
     pedidos = _arca_responde(monkeypatch)
-    _cliente_con_cuit(cliente, datos, "20-10580053-9")
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+    _cliente_con_cuit(cliente, datos, "20-12345678-0")
+    a = orden(cliente, datos, "1000.00")
 
-    r = _facturar(cliente, datos, [a], razon_con_arca)
+    r = _facturar(cliente, datos, [a])
 
     assert r.status_code == 422, r.text
     assert "dígito verificador" in r.text, r.text
@@ -764,13 +790,13 @@ def test_una_fce_con_el_verificador_mal_tambien_se_rechaza_antes_de_ir_a_arca(
 
 @pytest.mark.parametrize("tipo", ["factura_b", "factura_c"])
 def test_una_clase_b_o_c_sigue_saliendo_a_un_cliente_sin_cuit(
-        cliente, datos, razon_con_arca, monkeypatch, tipo):
+        cliente, datos, empresa_con_arca, monkeypatch, tipo):
     """Un consumidor final no tiene CUIT: el `1` o la ausencia no se tocan en B y C."""
     pedidos = _arca_responde(monkeypatch)
     _cliente_con_cuit(cliente, datos, "1", condicion="consumidor_final")
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+    a = orden(cliente, datos, "1000.00")
 
-    r = facturar(cliente, datos, [a], razon=razon_con_arca, tipo=tipo)
+    r = facturar(cliente, datos, [a], tipo=tipo)
 
     assert r.status_code == 201, r.text
     assert any(p[0] == "cae" for p in pedidos)
@@ -786,7 +812,7 @@ def test_la_ficha_del_cliente_sigue_aceptando_cualquier_cuit(cliente, datos):
     assert r.status_code == 200, r.text
 
 
-def test_la_guarda_es_la_del_motor_y_no_una_copia_propia(cliente, datos, razon_con_arca, monkeypatch):
+def test_la_guarda_es_la_del_motor_y_no_una_copia_propia(cliente, datos, empresa_con_arca, monkeypatch):
     """🔑 Si el motor dice que el receptor no sirve, `facturar` lo repite tal cual: no decide nada.
 
     El motor responde algo que ninguna regla local diría, y el 422 lo lleva. Y el producto no tiene su
@@ -795,9 +821,9 @@ def test_la_guarda_es_la_del_motor_y_no_una_copia_propia(cliente, datos, razon_c
     pedidos = _arca_responde(monkeypatch)
     monkeypatch.setattr(emision_arca.arca_wsfe, "problema_del_receptor",
                         lambda factura: "el motor dice que este receptor no sirve")
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+    a = orden(cliente, datos, "1000.00")
 
-    r = facturar(cliente, datos, [a], razon=razon_con_arca, tipo="factura_b")
+    r = facturar(cliente, datos, [a], tipo="factura_b")
 
     assert r.status_code == 422, r.text
     assert "el motor dice que este receptor no sirve" in r.text, r.text
@@ -806,13 +832,13 @@ def test_la_guarda_es_la_del_motor_y_no_una_copia_propia(cliente, datos, razon_c
 
 
 def test_el_pedido_de_cae_lleva_el_cuit_tal_cual_y_el_nombre_del_cliente(
-        cliente, datos, razon_con_arca, monkeypatch):
+        cliente, datos, empresa_con_arca, monkeypatch):
     """El producto no normaliza el CUIT (lo hace el motor) y le pasa el nombre para que el mensaje lo diga."""
     pedidos = _arca_responde(monkeypatch)
     _cliente_con_cuit(cliente, datos, "30.12345678.1")
-    a = orden(cliente, datos, "1000.00", razon_social_id=razon_con_arca)
+    a = orden(cliente, datos, "1000.00")
 
-    r = facturar(cliente, datos, [a], razon=razon_con_arca, tipo="factura_a")
+    r = facturar(cliente, datos, [a], tipo="factura_a")
 
     assert r.status_code == 201, r.text
     (factura,) = [p[1] for p in pedidos if p[0] == "cae"]

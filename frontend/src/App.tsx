@@ -21,7 +21,7 @@ import Reporte from '@/pages/Reporte'
 import ReportesIndice from '@/pages/ReportesIndice'
 import Usuarios from '@/pages/Usuarios'
 import {
-  Choferes, Localidades, RazonesSociales, Terceros, TiposCarga, Vehiculos,
+  Choferes, Localidades, Terceros, TiposCarga, Vehiculos,
 } from '@/pages/maestros'
 
 function Privado({ children }: { children: ReactNode }) {
@@ -90,7 +90,6 @@ export default function App() {
                 <Route path="/vehiculos" element={<Vehiculos />} />
                 <Route path="/localidades" element={<Localidades />} />
                 <Route path="/tipos-carga" element={<TiposCarga />} />
-                <Route path="/razones-sociales" element={<RazonesSociales />} />
               </Routes>
             </Layout>
           </Privado>

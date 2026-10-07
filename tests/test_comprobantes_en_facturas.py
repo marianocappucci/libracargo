@@ -18,7 +18,7 @@ from alembic.config import Config as AlembicConfig
 from sqlalchemy import text
 
 from app.models import Comprobante
-from app.servicios.comprobantes import totales_por_razon_social
+from app.servicios.comprobantes import totales_facturados
 from tests.conftest import URL, rearmar_en
 
 RAIZ = Path(__file__).resolve().parents[1]
@@ -181,7 +181,7 @@ def test_la_0016_pasa_los_comprobantes_a_facturas_sin_mover_nada(base_de_antes, 
     c12 = sesion.get(Comprobante, 12)
     assert (c12.cae, c12.cae_vencimiento.isoformat()) == ("75000000000010", "2026-08-13")
     # El F5: 10 y 12 facturados, menos la nota de 12, de los dos lados. La apertura afuera.
-    [fila] = totales_por_razon_social(sesion)
+    fila = totales_facturados(sesion)
     assert fila.coinciden is True
     assert fila.total_comprobantes == Decimal("1210.00") + Decimal("2420.00") - Decimal("121.00")
 

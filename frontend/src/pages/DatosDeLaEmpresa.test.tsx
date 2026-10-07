@@ -1,13 +1,11 @@
 /** Los datos de la empresa, y la condición de IVA.
  *
- *  Este producto tiene tarjeta de Empresa propia —sus datos viven en tabla
- *  propia y tienen más campos—, y por eso quedó afuera del `<Select>` que la
- *  `EmpresaCard` del kit les da a los otros seis: acá la condición de IVA era
- *  un campo de texto libre. Lo que estos tests fijan es que ahora se elija de
- *  la lista **del kit**, y la salvaguarda del valor guardado que no está en
- *  ella.
+ *  La empresa es el emisor de toda la instancia (ADR-035) y su condición de IVA es **la enumeración del
+ *  tercero** (`responsable_inscripto`, `monotributo`...), no texto libre: de ella depende qué clase de
+ *  comprobante se puede emitir. Lo que estos tests fijan es que se elija de esa lista, que lo guardado se
+ *  muestre con su etiqueta y que al guardar viaje el **valor del enum**.
  */
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const get = vi.fn()
@@ -24,12 +22,12 @@ vi.mock('libra-ui/api-client', async () => {
 })
 
 const { DatosDeLaEmpresa } = await import('./DatosDeLaEmpresa')
-const { CONDICIONES_IVA } = await import('libra-ui/Configuracion')
+const { CONDICIONES_IVA } = await import('./maestros/definiciones')
 
 function empresa(extra: Record<string, unknown> = {}) {
   return {
-    razon_social: 'Suitrans S.R.L.', nombre_fantasia: null, cuit: '30-11111111-1',
-    condicion_iva: 'Responsable Inscripto', ingresos_brutos: null,
+    razon_social: 'Transportes de Prueba SRL', nombre_fantasia: null, cuit: '30-55667788-9',
+    condicion_iva: 'responsable_inscripto', ingresos_brutos: null,
     inicio_actividades: null, domicilio: null, localidad: null, provincia: null,
     codigo_postal: null, telefono: null, email: null, sitio_web: null,
     pie_de_impresion: null, tiene_logo: false, ...extra,
@@ -54,33 +52,35 @@ describe('la condición de IVA', () => {
     expect(control.tagName).not.toBe('INPUT')
   })
 
-  it('muestra la condición guardada', async () => {
+  it('muestra la condición guardada con su etiqueta', async () => {
     await montar()
 
     expect(screen.getByLabelText('Condición frente al IVA'))
-      .toHaveTextContent('Responsable Inscripto')
+      .toHaveTextContent('Responsable inscripto')
   })
 
-  it('🔑 un valor guardado fuera de la lista NO desaparece', async () => {
-    // Sin la salvaguarda el `<Select>` no lo encuentra, muestra el campo vacío
-    // y el primer guardado lo pisa en silencio. Es la misma trampa que la
-    // `EmpresaCard` del kit documenta.
-    await montar({ condicion_iva: 'No Alcanzado' })
+  it('sin condición cargada pide elegir una', async () => {
+    await montar({ condicion_iva: null })
 
-    expect(screen.getByLabelText('Condición frente al IVA'))
-      .toHaveTextContent('No Alcanzado')
+    expect(screen.getByLabelText('Condición frente al IVA')).toHaveTextContent('Elegí una')
   })
 
-  it('la lista es la del kit, no una copia local', async () => {
-    await montar()
+  it('la lista es la del tercero (el enum del backend), no la del kit', async () => {
+    // Los valores son los de `app/models/enums.py`: la del kit usa las etiquetas como valor.
+    expect(CONDICIONES_IVA.map((c) => c.valor)).toEqual([
+      'responsable_inscripto', 'monotributo', 'exento', 'consumidor_final', 'no_categorizado',
+    ])
+  })
 
-    // Se compara contra `CONDICIONES_IVA` importada: si alguien reemplazara el
-    // import por tres strings escritos acá, este assert seguiría pasando sólo
-    // mientras coincidan — y dejaría de pasar en cuanto el kit las corrija,
-    // que es exactamente cuando queremos enterarnos.
-    expect(CONDICIONES_IVA.map((c) => c.valor))
-      .toContain('Responsable Inscripto')
-    expect(CONDICIONES_IVA).toHaveLength(3)
+  it('al guardar viaja el valor del enum, no la etiqueta', async () => {
+    put.mockImplementation((_ruta: string, cuerpo: unknown) => Promise.resolve(cuerpo))
+    await montar({ condicion_iva: 'monotributo' })
+
+    fireEvent.click(screen.getByText('Guardar'))
+
+    await waitFor(() => expect(put).toHaveBeenCalled())
+    expect(put.mock.calls[0][0]).toBe('/api/configuracion')
+    expect(put.mock.calls[0][1]).toMatchObject({ condicion_iva: 'monotributo', cuit: '30-55667788-9' })
   })
 
   it('los otros campos siguen siendo de texto', async () => {

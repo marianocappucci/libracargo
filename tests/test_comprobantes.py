@@ -1,6 +1,6 @@
 """Comprobantes y facturar pendientes.
 
-El criterio de F5 en el ROADMAP es que **los totales por razón social sean
+El criterio de F5 en el ROADMAP es que **los totales facturados sean
 reproducibles**, y eso es lo que más se prueba acá: el mismo importe contado por
 los encabezados de los comprobantes y por las órdenes que agrupan.
 
@@ -23,29 +23,27 @@ from app.models import EstadoOrden, OrdenCarga, RolCuenta, TipoComprobante
 from app.servicios import comprobantes, cuentas
 from tests.conftest import comprobante_de_prueba, config_de_prueba, vaciar_auth
 
-# Todos arrancan con `datos["razon"]` lista para emitir por ARCA (simulada): ver `emisor` en el conftest.
+# Todos arrancan con la empresa lista para emitir por ARCA (simulada): ver `emisor` en el conftest.
 pytestmark = pytest.mark.con_emisor
 
 
-def orden(cliente, datos, tarifa, *, cliente_id=None, razon_social_id=None, fecha="2026-08-10"):
+def orden(cliente, datos, tarifa, *, cliente_id=None, fecha="2026-08-10"):
     cuerpo = {
         "fecha": fecha,
         "cliente_id": cliente_id or datos["cliente"],
         "origen_id": datos["origen"], "destino_id": datos["destino"],
         "tarifa": tarifa,
     }
-    if razon_social_id is not None:
-        cuerpo["razon_social_id"] = razon_social_id
     r = cliente.post("/api/ordenes", json=cuerpo)
     assert r.status_code == 201, r.text
     return r.json()
 
 
-def pre_factura(cliente, datos, ordenes, *, razon=None, tipo="factura_a", cliente_id=None,
+def pre_factura(cliente, datos, ordenes, *, tipo="factura_a", cliente_id=None,
                 fecha="2026-08-15", vencimiento=None):
     """Genera la pre factura de las órdenes. Sin punto de venta ni número: no se tipean más (ADR-032)."""
     cuerpo = {
-        "fecha": fecha, "razon_social_id": razon or datos["razon"],
+        "fecha": fecha,
         "cliente_id": cliente_id or datos["cliente"], "tipo": tipo,
         "orden_ids": [o["id"] if isinstance(o, dict) else o for o in ordenes],
     }
@@ -59,7 +57,7 @@ def facturar(cliente, datos, ordenes, **kw):
 
     Si la pre factura no se pudo generar (otro cliente, una orden ya facturada...), es ésa. Si se generó,
     es la de `POST /api/pre-facturas/{id}/facturar`: el comprobante, o el error de la emisión. Los tests que
-    usan esto tienen que correr con `datos["razon"]` lista para emitir (marca `con_emisor`).
+    usan esto tienen que correr con la empresa lista para emitir (marca `con_emisor`).
     """
     r = pre_factura(cliente, datos, ordenes, **kw)
     if r.status_code != 201:
@@ -67,7 +65,7 @@ def facturar(cliente, datos, ordenes, **kw):
     return cliente.post(f"/api/pre-facturas/{r.json()['id']}/facturar")
 
 
-def facturado_a_mano(sesion, datos, ordenes, *, razon=None, tipo=TipoComprobante.FACTURA_A, punto_venta=1,
+def facturado_a_mano(sesion, datos, ordenes, *, tipo=TipoComprobante.FACTURA_A, punto_venta=1,
                      numero=1, fecha=date(2026, 8, 15)):
     """Un comprobante **sin CAE** con sus órdenes y su asiento: lo que había registrado a mano antes de ADR-032.
 
@@ -76,17 +74,15 @@ def facturado_a_mano(sesion, datos, ordenes, *, razon=None, tipo=TipoComprobante
     esa anulación, de los totales y del listado arman el dato **por abajo**, con las mismas funciones que
     usaba el alta (`servicios.comprobantes`, `servicios.cuentas`).
     """
-    razon = razon or datos["razon"]
     filas = list(sesion.scalars(select(OrdenCarga).where(
         OrdenCarga.id.in_([o["id"] if isinstance(o, dict) else o for o in ordenes]))))
     suma = comprobantes.sumar_ordenes(filas)
     comp = comprobante_de_prueba(
-        sesion, razon_social_id=razon, tipo=tipo, punto_venta=punto_venta, numero=numero, fecha=fecha,
+        sesion, tipo=tipo, punto_venta=punto_venta, numero=numero, fecha=fecha,
         cliente_id=datos["cliente"], neto=suma.neto, iva=suma.iva, total=suma.total)
     for orden_ in filas:
         orden_.comprobante_id = comp.id
         orden_.estado = EstadoOrden.FACTURADA
-        orden_.razon_social_id = razon
     cuentas.asentar(
         sesion, fecha=fecha, tercero_id=datos["cliente"], rol=RolCuenta.CLIENTE,
         concepto=comprobantes.etiqueta(tipo, punto_venta, numero),
@@ -116,9 +112,6 @@ def test_facturar_pendientes_agrupa_las_ordenes_en_un_comprobante(cliente, datos
         actual = cliente.get(f"/api/ordenes/{o['id']}").json()
         assert actual["estado"] == "facturada"
         assert actual["comprobante_id"] == comp["id"]
-        # La orden hereda la razon social del comprobante: es la columna por la
-        # que despues suma el lado de las ordenes en el gate de totales.
-        assert actual["razon_social_id"] == datos["razon"]
 
     # Y la lista de pendientes ya no las trae.
     pendientes = cliente.get("/api/ordenes?facturada=false").json()
@@ -142,59 +135,43 @@ def test_facturar_deja_la_deuda_en_la_cuenta_del_cliente(cliente, datos):
     assert Decimal(cuenta["saldo"]) == Decimal(comp["total"])
 
 
-def test_los_totales_por_razon_social_dan_igual_por_los_dos_lados(cliente, datos, sesion):
-    """El gate de F5, sobre dos razones sociales a la vez.
+def test_los_totales_dan_igual_por_los_dos_lados(cliente, datos, sesion):
+    """El gate de F5: lo facturado, contado por los encabezados y por las órdenes.
 
-    Una sola emite por ARCA (la del CUIT del certificado); la otra queda con lo que ya tenía registrado a
-    mano, que es dato de antes de ADR-032.
+    Uno sale por ARCA (pre factura); el otro es lo que ya estaba registrado a mano, dato de antes de ADR-032.
     """
     a = orden(cliente, datos, "1000.00")
     b = orden(cliente, datos, "2000.00")
     c = orden(cliente, datos, "500.00")
     assert facturar(cliente, datos, [a, b]).status_code == 201
-    facturado_a_mano(sesion, datos, [c], razon=datos["otra_razon"], punto_venta=2)
+    facturado_a_mano(sesion, datos, [c], punto_venta=2)
 
-    filas = {f["razon_social_id"]: f for f in cliente.get("/api/comprobantes/totales").json()}
-    assert set(filas) == {datos["razon"], datos["otra_razon"]}
-
-    suitrans = filas[datos["razon"]]
-    assert suitrans["coinciden"] is True
-    assert Decimal(suitrans["neto_comprobantes"]) == Decimal("3000.00")
-    assert Decimal(suitrans["neto_ordenes"]) == Decimal("3000.00")
-    assert suitrans["cantidad_comprobantes"] == 1
-    assert suitrans["cantidad_ordenes"] == 2
-
-    otra = filas[datos["otra_razon"]]
-    assert otra["coinciden"] is True
-    assert Decimal(otra["neto_comprobantes"]) == Decimal("500.00")
+    total = cliente.get("/api/comprobantes/totales").json()
+    assert total["coinciden"] is True
+    assert Decimal(total["neto_comprobantes"]) == Decimal("3500.00")
+    assert Decimal(total["neto_ordenes"]) == Decimal("3500.00")
+    assert total["cantidad_comprobantes"] == 2
+    assert total["cantidad_ordenes"] == 3
 
 
-def test_el_gate_avisa_cuando_la_orden_quedo_en_otra_razon_social(cliente, datos, sesion):
+def test_el_gate_avisa_cuando_la_orden_no_dice_lo_que_el_comprobante(cliente, datos, sesion):
     """El control de la alarma: sin esto, "coinciden" no significaría nada.
 
-    Se tuerce la razón social **de la orden** por SQL directo, que es lo que va a
-    llegar de la migración de F6: en el legado `carga_razonsocial` y
-    `factura_razonsocial` son dos enteros sueltos, sin tabla ni clave foránea
-    que los obligue a decir lo mismo. La API no deja hacerlo — por eso el
-    sabotaje va por debajo.
+    Se tuerce el importe **de la orden** por SQL directo, que es lo que puede llegar de una migración o de
+    una mano en la base: la API no deja hacerlo, por eso el sabotaje va por debajo.
     """
     a = orden(cliente, datos, "1000.00")
     assert facturar(cliente, datos, [a]).status_code == 201
-    assert all(f["coinciden"] for f in cliente.get("/api/comprobantes/totales").json())
+    assert cliente.get("/api/comprobantes/totales").json()["coinciden"] is True
 
-    sesion.execute(text("UPDATE ordenes_carga SET razon_social_id = :otra WHERE id = :id"),
-                   {"otra": datos["otra_razon"], "id": a["id"]})
+    sesion.execute(text("UPDATE ordenes_carga SET tarifa = tarifa + 1, total = total + 1 WHERE id = :id"),
+                   {"id": a["id"]})
     sesion.commit()
 
-    filas = {f["razon_social_id"]: f for f in cliente.get("/api/comprobantes/totales").json()}
-    # El comprobante sigue en Suitrans y la orden se fue a la otra razón social: las dos
-    # filas tienen que avisar, y la razon social que sólo aparece de un lado
-    # tiene que aparecer igual.
-    assert filas[datos["razon"]]["coinciden"] is False
-    assert Decimal(filas[datos["razon"]]["total_ordenes"]) == Decimal("0.00")
-    assert filas[datos["otra_razon"]]["coinciden"] is False
-    assert filas[datos["otra_razon"]]["cantidad_comprobantes"] == 0
-    assert Decimal(filas[datos["otra_razon"]]["neto_ordenes"]) == Decimal("1000.00")
+    total = cliente.get("/api/comprobantes/totales").json()
+    assert total["coinciden"] is False
+    assert Decimal(total["neto_comprobantes"]) == Decimal("1000.00")
+    assert Decimal(total["neto_ordenes"]) == Decimal("1001.00")
 
 
 def test_el_detalle_avisa_cuando_el_comprobante_no_dice_lo_que_sus_ordenes(cliente, datos, sesion):
@@ -232,14 +209,6 @@ def test_un_comprobante_es_de_un_solo_cliente(cliente, datos):
     r = facturar(cliente, datos, [a, ajena])
     assert r.status_code == 422
     assert cliente.get("/api/comprobantes").json() == []
-
-
-def test_no_se_factura_una_orden_de_otra_razon_social(cliente, datos):
-    """Pisarla en silencio movería plata de una razón social a la otra."""
-    a = orden(cliente, datos, "100.00", razon_social_id=datos["otra_razon"])
-    r = facturar(cliente, datos, [a])
-    assert r.status_code == 422
-    assert "razon social" in r.text
 
 
 def test_una_nota_de_credito_no_se_registra_sobre_ordenes(cliente, datos):
@@ -282,7 +251,9 @@ def test_anular_devuelve_las_ordenes_y_revierte_la_cuenta(cliente, datos, sesion
     assert cuenta["movimientos"][-1]["movimiento"]["fecha"] == comp["fecha"]
 
     # Sale de los totales por los dos lados a la vez.
-    assert cliente.get("/api/comprobantes/totales").json() == []
+    total = cliente.get("/api/comprobantes/totales").json()
+    assert total["cantidad_comprobantes"] == 0 and total["cantidad_ordenes"] == 0
+    assert Decimal(total["total_comprobantes"]) == Decimal("0.00") and total["coinciden"] is True
     # Y el detalle no marca alarma por quedarse sin órdenes: lo que chequea un
     # anulado es que no le haya quedado ninguna colgada.
     detalle = cliente.get(f"/api/comprobantes/{comp['id']}").json()
@@ -327,25 +298,28 @@ def test_los_totales_se_acotan_por_la_fecha_del_comprobante(cliente, datos):
     assert facturar(cliente, datos, [a], fecha="2026-08-15").status_code == 201
 
     dentro = cliente.get("/api/comprobantes/totales?desde=2026-08-01&hasta=2026-08-31").json()
-    assert len(dentro) == 1
-    assert dentro[0]["coinciden"] is True
-    assert Decimal(dentro[0]["neto_ordenes"]) == Decimal("1000.00")
+    assert dentro["cantidad_comprobantes"] == 1
+    assert dentro["coinciden"] is True
+    assert Decimal(dentro["neto_ordenes"]) == Decimal("1000.00")
 
-    assert cliente.get("/api/comprobantes/totales?desde=2026-09-01").json() == []
+    fuera = cliente.get("/api/comprobantes/totales?desde=2026-09-01").json()
+    assert fuera["cantidad_comprobantes"] == 0 and fuera["cantidad_ordenes"] == 0
+    assert Decimal(fuera["total_comprobantes"]) == Decimal("0.00")
+    assert fuera["coinciden"] is True
 
 
 def test_el_listado_filtra_y_no_esconde_los_anulados(cliente, datos, sesion):
     a = orden(cliente, datos, "100.00")
     b = orden(cliente, datos, "200.00")
     uno = facturado_a_mano(sesion, datos, [a], numero=1)
-    facturado_a_mano(sesion, datos, [b], numero=2, razon=datos["otra_razon"], punto_venta=2)
+    facturado_a_mano(sesion, datos, [b], numero=2, punto_venta=2)
     cliente.delete(f"/api/comprobantes/{uno.id}")
 
     assert len(cliente.get("/api/comprobantes").json()) == 2
     assert len(cliente.get("/api/comprobantes?anulado=true").json()) == 1
     assert len(cliente.get("/api/comprobantes?anulado=false").json()) == 1
-    por_razon = cliente.get(f"/api/comprobantes?razon_social_id={datos['otra_razon']}").json()
-    assert [c["numero"] for c in por_razon] == [2]
+    por_cliente = cliente.get(f"/api/comprobantes?cliente_id={datos['otro_cliente']}").json()
+    assert por_cliente == []
 
 
 def test_sin_sesion_no_se_ven_los_comprobantes(engine, monkeypatch):

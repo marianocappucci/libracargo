@@ -15,11 +15,19 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 from libraauth.testing import crear_schema_de_auth
+from sqlalchemy import text
 
 from app.main import crear_app
 from app.models.enums import CondicionIVA
 from app.servicios import pre_liquidacion
-from tests.conftest import CUIT_EMISOR, arca_responde, config_de_prueba, configurar_arca, vaciar_auth
+from tests.conftest import (
+    CUIT_EMISOR,
+    arca_responde,
+    cargar_empresa,
+    config_de_prueba,
+    configurar_arca,
+    vaciar_auth,
+)
 
 USUARIO, CLAVE = "admin", "clave-de-prueba"
 SLUG = "/api/reportes/pre-liquidacion-transportistas"
@@ -64,7 +72,6 @@ def escenario(cliente, monkeypatch):
         "exento": tercero("Cooperativa del Sur", "30-12345678-1", "exento", es_fletero=True),
         "suipacha": crear(cliente, "/api/localidades", {"nombre": "Suipacha"})["id"],
         "rosario": crear(cliente, "/api/localidades", {"nombre": "Rosario"})["id"],
-        "razon": crear(cliente, "/api/razones-sociales", {"nombre": "Suitrans"})["id"],
     }
 
     def orden(fecha, comision, fletero, *, alicuota="21.00", cliente_id=None, remito=None):
@@ -94,12 +101,11 @@ def escenario(cliente, monkeypatch):
     orden("2026-07-15", "600.00", None)                      # sin fletero
 
     # Una de las del transportista RI **está facturada** al cliente: igual entra.
-    assert cliente.put(f"/api/razones-sociales/{d['razon']}", json={
-        "nombre": "Suitrans", "cuit": CUIT_EMISOR, "punto_venta": 1}).status_code == 200
+    cargar_empresa(cliente)
     configurar_arca(cliente, cuit=CUIT_EMISOR, punto_venta=1)
     arca_responde(monkeypatch)
     pf = cliente.post("/api/pre-facturas", json={
-        "fecha": "2026-07-31", "razon_social_id": d["razon"], "cliente_id": d["cliente_a"],
+        "fecha": "2026-07-31", "cliente_id": d["cliente_a"],
         "tipo": "factura_b", "orden_ids": [d["ri_borde_desde"]["id"]]})
     assert pf.status_code == 201, pf.text
     assert cliente.post(f"/api/pre-facturas/{pf.json()['id']}/facturar").status_code == 201
@@ -396,8 +402,10 @@ def test_el_pdf_de_un_rango_sin_fletes_sale_igual_y_lo_dice(cliente, escenario):
     assert "TOTAL GENERAL" not in texto
 
 
-def test_el_pdf_sin_datos_de_la_empresa_sale_igual(cliente, escenario):
+def test_el_pdf_sin_datos_de_la_empresa_sale_igual(cliente, escenario, sesion):
     """Lo que no puede pasar es que no se pueda generar por falta de configuración."""
+    sesion.execute(text("DELETE FROM configuracion_empresa"))
+    sesion.commit()
     assert cliente.get("/api/configuracion").json()["razon_social"] == ""
     assert cliente.get(f"{SLUG}/pdf?{JULIO}").status_code == 200
 

@@ -209,10 +209,10 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     # no hace nada.
     migrar_secretos(secretos)
 
-    # Quién emite lo que sale en un PDF —razón social, domicilio y logo—: **un solo resolvedor** para el PDF de la
-    # pre factura, el de cada comprobante, el que se guarda al emitir y el que va por correo (ADR-034; el motor
-    # lo pide así, libracore ADR-031). Sin esta línea los PDF salen con el membrete global de la instancia
-    # —sin el logo de la base ni la razón social que emitió— y nada falla: es el defecto que se corrige.
+    # Quién emite lo que sale en un PDF —la empresa: nombre, CUIT, domicilio y logo—: **un solo resolvedor**
+    # para el PDF de la pre factura, el de cada comprobante, el que se guarda al emitir y el que va por correo
+    # (ADR-034; el motor lo pide así, libracore ADR-031). Sin esta línea los PDF salen con el membrete global de
+    # la instancia —sin el logo de la base ni los datos de la empresa— y nada falla: es el defecto que se corrige.
     emisor_del_pdf_de_cargo.registrar()
 
     if sembrar_admin:

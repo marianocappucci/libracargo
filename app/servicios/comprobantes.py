@@ -1,16 +1,17 @@
 """Totales de comprobantes, contados por los dos lados a propósito.
 
-El criterio de F5 en el ROADMAP es que **los totales por razón social sean
+El criterio de F5 en el ROADMAP es que **los totales facturados sean
 reproducibles**. Reproducible quiere decir que el mismo número salga de dos
 lugares distintos: de los encabezados de los comprobantes, y de las órdenes que
 esos comprobantes agrupan.
 
 Es el mismo criterio de F4 aplicado a otra cosa. Si los dos lados coinciden, el
-total no depende de dónde se lo miró; si difieren, hay un importe que está en
-una razón social por un lado y en otra por el otro —o un encabezado que dice
-algo que sus órdenes no dicen—. En el legado esa comparación no se podía hacer:
-`orden_carga.carga_razonsocial` y `facturas.factura_razonsocial` son dos enteros
-sin tabla ni clave foránea que los ate.
+total no depende de dónde se lo miró; si difieren, hay un encabezado que dice
+algo que sus órdenes no dicen. En el legado esa comparación no se podía hacer:
+`orden_carga` y `facturas` eran dos tablas sin clave foránea que las atara.
+
+Desde ADR-035 el emisor es uno solo (la empresa), así que el total ya no se abre
+por razón social: es **un** total, contado por los dos lados.
 """
 
 from __future__ import annotations
@@ -28,14 +29,14 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, aliased
 
 from app.models.enums import CODIGO_ARCA, TipoComprobante
-from app.models.maestros import RazonSocial, Tercero
+from app.models.maestros import Tercero
 from app.models.operacion import Comprobante, ComprobanteCargo, OrdenCarga
 from app.schemas.comprobantes import (
     NOMBRES_DE_TIPO,
     SumaDeOrdenes,
-    TotalDeRazonSocial,
+    TotalDeComprobantes,
 )
-from app.servicios.emision_arca import CODIGO_IVA_DE_LA_FAMILIA, ArcaAmbiguo
+from app.servicios.emision_arca import CODIGO_IVA_DE_LA_FAMILIA, ArcaAmbiguo, empresa_de
 
 log = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ def acreditado_por_notas(
       hace falta distinguirla de una parcial.
     - **El rango es el de la fecha de la nota**, no la del original: es un hecho fechado de ARCA, y es la fecha con la
       que entra al libro de ventas y a la cuenta corriente.
-    - `agrupar_por` es una columna de la **nota** (`Comprobante.razon_social_id`, `Comprobante.cliente_id`…), y
+    - `agrupar_por` es una columna de la **nota** (`Comprobante.cliente_id`, `Comprobante.tipo`…), y
       `filtros` pares `(columna, valor)` sobre ella; un valor `None` no filtra.
     """
     original = aliased(Comprobante)
@@ -145,10 +146,10 @@ def _acotar(consulta: Select, desde: date | None, hasta: date | None) -> Select:
     return consulta
 
 
-def totales_por_razon_social(
+def totales_facturados(
     sesion: Session, desde: date | None = None, hasta: date | None = None
-) -> list[TotalDeRazonSocial]:
-    """Los totales de cada razón social, por comprobantes y por órdenes.
+) -> TotalDeComprobantes:
+    """Lo facturado en el rango, por comprobantes y por órdenes.
 
     Los anulados quedan afuera de los dos lados: un comprobante anulado devuelve
     sus órdenes a pendientes, así que contarlo de un lado y no del otro
@@ -160,60 +161,45 @@ def totales_por_razon_social(
     (`acreditado_por_notas`), así que la comparación sigue siendo la de los encabezados contra sus órdenes.
     `cantidad_comprobantes` cuenta facturas, no notas.
     """
-    por_comprobante = _acotar(
+    por_comprobante = solo_facturas(_acotar(
         select(
-            Comprobante.razon_social_id,
             func.count(Comprobante.id),
             func.coalesce(func.sum(Comprobante.neto), 0),
             func.coalesce(func.sum(Comprobante.iva), 0),
             func.coalesce(func.sum(Comprobante.total), 0),
-        ).where(Comprobante.anulado.is_(False)).group_by(Comprobante.razon_social_id),
+        ).where(Comprobante.anulado.is_(False)),
         desde, hasta,
-    )
-    por_comprobante = solo_facturas(por_comprobante)
+    ))
     por_orden = _acotar(
         select(
-            OrdenCarga.razon_social_id,
             func.count(OrdenCarga.id),
             func.coalesce(func.sum(OrdenCarga.tarifa), 0),
             func.coalesce(func.sum(OrdenCarga.iva), 0),
             func.coalesce(func.sum(OrdenCarga.total), 0),
         )
         .join(Comprobante, OrdenCarga.comprobante_id == Comprobante.id)
-        .where(Comprobante.anulado.is_(False))
-        .group_by(OrdenCarga.razon_social_id),
+        .where(Comprobante.anulado.is_(False)),
         desde, hasta,
     )
-
-    lado_a = {fila[0]: fila[1:] for fila in sesion.execute(por_comprobante)}
-    lado_b = {fila[0]: fila[1:] for fila in sesion.execute(por_orden)}
-    notas = {fila[0]: fila[2:] for fila in sesion.execute(
-        acreditado_por_notas(Comprobante.razon_social_id, desde, hasta))}
-
-    salida = []
-    # La unión de las dos claves, no la intersección: una razón social que
-    # aparece de un solo lado es justamente el caso que hay que ver. Con un
-    # `join` entre los dos agregados, esa fila desaparecería y la pantalla
-    # mostraría todo en orden.
-    for clave in sorted(set(lado_a) | set(lado_b) | set(notas), key=lambda k: (k is None, k or 0)):
-        cant_c, neto_c, iva_c, total_c = lado_a.get(clave, (0, 0, 0, 0))
-        cant_o, neto_o, iva_o, total_o = lado_b.get(clave, (0, 0, 0, 0))
-        neto_n, iva_n, total_n = (Decimal(x) for x in notas.get(clave, (0, 0, 0)))
-        neto_c, iva_c, total_c = (
-            (Decimal(x) - n).quantize(CERO) for x, n in ((neto_c, neto_n), (iva_c, iva_n), (total_c, total_n)))
-        neto_o, iva_o, total_o = (
-            (Decimal(x) - n).quantize(CERO) for x, n in ((neto_o, neto_n), (iva_o, iva_n), (total_o, total_n)))
-        salida.append(TotalDeRazonSocial(
-            razon_social_id=clave,
-            cantidad_comprobantes=cant_c,
-            neto_comprobantes=neto_c, iva_comprobantes=iva_c, total_comprobantes=total_c,
-            cantidad_ordenes=cant_o,
-            neto_ordenes=neto_o, iva_ordenes=iva_o, total_ordenes=total_o,
-            # Los tres importes, no sólo el total: un neto de más compensado por
-            # un IVA de menos da el mismo total y es un error igual.
-            coinciden=(neto_c, iva_c, total_c) == (neto_o, iva_o, total_o),
-        ))
-    return salida
+    cant_c, neto_c, iva_c, total_c = sesion.execute(por_comprobante).one()
+    cant_o, neto_o, iva_o, total_o = sesion.execute(por_orden).one()
+    # `acreditado_por_notas` agrupa: se agrupa por `anulado`, que ahí es siempre falso (el `where` excluye las
+    # anuladas), y sale un solo grupo con todas las notas vigentes.
+    notas = [fila[2:] for fila in sesion.execute(acreditado_por_notas(Comprobante.anulado, desde, hasta))]
+    neto_n, iva_n, total_n = (sum((Decimal(f[i]) for f in notas), CERO) for i in range(3))
+    neto_c, iva_c, total_c = (
+        (Decimal(x) - n).quantize(CERO) for x, n in ((neto_c, neto_n), (iva_c, iva_n), (total_c, total_n)))
+    neto_o, iva_o, total_o = (
+        (Decimal(x) - n).quantize(CERO) for x, n in ((neto_o, neto_n), (iva_o, iva_n), (total_o, total_n)))
+    return TotalDeComprobantes(
+        cantidad_comprobantes=cant_c,
+        neto_comprobantes=neto_c, iva_comprobantes=iva_c, total_comprobantes=total_c,
+        cantidad_ordenes=cant_o,
+        neto_ordenes=neto_o, iva_ordenes=iva_o, total_ordenes=total_o,
+        # Los tres importes, no sólo el total: un neto de más compensado por
+        # un IVA de menos da el mismo total y es un error igual.
+        coinciden=(neto_c, iva_c, total_c) == (neto_o, iva_o, total_o),
+    )
 
 
 # ── Escribir el comprobante: lo hace el motor ───────────────────────────────
@@ -237,18 +223,18 @@ def _conexion_del_motor(sesion: Session):
     return conexion_libracore(sesion.connection())
 
 
-def emisor_de(sesion: Session, razon_social_id: int) -> int | None:
-    """El emisor del motor (`arca_config.id`) de esta razón social, o `None` (el emisor único).
+def emisor_de(sesion: Session) -> int | None:
+    """El emisor del motor (`arca_config.id`) de la empresa, o `None` (el emisor único).
 
-    Es la fila de ARCA de **su CUIT** (`config_por_cuit`), la misma guarda que decide si
+    Es la fila de ARCA del **CUIT de la empresa** (`config_por_cuit`), la misma guarda que decide si
     emite (`emision_arca.configuracion_activa`). Sin CUIT, o sin fila de ese CUIT, el
-    comprobante es del emisor único de la instancia, que es lo que hay hoy en Suitrans.
+    comprobante es del emisor único de la instancia.
     """
-    razon = sesion.get(RazonSocial, razon_social_id)
-    if razon is None:
+    empresa = empresa_de(sesion)
+    if empresa is None or not empresa.cuit:
         return None
     try:
-        cfg = db_arca_config.config_por_cuit(razon.cuit)
+        cfg = db_arca_config.config_por_cuit(empresa.cuit)
     except db_arca_config.ArcaAmbiguo as e:
         raise ArcaAmbiguo(str(e)) from None
     return cfg["id"] if cfg else None
@@ -277,7 +263,7 @@ def items_de(ordenes: Iterable[OrdenCarga]) -> list[dict]:
 
 
 def crear(
-    sesion: Session, *, razon_social_id: int, tipo: TipoComprobante, punto_venta: int,
+    sesion: Session, *, tipo: TipoComprobante, punto_venta: int,
     numero: int, fecha: date, cliente_id: int, neto: Decimal, iva: Decimal, total: Decimal,
     items: list[dict], ambiente: str | None = None, fch_vto_pago: date | None = None,
     fce_cbu: str | None = None, fce_transmision: str | None = None,
@@ -316,7 +302,7 @@ def crear(
             "cbte_asoc_tipo": CODIGO_ARCA[asociado.tipo], "cbte_asoc_pv": asociado.punto_venta,
             "cbte_asoc_nro": asociado.numero, "cbte_asoc_fecha": asociado.fecha.strftime("%Y%m%d"),
         })
-    emisor = emisor_de(sesion, razon_social_id)
+    emisor = emisor_de(sesion)
     if ambiente is None:
         try:
             factura_id = db_facturas.registrar_comprobante(
@@ -335,7 +321,7 @@ def crear(
                 f"ARCA dio el {etiqueta(tipo, punto_venta, numero)}, y ese número ya está "
                 "registrado acá: revisá los comprobantes cargados a mano")
     sesion.add(ComprobanteCargo(
-        factura_id=factura_id, razon_social_id=razon_social_id, cliente_id=cliente_id,
+        factura_id=factura_id, cliente_id=cliente_id,
         anulado=False, comprobante_asociado_id=asociado.id if asociado is not None else None,
     ))
     sesion.flush()

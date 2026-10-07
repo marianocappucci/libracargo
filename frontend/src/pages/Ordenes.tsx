@@ -255,8 +255,6 @@ export default function Ordenes() {
                     opciones={opciones?.vehiculos ?? []} opcional />
             <Elegir form={form} nombre="tipo_carga_id" etiqueta="Tipo de carga"
                     opciones={opciones?.tipos ?? []} opcional />
-            <Elegir form={form} nombre="razon_social_id" etiqueta="Razón social"
-                    opciones={opciones?.razones ?? []} opcional />
             <Campo form={form} nombre="cantidad" etiqueta="Cantidad" />
             <Campo form={form} nombre="unidad" etiqueta="Unidad" />
             <Campo form={form} nombre="tarifa" etiqueta="Tarifa" />

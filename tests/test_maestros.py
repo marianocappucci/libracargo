@@ -1,4 +1,4 @@
-"""Los seis ABM de maestros. Es el criterio de terminado de F2 en el ROADMAP.
+"""Los cinco ABM de maestros. Es el criterio de terminado de F2 en el ROADMAP.
 
 Cada ABM se recorre entero —alta, listado, edición y baja— y además se prueba
 lo que **no** tiene que dejar hacer: la unicidad, el acceso sin sesión y las
@@ -22,13 +22,12 @@ MINIMOS = {
     "localidades": {"nombre": "Suipacha"},
     "choferes": {"nombre": "Juan Perez"},
     "vehiculos": {"patente_chasis": "AB123CD"},
-    "razones-sociales": {"nombre": "Suitrans"},
     "tipos-carga": {"nombre": "Cereal"},
 }
 #: Con qué campo se distingue una fila de otra en cada maestro.
 ETIQUETA = {
     "terceros": "razon_social", "localidades": "nombre", "choferes": "nombre",
-    "vehiculos": "patente_chasis", "razones-sociales": "nombre", "tipos-carga": "nombre",
+    "vehiculos": "patente_chasis", "tipos-carga": "nombre",
 }
 
 
@@ -119,10 +118,10 @@ def test_el_listado_por_defecto_muestra_tambien_los_dados_de_baja(cliente, recur
 
 
 @pytest.mark.parametrize(
-    "recurso", ["localidades", "razones-sociales", "tipos-carga", "vehiculos"]
+    "recurso", ["localidades", "tipos-carga", "vehiculos"]
 )
 def test_el_duplicado_es_409_y_no_un_500(cliente, recurso):
-    """Las cuatro tablas con unicidad declarada.
+    """Las tres tablas con unicidad declarada.
 
     Sin traducir el error de integridad, esto sale como 500 con el traceback de
     psycopg — que arrastra el statement completo, o sea los valores de la fila.
@@ -136,12 +135,11 @@ def test_el_duplicado_es_409_y_no_un_500(cliente, recurso):
     assert MINIMOS[recurso][ETIQUETA[recurso]] not in detalle
 
 
-@pytest.mark.parametrize("recurso,columna", [("localidades", "activa"),
-                                             ("razones-sociales", "activa")])
+@pytest.mark.parametrize("recurso,columna", [("localidades", "activa")])
 def test_activo_es_uniforme_en_la_api_aunque_la_columna_sea_activa(
     cliente, sesion, recurso, columna
 ):
-    """Las dos tablas donde el nombre difiere, en las dos direcciones.
+    """La tabla donde el nombre difiere, en las dos direcciones.
 
     Se mira la columna real, no sólo lo que devuelve la API: si el mapeo
     estuviera escribiendo en otro lado, la respuesta podría decir `false` y la
@@ -150,7 +148,7 @@ def test_activo_es_uniforme_en_la_api_aunque_la_columna_sea_activa(
     from sqlalchemy import text
 
     id_ = cliente.post(f"/api/{recurso}", json=MINIMOS[recurso]).json()["id"]
-    tabla = "localidades" if recurso == "localidades" else "razones_sociales"
+    tabla = recurso
 
     def leer():
         return sesion.execute(
@@ -219,3 +217,20 @@ def test_lo_que_no_existe_da_404(cliente):
     assert cliente.get("/api/terceros/999999").status_code == 404
     assert cliente.put("/api/terceros/999999", json=MINIMOS["terceros"]).status_code == 404
     assert cliente.delete("/api/terceros/999999").status_code == 404
+
+
+def test_ya_no_hay_razones_sociales(cliente):
+    """ADR-035: el emisor es «Datos de la empresa». Ni el recurso ni la tabla existen."""
+    assert cliente.get("/api/razones-sociales").status_code in (404, 405)
+    assert cliente.post("/api/razones-sociales", json={"nombre": "Suitrans"}).status_code in (404, 405)
+    rutas = cliente.app.openapi()["paths"]
+    assert not [r for r in rutas if "razon" in r], [r for r in rutas if "razon" in r]
+
+
+def test_la_tabla_de_razones_sociales_y_sus_columnas_ya_no_existen(engine):
+    from sqlalchemy import inspect
+
+    insp = inspect(engine)
+    assert "razones_sociales" not in insp.get_table_names()
+    for tabla in ("ordenes_carga", "comprobantes_cargo", "pre_facturas_cargo", "comprobante_de_apertura"):
+        assert "razon_social_id" not in {c["name"] for c in insp.get_columns(tabla)}, tabla

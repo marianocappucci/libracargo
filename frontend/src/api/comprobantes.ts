@@ -33,7 +33,6 @@ export type Ensayo = {
 
 export type Comprobante = {
   id: number
-  razon_social_id: number
   tipo: TipoComprobante
   punto_venta: number
   numero: number
@@ -67,7 +66,7 @@ export type AvisoFce = {
   /** Desde qué total rige para ese receptor, como texto. */
   monto_desde?: string | null
   motivo?: string
-  /** Si esta razón social ya puede emitir FCE (emite por ARCA y cargó CBU y modalidad). */
+  /** Si la empresa ya puede emitir FCE (emite por ARCA y cargó CBU y modalidad). */
   fce_habilitada: boolean
 }
 
@@ -86,8 +85,8 @@ export type ComprobanteConOrdenes = {
   saldo_acreditable?: string | null
 }
 
-export type TotalDeRazonSocial = {
-  razon_social_id: number | null
+/** Lo facturado en el rango, contado por los dos lados (el gate de F5). Un solo emisor: no se abre por razón social. */
+export type TotalDeComprobantes = {
   cantidad_comprobantes: number
   neto_comprobantes: string
   iva_comprobantes: string
@@ -153,14 +152,13 @@ export const comprobantes = {
     if (desde) p.set('desde', desde)
     if (hasta) p.set('hasta', hasta)
     const qs = p.toString()
-    return api.get<TotalDeRazonSocial[]>(`/api/comprobantes/totales${qs ? `?${qs}` : ''}`)
+    return api.get<TotalDeComprobantes>(`/api/comprobantes/totales${qs ? `?${qs}` : ''}`)
   },
   // ¿A este comprobante le corresponde ser FCE? Lo contesta el registro de ARCA a través del motor. Es un
   // aviso: nunca falla por ARCA (`disponible: false` y el motivo).
-  fceCorresponde: (p: { razon_social_id: number; cliente_id: number; total: string; fecha: string }) =>
+  fceCorresponde: (p: { cliente_id: number; total: string; fecha: string }) =>
     api.get<AvisoFce>(`/api/comprobantes/fce/corresponde?${new URLSearchParams({
-      razon_social_id: String(p.razon_social_id), cliente_id: String(p.cliente_id),
-      total: p.total, fecha: p.fecha,
+      cliente_id: String(p.cliente_id), total: p.total, fecha: p.fecha,
     })}`),
   /** El PDF del comprobante (ADR-034): se abre y se baja por un enlace común, la sesión viaja en la cookie.
    *  Sólo existe para un comprobante con CAE: sin CAE el servidor contesta 404. */

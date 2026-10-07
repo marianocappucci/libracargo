@@ -68,7 +68,8 @@ describe('destinoDelLog', () => {
     // habria compilado igual y no habria linkeado nada.
     expect(destinoDelLog('localidades', 3)).toBe('/localidades')
     expect(destinoDelLog('terceros', 3)).toBe('/terceros')
-    expect(destinoDelLog('razones-sociales', 3)).toBe('/razones-sociales')
+    // La razón social se retiró (ADR-035): un asiento viejo del log ya no lleva a ninguna pantalla.
+    expect(destinoDelLog('razones-sociales', 3)).toBeNull()
   })
 
   it('configuracion lleva a su pantalla, sin id', () => {

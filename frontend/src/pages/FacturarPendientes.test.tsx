@@ -28,10 +28,6 @@ const { default: FacturarPendientes } = await import('./FacturarPendientes')
 const { default: EditarPreFactura } = await import('./EditarPreFactura')
 
 const TERCEROS = [{ id: 1, razon_social: 'Agro Norte', es_cliente: true }]
-const RAZONES = [
-  { id: 5, nombre: 'Suitrans' },
-  { id: 6, nombre: 'Juan Pérez' },
-]
 
 function responder(ordenes: unknown[] = [], propias: unknown[] = []) {
   get.mockImplementation((ruta?: string) => {
@@ -40,7 +36,6 @@ function responder(ordenes: unknown[] = [], propias: unknown[] = []) {
     if (ruta.startsWith('/api/ordenes') && ruta.includes('pre_factura_id=')) return Promise.resolve(propias)
     if (ruta.startsWith('/api/ordenes')) return Promise.resolve(ordenes)
     if (ruta.startsWith('/api/terceros')) return Promise.resolve(TERCEROS)
-    if (ruta.startsWith('/api/razones-sociales')) return Promise.resolve(RAZONES)
     return Promise.resolve([])
   })
 }
@@ -49,15 +44,15 @@ function orden(id: number, extra: Record<string, unknown> = {}) {
   return {
     id, fecha: '2026-08-10', cliente_id: 1, origen_id: 1, destino_id: 2,
     fletero_id: null, chofer_id: null, vehiculo_id: null, tipo_carga_id: null,
-    razon_social_id: null, remito: null, cantidad: null, unidad: null,
+    remito: null, cantidad: null, unidad: null,
     tarifa: '1000.00', alicuota_iva: '21.00', iva: '210.00', total: '1210.00',
     comision: '0.00', estado: 'pendiente', comprobante_id: null,
     observaciones: null, ...extra,
   }
 }
 
-/** Monta la pantalla con las rutas a las que navega, y elige cliente y razón social. */
-async function abrir(cliente = '1', razon = '5') {
+/** Monta la pantalla con las rutas a las que navega, y elige el cliente. */
+async function abrir(cliente = '1') {
   render(
     <MemoryRouter initialEntries={['/comprobantes/facturar']}>
       <Routes>
@@ -72,8 +67,6 @@ async function abrir(cliente = '1', razon = '5') {
   // actualizacion quedo afuera, y lo que se assertee puede ser el estado previo.
   await act(async () => {
     fireEvent.change(selectCliente, { target: { value: cliente } })
-    fireEvent.change(screen.getByLabelText('Razón social', { selector: '#n-razon' }),
-                     { target: { value: razon } })
   })
 }
 
@@ -93,15 +86,11 @@ describe('Facturar pendientes', () => {
     expect(screen.getByRole('heading', { name: 'Facturar pendientes' })).toBeInTheDocument()
   })
 
-  it('no ofrece las ordenes que ya tienen otra razón social', async () => {
-    // El backend las rechaza con un 422 --pisarles la razon social moveria
-    // plata de una a la otra--, asi que ofrecerlas seria invitar al error.
-    responder([orden(1), orden(2, { razon_social_id: 6 }), orden(3, { razon_social_id: 5 })])
+  it('no pide la razón social: el emisor es la empresa (ADR-035)', async () => {
+    responder([orden(1)])
     await abrir()
-
     await waitFor(() => expect(casilla(1)).toBeInTheDocument())
-    expect(casilla(3)).toBeInTheDocument()
-    expect(screen.queryByLabelText('Elegir la orden 2')).toBeNull()
+    expect(screen.queryByLabelText('Razón social')).toBeNull()
   })
 
   it('la vista previa suma lo elegido, y sin nada elegido no deja facturar', async () => {
@@ -147,22 +136,6 @@ describe('Facturar pendientes', () => {
     expect(screen.getByText('Total: $ 0,00')).toBeInTheDocument()
   })
 
-  it('cambiar la razón social saca de la cuenta lo que ya no se puede facturar', async () => {
-    // Sin esto, una orden elegida antes del cambio seguiria sumando en la vista
-    // previa y viajaria en el pedido, para que el backend la rechace.
-    responder([orden(1), orden(2, { razon_social_id: 6, total: '500.00' })])
-    await abrir('1', '6')
-
-    await waitFor(() => expect(casilla(2)).toBeInTheDocument())
-    fireEvent.click(casilla(2))
-    expect(screen.getByText('Total: $ 500,00')).toBeInTheDocument()
-
-    fireEvent.change(screen.getByLabelText('Razón social', { selector: '#n-razon' }),
-                     { target: { value: '5' } })
-    expect(screen.getByText('Total: $ 0,00')).toBeInTheDocument()
-    expect(screen.getByText('Generar pre factura')).toBeDisabled()
-  })
-
   it('genera la pre factura de las ordenes elegidas y va a ella', async () => {
     responder([orden(1)])
     post.mockResolvedValue({ id: 9 })
@@ -175,8 +148,9 @@ describe('Facturar pendientes', () => {
     await waitFor(() => expect(post).toHaveBeenCalled())
     expect(post.mock.calls[0][0]).toBe('/api/pre-facturas')
     expect(post.mock.calls[0][1]).toMatchObject({
-      cliente_id: 1, razon_social_id: 5, tipo: 'factura_a', orden_ids: [1],
+      cliente_id: 1, tipo: 'factura_a', orden_ids: [1],
     })
+    expect(post.mock.calls[0][1]).not.toHaveProperty('razon_social_id')
     // 🔴 Se sacó el registro a mano: ni el punto de venta ni el número viajan, ni se ofrecen.
     expect(post.mock.calls[0][1]).not.toHaveProperty('punto_venta')
     expect(post.mock.calls[0][1]).not.toHaveProperty('numero')
@@ -294,7 +268,7 @@ describe('Facturar pendientes', () => {
   function preFactura(extra: Record<string, unknown> = {}) {
     return {
       id: 7, numero_interno: 'PF-0007', estado: 'pendiente', cliente_id: 1, cliente_razon: 'Agro Norte',
-      cliente_cuit: '', razon_social_id: 5, razon_social: 'Suitrans', tipo_comprobante: 6,
+      cliente_cuit: '', tipo_comprobante: 6,
       fecha_sugerida: '2026-08-20', fecha_vencimiento_pago: null, observaciones: '', items: [],
       orden_ids: [1], total: '1210.00', ...extra,
     }
@@ -322,7 +296,6 @@ describe('Facturar pendientes', () => {
     expect(screen.getByLabelText('Cliente')).toBeDisabled()
     expect((screen.getByLabelText('Tipo', { selector: '#n-tipo' }) as HTMLSelectElement).value).toBe('factura_b')
     expect(screen.getByLabelText('Fecha', { selector: '#n-fecha' })).toHaveValue('2026-08-20')
-    expect((screen.getByLabelText('Razón social', { selector: '#n-razon' }) as HTMLSelectElement).value).toBe('5')
     // Las suyas, ya elegidas; las libres, para sumar.
     expect(casilla(1)).toBeChecked()
     expect(casilla(2)).not.toBeChecked()
@@ -339,7 +312,7 @@ describe('Facturar pendientes', () => {
     await waitFor(() => expect(put).toHaveBeenCalled())
     expect(put.mock.calls[0][0]).toBe('/api/pre-facturas/7')
     expect(put.mock.calls[0][1]).toMatchObject({
-      razon_social_id: 5, tipo: 'factura_b', fecha: '2026-08-20',
+      tipo: 'factura_b', fecha: '2026-08-20',
     })
     // El orden lo da la lista (la más nueva primero) y al servidor no le importa.
     expect([...put.mock.calls[0][1].orden_ids].sort()).toEqual([1, 2])
@@ -370,8 +343,7 @@ describe('Facturar pendientes', () => {
         }
         if (ruta.startsWith('/api/ordenes')) return Promise.resolve(ordenes)
         if (ruta.startsWith('/api/terceros')) return Promise.resolve(TERCEROS)
-        if (ruta.startsWith('/api/razones-sociales')) return Promise.resolve(RAZONES)
-        return Promise.resolve([])
+            return Promise.resolve([])
       })
       return preguntas
     }
@@ -387,7 +359,8 @@ describe('Facturar pendientes', () => {
       expect(aviso).toHaveTextContent('le corresponde ser una factura de crédito electrónica')
       const pregunta = new URLSearchParams(preguntas.at(-1)!.split('?')[1])
       expect(Object.fromEntries(pregunta)).toMatchObject(
-        { razon_social_id: '5', cliente_id: '1', total: '5000000.00' })
+        { cliente_id: '1', total: '5000000.00' })
+      expect(pregunta.has('razon_social_id')).toBe(false)
 
       fireEvent.click(screen.getByText('Pasar a factura de crédito electrónica'))
       expect((screen.getByLabelText('Tipo') as HTMLSelectElement).value).toBe('fce_a')
@@ -396,7 +369,7 @@ describe('Facturar pendientes', () => {
       expect(screen.getByLabelText('Vencimiento de pago')).toBeInTheDocument()
     })
 
-    it('si la razón social no puede emitir FCE, dice qué cargar', async () => {
+    it('si la empresa no puede emitir FCE, dice qué cargar', async () => {
       conAviso({ disponible: true, corresponde: true, monto_desde: '3958316', fce_habilitada: false })
       await abrir()
       await waitFor(() => expect(casilla(1)).toBeInTheDocument())

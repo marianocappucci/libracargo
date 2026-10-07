@@ -5,7 +5,7 @@
 facturada, anulada), PDF y correo: todo eso lo hace `libracore.pre_facturas` (ADR-030 de LibraCore). Lo
 que sólo sabe este producto vive en dos tablas:
 
-- `pre_facturas_cargo`: la razón social que facturaría y el tercero. Con el mismo id que la pre factura.
+- `pre_facturas_cargo`: el tercero. Con el mismo id que la pre factura.
 - `pre_factura_ordenes`: la **reserva** de cada orden. `orden_id` es la clave primaria: una orden está en
   a lo sumo una pre factura abierta. Anular o facturar la pre factura libera la reserva.
 
@@ -44,7 +44,7 @@ from app.models.enums import (
     RolCuenta,
     TipoComprobante,
 )
-from app.models.maestros import RazonSocial, Tercero
+from app.models.maestros import Tercero
 from app.models.operacion import (
     Comprobante,
     OrdenCarga,
@@ -113,12 +113,12 @@ def exigir_orden_libre(sesion: Session, orden: OrdenCarga) -> None:
             "quitala de ahi o anula la pre factura primero")
 
 
-def cargar_ordenes(sesion: Session, *, cliente_id: int, razon_social_id: int, orden_ids: list[int],
+def cargar_ordenes(sesion: Session, *, cliente_id: int, orden_ids: list[int],
                    pre_factura_id: int | None = None) -> list[OrdenCarga]:
     """Las órdenes de la pre factura, en orden de fecha, validadas.
 
-    Las mismas reglas que tenía facturar directo: existen, son del cliente, están pendientes y su razón
-    social es la elegida (o no tiene). Además **no están reservadas en otra pre factura**: la de
+    Las mismas reglas que tenía facturar directo: existen, son del cliente y están pendientes.
+    Además **no están reservadas en otra pre factura**: la de
     `pre_factura_id` (la que se está editando o facturando) no cuenta como «otra».
     """
     ordenes = list(sesion.scalars(select(OrdenCarga).where(OrdenCarga.id.in_(orden_ids))))
@@ -132,13 +132,6 @@ def cargar_ordenes(sesion: Session, *, cliente_id: int, razon_social_id: int, or
         if orden.estado is not EstadoOrden.PENDIENTE or orden.comprobante_id is not None:
             raise Rechazo(
                 409, f"la orden {orden.id} no esta pendiente (esta {orden.estado.value})")
-        if orden.razon_social_id is not None and orden.razon_social_id != razon_social_id:
-            # No se pisa en silencio: la razón social de la orden es la que después suma del lado de
-            # las órdenes en el gate de totales, y cambiarla sin decirlo movería plata de una razón
-            # social a otra.
-            raise Rechazo(
-                422, f"la orden {orden.id} tiene otra razon social: "
-                     "cambiarla primero, o facturar con la suya")
     reservadas = {
         orden_id: pre for orden_id, pre in sesion.execute(
             select(PreFacturaOrden.orden_id, PreFacturaOrden.pre_factura_id)
@@ -220,9 +213,9 @@ def validar_tipo_y_fechas(tipo: TipoComprobante, fecha: date, vencimiento: date 
             422, "solo la factura de credito electronica lleva fecha de vencimiento de pago")
 
 
-def _emisor_id(sesion: Session, razon_social_id: int) -> int | None:
+def _emisor_id(sesion: Session) -> int | None:
     try:
-        return comprobantes.emisor_de(sesion, razon_social_id)
+        return comprobantes.emisor_de(sesion)
     except emision_arca.ArcaAmbiguo as e:
         raise Rechazo(409, str(e)) from None
 
@@ -232,24 +225,17 @@ def _domicilio(cliente: Tercero) -> str:
     return ", ".join(p.strip() for p in partes if p and p.strip())
 
 
-def _campos_del_motor(sesion: Session, tipo: TipoComprobante, razon_social_id: int, fecha: date,
+def _campos_del_motor(sesion: Session, tipo: TipoComprobante, fecha: date,
                       vencimiento: date | None, observaciones: str, ordenes: list[OrdenCarga]) -> dict:
     """Lo que la pre factura del motor guarda y que sale de lo que eligió el operador."""
     return {
         "items": items_de_pre_factura(ordenes, tipo),
-        "emisor_id": _emisor_id(sesion, razon_social_id),
+        "emisor_id": _emisor_id(sesion),
         "tipo_comprobante": CODIGO_ARCA[tipo],
         "fecha_sugerida": fecha.isoformat(),
         "fecha_vencimiento_pago": vencimiento.isoformat() if vencimiento else "",
         "observaciones": observaciones,
     }
-
-
-def _razon(sesion: Session, razon_social_id: int) -> RazonSocial:
-    razon = sesion.get(RazonSocial, razon_social_id)
-    if razon is None:
-        raise Rechazo(404, f"no existe la razon social {razon_social_id}")
-    return razon
 
 
 def _tercero(sesion: Session, cliente_id: int) -> Tercero:
@@ -281,14 +267,12 @@ def pre_factura_de(sesion: Session, pre_factura_id: int) -> dict:
 # ── Crear y editar ─────────────────────────────────────────────────────────
 
 
-def crear(sesion: Session, actual: dict, *, cliente_id: int, razon_social_id: int, tipo: TipoComprobante,
+def crear(sesion: Session, actual: dict, *, cliente_id: int, tipo: TipoComprobante,
           fecha: date, vencimiento: date | None, orden_ids: list[int], observaciones: str = "") -> dict:
     """Genera la pre factura de las órdenes y las reserva. No hace `commit`."""
-    _razon(sesion, razon_social_id)
     cliente = _tercero(sesion, cliente_id)
     validar_tipo_y_fechas(tipo, fecha, vencimiento, cliente)
-    ordenes = cargar_ordenes(sesion, cliente_id=cliente_id, razon_social_id=razon_social_id,
-                             orden_ids=orden_ids)
+    ordenes = cargar_ordenes(sesion, cliente_id=cliente_id, orden_ids=orden_ids)
     try:
         pf = dominio.crear(
             origen_producto=ORIGEN_PRODUCTO, origen_instancia=ORIGEN_INSTANCIA,
@@ -297,22 +281,22 @@ def crear(sesion: Session, actual: dict, *, cliente_id: int, razon_social_id: in
             # producto son `terceros`. El tercero va en `pre_facturas_cargo`.
             cliente_cuit=cliente.cuit or "", cliente_domicilio=_domicilio(cliente),
             conn=_conexion_del_motor(sesion),
-            **_campos_del_motor(sesion, tipo, razon_social_id, fecha, vencimiento, observaciones, ordenes))
+            **_campos_del_motor(sesion, tipo, fecha, vencimiento, observaciones, ordenes))
     except ValueError as e:  # incluye `EmisorDesconocido`
         sesion.rollback()
         raise Rechazo(422, str(e)) from None
     sesion.add(PreFacturaCargo(
-        pre_factura_id=pf["id"], razon_social_id=razon_social_id, cliente_id=cliente.id))
+        pre_factura_id=pf["id"], cliente_id=cliente.id))
     sesion.flush()
     _reservar(sesion, pf["id"], [o.id for o in ordenes])
     auditoria.registrar(sesion, actual, "pre_factura", pf["id"], AccionAuditoria.ALTA, despues=pf)
     return pf
 
 
-def editar(sesion: Session, actual: dict, pre_factura_id: int, *, razon_social_id: int,
+def editar(sesion: Session, actual: dict, pre_factura_id: int, *,
            tipo: TipoComprobante, fecha: date, vencimiento: date | None, orden_ids: list[int],
            observaciones: str = "") -> dict:
-    """Reemplaza las órdenes y cambia razón social, tipo y fechas de una pre factura abierta.
+    """Reemplaza las órdenes y cambia tipo y fechas de una pre factura abierta.
 
     Si estaba enviada o aceptada vuelve a pendiente (el cliente aceptó **otros** datos), salvo que no haya
     cambiado nada (ver `libracore.pre_facturas.editar`). El cliente no se cambia: otro cliente es otra pre
@@ -323,25 +307,23 @@ def editar(sesion: Session, actual: dict, pre_factura_id: int, *, razon_social_i
     cargo = sesion.get(PreFacturaCargo, pre_factura_id)
     if cargo is None:
         raise Rechazo(404, f"la pre factura {antes['numero_interno']} no es de LibraCargo")
-    _razon(sesion, razon_social_id)
     cliente = _tercero(sesion, cargo.cliente_id)
     validar_tipo_y_fechas(tipo, fecha, vencimiento, cliente)
-    ordenes = cargar_ordenes(sesion, cliente_id=cargo.cliente_id, razon_social_id=razon_social_id,
-                             orden_ids=orden_ids, pre_factura_id=pre_factura_id)
+    ordenes = cargar_ordenes(sesion, cliente_id=cargo.cliente_id, orden_ids=orden_ids,
+                             pre_factura_id=pre_factura_id)
     try:
         pf = dominio.editar(
             pre_factura_id, conn=conn,
             # El cliente va como foto: al editar se refresca, así lo que se vuelve a mandar es lo de hoy.
             cliente_razon=cliente.razon_social, cliente_cuit=cliente.cuit or "",
             cliente_domicilio=_domicilio(cliente),
-            **_campos_del_motor(sesion, tipo, razon_social_id, fecha, vencimiento, observaciones, ordenes))
+            **_campos_del_motor(sesion, tipo, fecha, vencimiento, observaciones, ordenes))
     except dominio.TransicionInvalida as e:
         sesion.rollback()
         raise Rechazo(409, str(e)) from None
     except ValueError as e:
         sesion.rollback()
         raise Rechazo(422, str(e)) from None
-    cargo.razon_social_id = razon_social_id
     nuevas = {o.id for o in ordenes}
     vigentes = set(sesion.scalars(
         select(PreFacturaOrden.orden_id).where(PreFacturaOrden.pre_factura_id == pre_factura_id)))
@@ -367,23 +349,17 @@ def liberar(conn, pre_factura: dict, _datos: dict | None = None) -> None:
 # ── Facturar ───────────────────────────────────────────────────────────────
 
 
-def sin_certificado(razon: RazonSocial) -> Rechazo:
-    return Rechazo(
-        409,
-        f"La razon social {razon.nombre} no tiene configurado el certificado de ARCA: la pre factura "
-        "queda lista para facturar cuando este (Configuracion -> ARCA, con el CUIT de esta razon social)")
-
-
 def facturar(sesion: Session, actual: dict, pre_factura_id: int, *, fecha: date | None = None) -> Comprobante:
     """Emite por ARCA el comprobante de la pre factura y la cierra, **en una sola transacción**.
 
     Es el camino de emisión de siempre (`facturar` de los comprobantes hasta ADR-032), con los datos de la
     pre factura en vez de los que se tipeaban:
 
-    - **El número lo da ARCA** (`FECompUltimoAutorizado + 1`) y el punto de venta sale de la razón social.
+    - **El número lo da ARCA** (`FECompUltimoAutorizado + 1`) y el punto de venta sale de la configuración de ARCA.
     - **Si ARCA rechaza, no queda nada**: ni comprobante, ni órdenes facturadas, ni asiento, ni la pre
       factura cerrada. El pedido de CAE va adentro de la misma transacción.
-    - Sin certificado de ARCA para la razón social no se toca nada (409, y dice cuál).
+    - Si la empresa no puede emitir (sin CUIT, sin certificado, o el CUIT de ARCA no es el de la empresa) no se
+      toca nada: 409, y dice cuál es el problema (ADR-035).
     - Contra homologación se corre todo y se revierte: levanta `Ensayo`.
 
     `fecha` es la del comprobante (la de la pre factura si no se pasa): a los días de generarla, ARCA
@@ -397,7 +373,6 @@ def facturar(sesion: Session, actual: dict, pre_factura_id: int, *, fecha: date 
     cargo = sesion.get(PreFacturaCargo, pre_factura_id)
     if cargo is None:
         raise Rechazo(404, f"la pre factura {pf['numero_interno']} no es de LibraCargo")
-    razon = _razon(sesion, cargo.razon_social_id)
     cliente = _tercero(sesion, cargo.cliente_id)
 
     if (pf["cliente_razon"], pf["cliente_cuit"] or "") != (cliente.razon_social, cliente.cuit or ""):
@@ -406,16 +381,17 @@ def facturar(sesion: Session, actual: dict, pre_factura_id: int, *, fecha: date 
             409, f"los datos del cliente cambiaron desde que se genero la pre factura {pf['numero_interno']}: "
                  "editala para actualizarla y volve a enviarla antes de facturar")
 
-    # ── ¿Emite esta razón social? ──────────────────────────────────────────
-    # 🔴 Envuelto porque `emite_por_arca` puede **negarse a decidir**: con dos configuraciones de ARCA
-    # activas no hay forma de saber con qué CUIT firmar, y elegir una es facturar por otro contribuyente
-    # sin fallar. Sin este `except` sale como un 500 sin texto.
+    # ── ¿Puede emitir la empresa? ──────────────────────────────────────────
+    # Se dice **antes** de tocar nada, y con el motivo: sin CUIT en la empresa, sin certificado, o con un
+    # CUIT de ARCA que no es el de la empresa. 🔴 Envuelto también el `ArcaAmbiguo`: con dos configuraciones
+    # de ARCA activas no hay forma de saber con qué CUIT firmar, y elegir una es facturar por otro
+    # contribuyente sin fallar. Sin este `except` sale como un 500 sin texto.
     try:
-        emite = emision_arca.emite_por_arca(sesion, razon.id)
+        problema = emision_arca.problema_de_emision(sesion)
     except emision_arca.ArcaAmbiguo as e:
         raise Rechazo(409, str(e)) from None
-    if not emite:
-        raise sin_certificado(razon)
+    if problema:
+        raise Rechazo(409, f"{problema}. La pre factura queda lista para facturar cuando esté resuelto")
 
     tipo = TIPO_DE_CODIGO[pf["tipo_comprobante"]]
     es_fce = tipo in TIPOS_FCE
@@ -428,8 +404,8 @@ def facturar(sesion: Session, actual: dict, pre_factura_id: int, *, fecha: date 
         select(PreFacturaOrden.orden_id).where(PreFacturaOrden.pre_factura_id == pre_factura_id)))
     if not reservadas:
         raise Rechazo(409, f"la pre factura {pf['numero_interno']} no tiene ordenes reservadas")
-    ordenes = cargar_ordenes(sesion, cliente_id=cliente.id, razon_social_id=razon.id,
-                             orden_ids=reservadas, pre_factura_id=pre_factura_id)
+    ordenes = cargar_ordenes(sesion, cliente_id=cliente.id, orden_ids=reservadas,
+                             pre_factura_id=pre_factura_id)
     if items_de_pre_factura(ordenes, tipo) != pf["items"]:
         raise Rechazo(
             409, f"las ordenes de la pre factura {pf['numero_interno']} cambiaron desde que se genero: "
@@ -446,20 +422,20 @@ def facturar(sesion: Session, actual: dict, pre_factura_id: int, *, fecha: date 
         # 🔑 `asyncio.run` en este hilo, y no un `await` en el loop de uvicorn: la corrutina es `async`
         # sólo en los bordes —la red—, y entre medio lee la base y firma con `openssl`, todo sincrónico.
         # Acá eso bloquea a este hilo y a nadie más (el router es `def`, no `async def`).
-        numero, ta, cfg_arca, razon_emisora = asyncio.run(
-            emision_arca.numero_que_sigue(sesion, razon.id, tipo))
-    except emision_arca.ArcaNoConfigurado:
-        raise sin_certificado(razon) from None
+        numero, ta, cfg_arca, emisor = asyncio.run(
+            emision_arca.numero_que_sigue(sesion, tipo))
+    except emision_arca.ArcaNoConfigurado as e:
+        raise Rechazo(409, str(e)) from None
     except emision_arca.ArcaRechazo as e:
         raise Rechazo(502, f"ARCA no pudo dar el numero: {e}") from None
-    punto_venta = razon_emisora.punto_venta
+    punto_venta = emisor.punto_venta
 
     # Lo crea el motor en `facturas`, en esta misma transacción (ADR-030): hace falta el id para las
     # órdenes y para el movimiento de cuenta, pero no hay `commit` hasta el final. Con uno acá, un fallo
     # más abajo dejaría el comprobante grabado sin órdenes.
     try:
         comprobante = comprobantes.crear(
-            sesion, razon_social_id=razon.id, tipo=tipo,
+            sesion, tipo=tipo,
             punto_venta=punto_venta, numero=numero, fecha=fecha,
             cliente_id=cliente.id, neto=suma.neto, iva=suma.iva, total=suma.total,
             items=comprobantes.items_de(ordenes),
@@ -477,9 +453,6 @@ def facturar(sesion: Session, actual: dict, pre_factura_id: int, *, fecha: date 
     for orden in ordenes:
         orden.comprobante_id = comprobante.id
         orden.estado = EstadoOrden.FACTURADA
-        # Las órdenes sin razón social heredan la del comprobante; las que ya tenían una, la
-        # conservan: `cargar_ordenes` garantiza que es la misma.
-        orden.razon_social_id = razon.id
     cuentas.asentar(
         sesion,
         fecha=fecha, tercero_id=cliente.id, rol=RolCuenta.CLIENTE,
@@ -504,7 +477,7 @@ def facturar(sesion: Session, actual: dict, pre_factura_id: int, *, fecha: date 
     try:
         # Mismo criterio que el número: loop propio de este hilo. La transacción no se mueve —la
         # `sesion` es la misma y el hilo también—, así que un rechazo sigue sin dejar comprobante.
-        asyncio.run(emision_arca.pedir_cae(sesion, comprobante, ta, cfg_arca, razon_emisora))
+        asyncio.run(emision_arca.pedir_cae(sesion, comprobante, ta, cfg_arca, emisor))
     except emision_arca.ArcaRechazo as e:
         sesion.rollback()
         raise Rechazo(502, f"ARCA rechazo el comprobante: {e}") from None
@@ -543,24 +516,21 @@ def facturar(sesion: Session, actual: dict, pre_factura_id: int, *, fecha: date 
 
 
 def enriquecer(sesion: Session, filas: list[dict]) -> list[dict]:
-    """Suma a cada pre factura del motor lo propio: la razón social, el cliente y las órdenes.
+    """Suma a cada pre factura del motor lo propio: el cliente y las órdenes.
 
-    - `cliente_id`: el tercero. `razon_social_id` y `razon_social`: la que facturaría.
+    - `cliente_id`: el tercero.
     - `orden_ids`: las que lleva, que salen de los ítems (valen también para una cerrada).
     - `total` como texto con dos decimales, como los importes del resto de la API.
     """
     ids = [f["id"] for f in filas]
     cargos = {c.pre_factura_id: c for c in sesion.scalars(
         select(PreFacturaCargo).where(PreFacturaCargo.pre_factura_id.in_(ids)))} if ids else {}
-    razones = {r.id: r.nombre for r in sesion.scalars(select(RazonSocial))}
     salida = []
     for f in filas:
         cargo = cargos.get(f["id"])
         salida.append(f | {
             # Sobre-escribe el `cliente_id` de la bandeja (siempre vacío acá) con el tercero.
             "cliente_id": cargo.cliente_id if cargo else None,
-            "razon_social_id": cargo.razon_social_id if cargo else None,
-            "razon_social": razones.get(cargo.razon_social_id, "") if cargo else "",
             "orden_ids": [i["orden_id"] for i in f["items"] if i.get("orden_id") is not None],
             "total": f"{Decimal(str(f['total'])):.2f}",
         })

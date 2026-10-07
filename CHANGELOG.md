@@ -4,6 +4,17 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 ## [Unreleased]
 
+### Cambiado
+
+- **Un solo emisor: «Datos de la empresa»; se retiran las razones sociales** (ADR-035). El CUIT del emisor estaba en tres lugares (la empresa, las razones sociales y la configuración de ARCA) que había que mantener iguales a mano; en Suitrans la razón social tenía el CUIT vacío y por eso el PDF salía sin logo. Ahora **«Datos de la empresa» es el único emisor** de toda factura, nota de crédito, pre factura y PDF, y **sólo se emite por ARCA con el CUIT de la empresa**.
+  - **La condición de IVA de la empresa se elige de la lista del tercero** (responsable inscripto, monotributo, exento, consumidor final, no categorizado) en vez de escribirse a mano.
+  - **ARCA sólo emite si el CUIT de su configuración es el de la empresa.** Si no, dice por qué (409) y la pre factura queda lista para cuando se resuelva: la empresa sin CUIT («cargá el CUIT en Configuración → Datos de la empresa»), ARCA sin configurar, los dos CUIT distintos (los nombra) o el certificado o la clave sin cargar. El CUIT de la configuración de ARCA es **el que factura**, aunque el certificado esté a nombre de otra persona que representa a la empresa. El punto de venta es el de la configuración de ARCA.
+  - **Se quitan** la pantalla «Razones sociales» (Configuración), el selector de razón social en Órdenes, Facturar pendientes, pre facturas, Comprobantes y Reportes, la columna «Razón social» de los listados y el reporte «Facturado por razón social». El resumen de lo facturado sigue en «Resumen del período».
+  - **El panel «Total facturado» de Comprobantes** muestra un solo total (comprobantes contra órdenes), ya no uno por razón social. API: `GET /api/comprobantes/totales` devuelve un objeto y no una lista.
+  - **API**: se quitan `/api/razones-sociales`, `/api/reportes/por-razon-social`, `razon_social_id` de órdenes, pre facturas y comprobantes (y los filtros del mismo nombre), y de `GET /api/comprobantes/fce/corresponde`. `PUT /api/configuracion` valida `condicion_iva` contra el enum (422 si no lo es; `""` es «sin cargar»).
+  - **Migración `0020`** (con `downgrade`): copia a la empresa el CUIT, la condición de IVA y el nombre de la razón social **sólo si a la empresa le faltan y la razón social es única** (la única que hay, o la única con CUIT); pasa el texto de la condición a la enumeración (lo que no se reconoce queda vacío, para elegirlo en la pantalla); quita `razon_social_id` de las cuatro tablas y borra `razones_sociales`. **Antes de desplegar en una instancia: respaldar, y revisar que «Datos de la empresa» tenga el CUIT y la condición de IVA correctos, y que el CUIT de Configuración → ARCA sea el mismo.**
+  - La **demo** se siembra con una empresa ficticia.
+
 ### Agregado
 
 - **PDF de los comprobantes, con el logo y la razón social** (ADR-034). Antes los comprobantes no tenían PDF y el de la pre factura salía sin logo. Ahora la factura, la FCE y la nota de crédito emitidas por ARCA tienen su PDF (el mismo generador que usa toda la familia), y **todos los PDF** —también el de la pre factura— llevan el **logo cargado en «Datos de la empresa»** y los datos de **la razón social que emitió** (nombre, CUIT y condición de IVA; el domicilio, los ingresos brutos y el inicio de actividades de la empresa si son de esa razón social).

@@ -34,7 +34,7 @@ from app.models.enums import CODIGO_ARCA, TIPO_DE_CODIGO, EstadoOrden, TipoCompr
 # Hasta la revisión `0016` este producto tenía su propia tabla `comprobantes`.
 # Desde ahí el comprobante es **el de la familia**: una fila de `facturas` de
 # LibraCore (diseño `libracargo-modelo-normalizado-diseno`, etapa 3b, ADR-030).
-# Lo que sólo usa este producto —la razón social, el tercero con su FK, la marca
+# Lo que sólo usa este producto —el tercero con su FK, la marca
 # de anulado, el origen en el legado— va en `comprobantes_cargo`, una fila por
 # comprobante con el **mismo id**.
 #
@@ -158,11 +158,6 @@ class ComprobanteCargo(Base, Auditable):
         ForeignKey(facturas.c.id, ondelete="RESTRICT", name="fk_comprobantes_cargo_factura"),
         primary_key=True, autoincrement=False,
     )
-    #: La razón social que lo emitió. El emisor del motor (`facturas.emisor_id`)
-    #: es el par de ARCA de su CUIT, y es `NULL` mientras no tenga uno.
-    razon_social_id: Mapped[int] = mapped_column(
-        ForeignKey("razones_sociales.id", ondelete="RESTRICT"), nullable=False
-    )
     #: El tercero con su FK. En `facturas` quedan además sus datos fiscales
     #: copiados al emitir, que son los que valen para el libro IVA.
     cliente_id: Mapped[int] = mapped_column(
@@ -187,7 +182,6 @@ class ComprobanteCargo(Base, Auditable):
     __table_args__ = (
         Index("ix_comprobantes_cargo_asociado", "comprobante_asociado_id"),
         Index("ix_comprobantes_cargo_cliente", "cliente_id"),
-        Index("ix_comprobantes_cargo_razon_social", "razon_social_id"),
         Index("ix_comprobantes_cargo_origen_legado", "origen_legado", unique=True),
     )
 
@@ -196,7 +190,7 @@ _cargo = ComprobanteCargo.__table__
 
 
 class Comprobante(Base):
-    """Factura o nota de crédito emitida por una de las razones sociales propias.
+    """Factura o nota de crédito emitida por la empresa de la instancia.
 
     Es la unión de `facturas` (el comprobante de la familia) y `comprobantes_cargo`
     (lo propio). Se **lee** como antes; se **crea, se le guarda el CAE y se
@@ -223,13 +217,12 @@ class Comprobante(Base):
 
 
 class PreFacturaCargo(Base):
-    """Lo que sólo este producto sabe de una pre factura: la razón social que facturaría y el tercero.
+    """Lo que sólo este producto sabe de una pre factura: el tercero.
 
     La pre factura vive en `comprobantes_pendientes` del motor (ADR-030 de LibraCore), que guarda al
-    cliente como foto y al emisor como el `arca_config` de su CUIT, o `NULL` si la razón social no
-    tiene uno. Eso no alcanza para facturar: una razón social **sin** certificado queda sin emisor, y
-    el error de «no tiene configurado el certificado» tiene que nombrarla. Una fila por pre factura,
-    con el **mismo id**, como `comprobantes_cargo` con `facturas`.
+    cliente como foto y al emisor como el `arca_config` del CUIT de la empresa, o `NULL` si la instancia
+    todavía no tiene uno. El tercero es una FK de este producto, que la bandeja del motor no conoce.
+    Una fila por pre factura, con el **mismo id**, como `comprobantes_cargo` con `facturas`.
     """
 
     __tablename__ = "pre_facturas_cargo"
@@ -240,17 +233,11 @@ class PreFacturaCargo(Base):
                    name="fk_pre_facturas_cargo_pre_factura"),
         primary_key=True, autoincrement=False,
     )
-    razon_social_id: Mapped[int] = mapped_column(
-        ForeignKey("razones_sociales.id", ondelete="RESTRICT"), nullable=False
-    )
     cliente_id: Mapped[int] = mapped_column(
         ForeignKey("terceros.id", ondelete="RESTRICT"), nullable=False
     )
 
-    __table_args__ = (
-        Index("ix_pre_facturas_cargo_cliente", "cliente_id"),
-        Index("ix_pre_facturas_cargo_razon_social", "razon_social_id"),
-    )
+    __table_args__ = (Index("ix_pre_facturas_cargo_cliente", "cliente_id"),)
 
 
 class PreFacturaOrden(Base):
@@ -286,9 +273,6 @@ class ComprobanteDeApertura(Base, Auditable):
     __tablename__ = "comprobante_de_apertura"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    razon_social_id: Mapped[int] = mapped_column(
-        ForeignKey("razones_sociales.id", ondelete="RESTRICT"), nullable=False
-    )
     cliente_id: Mapped[int] = mapped_column(
         ForeignKey("terceros.id", ondelete="RESTRICT"), nullable=False
     )
@@ -354,9 +338,6 @@ class OrdenCarga(Base, Auditable, Anotable):
              values_callable=lambda e: [m.value for m in e]),
         nullable=False,
         default=EstadoOrden.PENDIENTE,
-    )
-    razon_social_id: Mapped[int | None] = mapped_column(
-        ForeignKey("razones_sociales.id", ondelete="RESTRICT"), nullable=True
     )
     # FK real, no el número de factura copiado a mano como hacía el legado. Desde
     # la revisión `0016` apunta a `facturas` del motor, donde vive el comprobante.

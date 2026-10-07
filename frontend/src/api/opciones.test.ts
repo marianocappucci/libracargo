@@ -36,7 +36,7 @@ function responder(porRecurso: Record<string, unknown[]>) {
 
 const VACIOS = {
   terceros: TERCEROS, localidades: [], choferes: [], vehiculos: [],
-  'tipos-carga': [], 'razones-sociales': [],
+  'tipos-carga': [],
 }
 
 describe('cargarOpciones', () => {

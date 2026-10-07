@@ -61,7 +61,6 @@ def listar(
     origen_id: int | None = None,
     destino_id: int | None = None,
     tipo_carga_id: int | None = None,
-    razon_social_id: int | None = None,
     estado: EstadoOrden | None = None,
     # `None` es "las dos", distinto de `False`. Es el filtro que en el legado
     # era una pantalla propia: "facturar pendientes".
@@ -83,7 +82,6 @@ def listar(
         (OrdenCarga.origen_id, origen_id),
         (OrdenCarga.destino_id, destino_id),
         (OrdenCarga.tipo_carga_id, tipo_carga_id),
-        (OrdenCarga.razon_social_id, razon_social_id),
         (OrdenCarga.estado, estado),
     ):
         if valor is not None:

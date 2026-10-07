@@ -46,7 +46,7 @@ describe('preFacturas', () => {
   })
 
   it('crear y editar van a los caminos de siempre, sin punto de venta ni número', async () => {
-    const datos = { razon_social_id: 5, tipo: 'factura_a', fecha: '2026-08-20', orden_ids: [1, 2] }
+    const datos = { tipo: 'factura_a', fecha: '2026-08-20', orden_ids: [1, 2] }
     await preFacturas.crear({ ...datos, cliente_id: 1 })
     expect(post).toHaveBeenCalledWith('/api/pre-facturas', { ...datos, cliente_id: 1 })
     await preFacturas.editar(7, datos)

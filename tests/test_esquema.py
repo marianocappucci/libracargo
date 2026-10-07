@@ -21,7 +21,6 @@ from app.models import (
     Localidad,
     MovimientoCuenta,
     OrdenCarga,
-    RazonSocial,
     RolCuenta,
     Tercero,
     TipoComprobante,
@@ -220,12 +219,9 @@ def test_una_orden_facturada_exige_comprobante(sesion):
 
 
 def test_una_orden_pendiente_no_puede_tener_comprobante(sesion):
-    rs = RazonSocial(nombre="Suitrans", punto_venta=1, codigo_legado=1)
-    sesion.add(rs)
-    sesion.commit()
     cliente = _cliente(sesion, "OTRO CLIENTE")
     comp = comprobantes.crear(
-        sesion, razon_social_id=rs.id, tipo=TipoComprobante.FACTURA_A, punto_venta=1,
+        sesion, tipo=TipoComprobante.FACTURA_A, punto_venta=1,
         numero=1, fecha=date(2026, 5, 4), cliente_id=cliente.id, neto=Decimal("1"),
         iva=Decimal("0.21"), total=Decimal("1.21"), items=[])
     sesion.commit()
@@ -242,14 +238,11 @@ def test_la_numeracion_de_comprobantes_no_se_repite(sesion):
     Desde la `0016` lo garantiza el índice de numeración de `facturas` del motor
     (`idx_facturas_numeracion`), y el registro manual lo dice con nombre antes de
     llegar a él (`registrar_comprobante`)."""
-    rs = RazonSocial(nombre="Suitrans", punto_venta=1, codigo_legado=1)
-    sesion.add(rs)
-    sesion.commit()
     cliente = _cliente(sesion)
 
     def comp(numero):
         return comprobantes.crear(
-            sesion, razon_social_id=rs.id, tipo=TipoComprobante.FACTURA_A, punto_venta=1,
+            sesion, tipo=TipoComprobante.FACTURA_A, punto_venta=1,
             numero=numero, fecha=date(2026, 5, 4), cliente_id=cliente.id,
             neto=Decimal("100"), iva=Decimal("21"), total=Decimal("121"), items=[])
 

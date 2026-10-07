@@ -1,4 +1,4 @@
-/** Las seis pantallas de maestros.
+/** Las cinco pantallas de maestros.
  *
  * Cada una es la misma `AbmMaestro` con sus columnas y sus campos. Lo que se
  * elige acá son las columnas: **la tabla no muestra todo lo que el formulario
@@ -10,17 +10,14 @@ import type { Maestro } from '@/api/maestros'
 import { AbmMaestro } from '@/components/AbmMaestro'
 
 import {
-  CAMPOS_CHOFER, CAMPOS_LOCALIDAD, CAMPOS_RAZON_SOCIAL, CAMPOS_TERCERO,
-  CAMPOS_TIPO_CARGA, CAMPOS_VEHICULO, CONDICIONES_IVA,
+  CAMPOS_CHOFER, CAMPOS_LOCALIDAD, CAMPOS_TERCERO,
+  CAMPOS_TIPO_CARGA, CAMPOS_VEHICULO,
 } from './definiciones'
 
 const col = (nombre: string, etiqueta: string) => ({
   accessorKey: nombre,
   header: sortableHeader(etiqueta),
 })
-
-const etiquetaIva = (v: unknown) =>
-  CONDICIONES_IVA.find((c) => c.valor === v)?.etiqueta ?? ''
 
 export function Terceros() {
   return (
@@ -86,25 +83,6 @@ export function Vehiculos() {
       columnas={[col('patente_chasis', 'Chasis'),
                  col('patente_acoplado', 'Acoplado')]}
       buscarEn={(f) => [f.patente_chasis as string, f.patente_acoplado as string]}
-    />
-  )
-}
-
-export function RazonesSociales() {
-  return (
-    <AbmMaestro<Maestro>
-      recurso="razones-sociales"
-      titulo="Razones sociales"
-      campos={CAMPOS_RAZON_SOCIAL}
-      columnas={[
-        col('nombre', 'Nombre'),
-        col('cuit', 'CUIT'),
-        { id: 'iva', header: 'Condición de IVA',
-          accessorFn: (f: Maestro) => etiquetaIva(f.condicion_iva) },
-        col('punto_venta', 'Punto de venta'),
-      ]}
-      buscarEn={(f) => [f.nombre as string, f.cuit as string]}
-      defaults={{ condicion_iva: 'responsable_inscripto', punto_venta: 1 } as Partial<Maestro>}
     />
   )
 }

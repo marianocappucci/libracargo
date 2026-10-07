@@ -25,7 +25,7 @@ function orden(id: number, estado: string) {
   return {
     id, fecha: '2026-08-10', cliente_id: 1, origen_id: 1, destino_id: 2,
     fletero_id: null, chofer_id: null, vehiculo_id: null, tipo_carga_id: null,
-    razon_social_id: null, remito: null, cantidad: null, unidad: null,
+    remito: null, cantidad: null, unidad: null,
     tarifa: '1000.00', alicuota_iva: '21.00', iva: '210.00', total: '1210.00',
     comision: '0.00', estado, comprobante_id: null, observaciones: null,
   }

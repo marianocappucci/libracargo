@@ -5,8 +5,8 @@ Vertical de **agencia de cargas** de la familia Libra.
 Una agencia de cargas no transporta: **intermedia**. Toma una orden de un
 cliente, se la asigna a un fletero con su chofer y su equipo, le cobra al
 cliente, le paga al fletero y vive de la comisión. De ahí las **tres cuentas
-corrientes** que se mueven en direcciones opuestas sobre la misma operación, y
-las **razones sociales propias** con las que se factura la misma actividad.
+corrientes** que se mueven en direcciones opuestas sobre la misma operación. Se
+factura con un **único emisor**: los «Datos de la empresa» (ADR-035).
 
 Nace del relevamiento de **Suitrans**, un sistema PHP de 2021 en producción que
 resuelve este dominio. Ese sistema **no se toca**: LibraCargo se construye en
