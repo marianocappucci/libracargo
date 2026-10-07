@@ -5,6 +5,7 @@ import Layout from '@/components/Layout'
 import { useAuth } from '@/context/AuthContext'
 import Inicio from '@/pages/Inicio'
 import Caja from '@/pages/Caja'
+import CartasDePorte from '@/pages/CartasDePorte'
 import ComprobantesSeccion from '@/pages/ComprobantesSeccion'
 import EditarPreFactura from '@/pages/EditarPreFactura'
 import FacturarPendientes from '@/pages/FacturarPendientes'
@@ -64,6 +65,7 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<Inicio />} />
                 <Route path="/ordenes" element={<Ordenes />} />
+                <Route path="/cartas-porte" element={<CartasDePorte />} />
                 <Route path="/cuentas" element={<CuentaCorriente />} />
                 <Route path="/caja" element={<Caja />} />
                 {/* Una entrada de menú, dos pestañas (`?seccion=`): Clientes —la ruta pelada— y Proveedores. */}

@@ -149,7 +149,8 @@ def test_upgrade_downgrade_upgrade(base_limpia):
         # `movimientos_cuenta_legado`.
         # Y subió a 17 con la `0019` (`pre_facturas_cargo` y `pre_factura_ordenes`).
         # Y bajó a 16 con la `0020`, que borra `razones_sociales` (ADR-035).
-        assert tablas - del_motor == 16
+        # Y subió a 18 con la `0021` (`cartas_porte` y `cartas_porte_pdf`, ADR-036).
+        assert tablas - del_motor == 18
         eng.dispose()
     finally:
         if original:

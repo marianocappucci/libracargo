@@ -3,6 +3,14 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Cartas de porte: traerlas de ARCA por su CTG
+
+- **Pantalla nueva «Cartas de porte»** (ADR-036): se pegan uno o varios CTG, se elige **por qué CUIT se consulta** (los que delegaron el servicio en ARCA; no hay valor por defecto) y se traen de ARCA estado, kilos de carga y de descarga, chofer, pagador del flete, transportista, dominios, origen, destino, km, tarifa y el **PDF**. Vista previa antes de guardar, resultado por CTG (uno que falla no frena a los demás), «Actualizar» una o **todas las abiertas** hasta que ARCA informe la descarga, y **vincular con una orden de carga**.
+- **API** `/api/cartas-porte`: `GET /representados`, `POST /consultar` (vista previa), `POST` (guardar un lote de hasta 50), `GET` (con `abiertas`, `orden_carga_id`, `ctg`), `GET /{id}`, `POST /{id}/actualizar`, `POST /actualizar-abiertas`, `PUT /{id}/orden`, `GET /{id}/pdf`.
+- **Migración `0021`**: tablas nuevas `cartas_porte` y `cartas_porte_pdf`, vacías. No toca nada de lo que hay.
+- **Pin**: libracore v1.143.0 (`libracore.arca_wscpe`, ADR-034 del motor).
+- **Para usarlo**: el certificado de «CTG y Carta de Porte» cargado en Configuración → ARCA y la **delegación de `wscpe` hecha en ARCA** por cada CUIT por el que se consulte.
+
 ## [Unreleased] — Configuración → ARCA muestra el CTG y la Carta de Porte
 
 - La pantalla de ARCA tiene un bloque por servicio: **Facturación** y **CTG y Carta de Porte** (`wscpe`). Cada uno con su certificado y clave por ambiente, a nombre de qué CUIT está el certificado, cuándo vence y «Probar» contra ARCA para ese servicio (libracore v1.142.0, ADR-032; libra-ui v0.120.0, ADR-030).

@@ -1,5 +1,6 @@
 from app.models.auditoria import RegistroAuditoria
 from app.models.base import Base
+from app.models.cartas_porte import CartaPorte, CartaPortePdf
 from app.models.configuracion import ConfiguracionEmpresa
 from app.models.cuentas import MovimientoCaja, MovimientoCuenta
 from app.models.enums import (
@@ -29,7 +30,7 @@ from app.models.operacion import (
 )
 
 __all__ = [
-    "AccionAuditoria", "Base", "Chofer", "Comprobante", "ComprobanteCargo",
+    "AccionAuditoria", "Base", "CartaPorte", "CartaPortePdf", "Chofer", "Comprobante", "ComprobanteCargo",
     "ComprobanteDeApertura", "CondicionIVA",
     "EstadoOrden", "GastoDeProveedor", "Localidad", "MedioPago", "MovimientoCaja",
     "MovimientoCuenta", "OrdenCarga", "PreFacturaCargo", "PreFacturaOrden", "ConfiguracionEmpresa",

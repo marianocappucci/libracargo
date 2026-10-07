@@ -43,7 +43,7 @@ const { NAV_SECCIONES } = await import('@/components/Layout')
 const SRC = join(process.cwd(), 'src')
 const leer = (ruta: string) => readFileSync(join(SRC, ruta), 'utf8')
 
-/** Qué concepto del catálogo es cada entrada del menú que lo tiene. «Órdenes de carga» es de este producto y no entra al catálogo. */
+/** Qué concepto del catálogo es cada entrada del menú que lo tiene. «Órdenes de carga» y «Cartas de porte» son de este producto y no entran al catálogo. */
 const MENU: Record<string, Concepto> = {
   '/': 'dashboard',
   '/cuentas': 'cuentaCorriente',
@@ -103,10 +103,10 @@ describe('el menú usa el catálogo', () => {
     }
   })
 
-  it('🔴 la entrada propia del producto (Órdenes de carga) no usa el dibujo de un concepto del catálogo', () => {
+  it('🔴 las entradas propias del producto (Órdenes de carga y Cartas de porte) no usan el dibujo de un concepto del catálogo', () => {
     const delCatalogo = new Set(Object.values(iconosDe('libracargo')).map(nombre))
     const propias = [...iconosDelNav(leer('components/Layout.tsx'))].filter(([ruta]) => !(ruta in MENU))
-    expect(propias.map(([ruta]) => ruta)).toEqual(['/ordenes'])
+    expect(propias.map(([ruta]) => ruta)).toEqual(['/ordenes', '/cartas-porte'])
     for (const [, icono] of propias) {
       expect(delCatalogo.has(nombre((lucide as unknown as Record<string, unknown>)[icono]) ?? icono)).toBe(false)
     }
