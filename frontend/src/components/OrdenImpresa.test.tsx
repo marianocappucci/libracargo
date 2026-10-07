@@ -29,6 +29,9 @@ const ORDEN = {
   comision: '468622.38', estado: 'facturada' as const, comprobante_id: 741,
   observaciones: 'Descargar por portón trasero', cantidad_legado: null,
   origen_legado: 'carga:4339',
+  etapa: 'cerrada' as const,
+  kg_bruto_carga: null, kg_tara_carga: null, kg_neto_carga: null,
+  kg_bruto_descarga: null, kg_tara_descarga: null, kg_neto_descarga: null,
 }
 
 const EMPRESA = {

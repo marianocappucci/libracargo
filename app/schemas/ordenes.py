@@ -8,12 +8,12 @@
 > `alicuota_iva`, y el resto sale de ahí.
 """
 
-from datetime import date
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.enums import EstadoOrden
+from app.models.enums import EstadoOrden, EtapaOrden
 
 #: La alícuota general. El legado la tenía fija; acá es un default editable,
 #: porque el relevamiento con el cliente sobre operaciones con otra alícuota
@@ -65,6 +65,16 @@ class CamposDeOrden(BaseModel):
     comision: Decimal = Field(default=Decimal(0), ge=0)
     observaciones: str | None = None
 
+    #: La etapa del viaje (ADR-037), aparte del estado de facturación.
+    etapa: EtapaOrden = EtapaOrden.ASIGNADA
+    #: Kilos de la pesada al cargar y del ticket al descargar. Enteros.
+    kg_bruto_carga: int | None = Field(default=None, ge=0)
+    kg_tara_carga: int | None = Field(default=None, ge=0)
+    kg_neto_carga: int | None = Field(default=None, ge=0)
+    kg_bruto_descarga: int | None = Field(default=None, ge=0)
+    kg_tara_descarga: int | None = Field(default=None, ge=0)
+    kg_neto_descarga: int | None = Field(default=None, ge=0)
+
 class OrdenIn(CamposDeOrden):
     """Lo que se acepta al crear o modificar. Acá sí van las reglas."""
 
@@ -81,6 +91,31 @@ class OrdenIn(CamposDeOrden):
             raise ValueError("el origen y el destino no pueden ser el mismo lugar")
         return self
 
+    @model_validator(mode="after")
+    def _neto_de_bruto_y_tara(self):
+        """Con bruto y tara, el neto es la resta y lo pone el servidor; uno distinto que venga es un error de carga.
+
+        Sin bruto o sin tara, el neto se acepta solo: a veces es lo único que se sabe (lo que dice el ticket).
+        """
+        for tramo in ("carga", "descarga"):
+            bruto, tara = getattr(self, f"kg_bruto_{tramo}"), getattr(self, f"kg_tara_{tramo}")
+            neto = getattr(self, f"kg_neto_{tramo}")
+            if bruto is None or tara is None:
+                continue
+            if tara > bruto:
+                raise ValueError(
+                    f"los kilos de {tramo}: la tara ({tara}) no puede ser mayor que el bruto ({bruto})")
+            if neto is not None and neto != bruto - tara:
+                raise ValueError(
+                    f"los kilos de {tramo}: el neto ({neto}) no es bruto menos tara "
+                    f"({bruto} - {tara} = {bruto - tara})")
+            setattr(self, f"kg_neto_{tramo}", bruto - tara)
+        return self
+
+
+class EtapaIn(BaseModel):
+    etapa: EtapaOrden
+
 
 class OrdenOut(CamposDeOrden):
     """Lo que se devuelve. **No hereda de `OrdenIn` a propósito**: lo que ya está
@@ -94,3 +129,16 @@ class OrdenOut(CamposDeOrden):
     total: Decimal
     cantidad_legado: str | None = None
     origen_legado: str | None = None
+
+
+class AdjuntoOut(BaseModel):
+    """Un adjunto sin su contenido: el archivo se baja aparte."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    orden_id: int
+    nombre: str
+    tipo_contenido: str
+    tamanio: int
+    created_at: datetime

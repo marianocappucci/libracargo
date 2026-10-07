@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { VALORES_DE_ETAPA } from '@/api/ordenes'
+
 /** El esquema del formulario de orden.
  *
  * Acá SÍ entran Zod y React Hook Form, a diferencia de los seis ABM de
@@ -12,6 +14,27 @@ import { z } from 'zod'
  * > como `CHECK` en la base, que es la única que no puede mentir. No es
  * > duplicación: es la misma regla dicha en las tres capas que pueden fallar.
  */
+/** Kilos de un campo del formulario: vacío es «no se sabe» (`null`), no cero. Enteros ≥ 0, como en el backend. */
+const kilos = z.preprocess(
+  (v) => (v === '' || v == null || (typeof v === 'number' && Number.isNaN(v)) ? null : v),
+  z.coerce.number({ error: 'los kilos tienen que ser un número' })
+    .int('los kilos son un número entero')
+    .min(0, 'los kilos no pueden ser negativos')
+    .nullable(),
+)
+
+/** Los dos tramos con kilos: lo que se pesó al cargar y lo que dice el ticket al descargar. */
+export const TRAMOS_DE_KILOS = ['carga', 'descarga'] as const
+export type TramoDeKilos = (typeof TRAMOS_DE_KILOS)[number]
+
+/** El neto de un tramo cuando se puede calcular: hay bruto y tara y la tara no pasa al bruto. */
+export function netoCalculado(bruto: unknown, tara: unknown): number | null {
+  if (bruto === '' || bruto == null || tara === '' || tara == null) return null
+  const b = Number(bruto)
+  const t = Number(tara)
+  return Number.isInteger(b) && Number.isInteger(t) && b >= 0 && t >= 0 && t <= b ? b - t : null
+}
+
 export const esquemaOrden = z
   .object({
     fecha: z.string().min(1, 'la fecha es obligatoria'),
@@ -22,20 +45,53 @@ export const esquemaOrden = z
     chofer_id: z.coerce.number().int().positive().nullable().optional(),
     vehiculo_id: z.coerce.number().int().positive().nullable().optional(),
     tipo_carga_id: z.coerce.number().int().positive().nullable().optional(),
-    remito: z.string().max(30).optional(),
-    cantidad: z.string().optional(),
-    unidad: z.string().max(20).optional(),
+    // `nullish` y no `optional`: la API devuelve `null` en lo que no se cargó, y editar una orden sin remito
+    // (o sin cantidad, o sin observaciones) quedaba trabado con «expected string, received null» sin que el
+    // usuario hubiera tocado ese campo.
+    remito: z.string().max(30).nullish(),
+    cantidad: z.string().nullish(),
+    unidad: z.string().max(20).nullish(),
     // Los importes se manejan como TEXTO. Pasarlos por `number` los mete en un
     // float binario, que es exactamente el defecto que este producto viene a
     // reparar: en el legado el dinero estaba en `float` de precisión simple.
     tarifa: z.string().regex(/^\d+(\.\d{1,2})?$/, 'importe inválido'),
     alicuota_iva: z.string().regex(/^\d+(\.\d{1,2})?$/, 'alícuota inválida'),
     comision: z.string().regex(/^\d+(\.\d{1,2})?$/, 'importe inválido'),
-    observaciones: z.string().optional(),
+    observaciones: z.string().nullish(),
+    etapa: z.enum(VALORES_DE_ETAPA).default('asignada'),
+    kg_bruto_carga: kilos,
+    kg_tara_carga: kilos,
+    kg_neto_carga: kilos,
+    kg_bruto_descarga: kilos,
+    kg_tara_descarga: kilos,
+    kg_neto_descarga: kilos,
   })
   .refine((d) => d.origen_id !== d.destino_id, {
     message: 'el origen y el destino no pueden ser el mismo lugar',
     path: ['destino_id'],
+  })
+  // Con bruto y tara, la tara no puede pasar al bruto: el mismo mensaje que el 422 del backend.
+  .superRefine((d, ctx) => {
+    for (const tramo of TRAMOS_DE_KILOS) {
+      const bruto = d[`kg_bruto_${tramo}`]
+      const tara = d[`kg_tara_${tramo}`]
+      if (bruto != null && tara != null && tara > bruto) {
+        ctx.addIssue({
+          code: 'custom', path: [`kg_tara_${tramo}`],
+          message: `los kilos de ${tramo}: la tara (${tara}) no puede ser mayor que el bruto (${bruto})`,
+        })
+      }
+    }
+  })
+  // 🔑 El neto lo decide la resta cuando hay bruto y tara: se manda ese y no el que haya quedado tipeado, que
+  // el servidor rechazaría con un 422 si no coincide.
+  .transform((d) => {
+    const neto = { ...d }
+    for (const tramo of TRAMOS_DE_KILOS) {
+      const calculado = netoCalculado(d[`kg_bruto_${tramo}`], d[`kg_tara_${tramo}`])
+      if (calculado !== null) neto[`kg_neto_${tramo}`] = calculado
+    }
+    return neto
   })
 
 /** 🔑 El formulario tiene DOS tipos, y no son el mismo.
@@ -127,8 +183,19 @@ export function formatearFechaHora(valor: Date): string {
   return `${d.day}-${d.month}-${d.year} ${d.hour}:${d.minute}`
 }
 
+/** `850` → `850 B`, `1536` → `1,5 KB`, `2411724` → `2,3 MB`: el tamaño de un archivo como se lee. */
+export function formatearTamanio(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const unidades = ['KB', 'MB', 'GB']
+  let valor = bytes / 1024
+  let i = 0
+  while (valor >= 1024 && i < unidades.length - 1) { valor /= 1024; i += 1 }
+  return `${valor.toFixed(1).replace('.', ',').replace(/,0$/, '')} ${unidades[i]}`
+}
+
 export const ORDEN_VACIA: Partial<EntradaOrden> = {
   fecha: hoyISO(),
+  etapa: 'asignada',
   tarifa: '0.00',
   alicuota_iva: '21.00',
   comision: '0.00',

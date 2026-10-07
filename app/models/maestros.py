@@ -99,6 +99,8 @@ class Chofer(Base, Auditable, Anotable):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     nombre: Mapped[str] = mapped_column(String(120), nullable=False)
     dni: Mapped[str | None] = mapped_column(String(15), nullable=True)
+    #: Once dígitos, sin guiones (ADR-037). Es lo que trae la Carta de Porte (`cuitChofer`) y con lo que se cruza.
+    cuit: Mapped[str | None] = mapped_column(String(11), nullable=True)
     telefono: Mapped[str | None] = mapped_column(String(40), nullable=True)
     fletero_id: Mapped[int | None] = mapped_column(
         ForeignKey("terceros.id", ondelete="RESTRICT"), nullable=True
@@ -110,6 +112,7 @@ class Chofer(Base, Auditable, Anotable):
 
     __table_args__ = (
         Index("ix_choferes_fletero", "fletero_id"),
+        Index("ix_choferes_cuit", "cuit"),
         Index("ix_choferes_nombre", "nombre"),
         Index("ix_choferes_origen_legado", "origen_legado", unique=True),
     )

@@ -55,6 +55,8 @@ export const CAMPOS_LOCALIDAD: Campo[] = [
 export const CAMPOS_CHOFER: Campo[] = [
   { nombre: 'nombre', etiqueta: 'Nombre' },
   { nombre: 'dni', etiqueta: 'DNI' },
+  // Es el que trae la Carta de Porte: con él se cruza el chofer de la CPE con el de la orden (ADR-037).
+  { nombre: 'cuit', etiqueta: 'CUIT', tipo: 'cuit' },
   { nombre: 'telefono', etiqueta: 'Teléfono' },
   { nombre: 'fletero_id', etiqueta: 'ID del fletero', tipo: 'numero' },
   { nombre: 'observaciones', etiqueta: 'Observaciones' },

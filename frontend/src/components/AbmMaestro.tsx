@@ -20,6 +20,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import type { Maestro, Recurso } from '@/api/maestros'
 import { clienteDe } from '@/api/maestros'
+import { enmascararCuit } from '@/api/cartas-porte'
 import { BadgeEstado } from 'libra-ui/badge-estado'
 import { Button } from '@/components/ui/button'
 import {
@@ -34,7 +35,7 @@ export type Campo = {
   etiqueta: string
   // `provincia` y `localidad` guardan **texto**, no un id: son los mismos
   // campos de siempre con un desplegable adelante. Ver `CamposGeo`.
-  tipo?: 'texto' | 'numero' | 'booleano' | 'opciones' | 'provincia' | 'localidad'
+  tipo?: 'texto' | 'numero' | 'booleano' | 'opciones' | 'provincia' | 'localidad' | 'cuit'
   opciones?: { valor: string; etiqueta: string }[]
   /** Sólo para `localidad`: de qué campo del formulario sale la provincia con
    *  la que se filtra el catálogo. */
@@ -112,6 +113,18 @@ function CampoForm({ campo, valor, borrador, alCambiar }: {
             <option key={o.valor} value={o.valor}>{o.etiqueta}</option>
           ))}
         </select>
+      </div>
+    )
+  }
+  if (campo.tipo === 'cuit') {
+    // Se ve con guiones (`20-12345678-6`) y así viaja: el servidor acepta con o sin y lo guarda en once dígitos.
+    // Vacío es `null`: «sin CUIT» no es un CUIT de cero dígitos. El verificador lo controla sólo el backend.
+    return (
+      <div className="grid gap-1">
+        <Label htmlFor={id}>{campo.etiqueta}</Label>
+        <Input id={id} inputMode="numeric" placeholder="20-12345678-6" autoComplete="off"
+               value={enmascararCuit(valor === null || valor === undefined ? '' : String(valor))}
+               onChange={(e) => alCambiar(enmascararCuit(e.target.value) || null)} />
       </div>
     )
   }
@@ -229,7 +242,9 @@ export function AbmMaestro<T extends Maestro>({
         </Button>
       </div>
 
-      {error && (
+      {/* Con el formulario abierto el error se lee adentro: el de la página queda detrás del modal y el 422 del
+          servidor («el CUIT del chofer no es válido…») no lo vería nadie. */}
+      {error && !abierto && (
         <p role="alert" className="mb-4 rounded border border-destructive/40 p-3 text-sm">
           {error}
         </p>
@@ -259,6 +274,9 @@ export function AbmMaestro<T extends Maestro>({
                          alCambiar={(v) => setBorrador((b) => ({ ...b, [c.nombre]: v }))} />
             ))}
           </div>
+          {error && (
+            <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{error}</p>
+          )}
           <DialogFooter>
             <Button variant="ghost" onClick={() => setAbierto(false)}>Cancelar</Button>
             <Button onClick={guardar}>Guardar</Button>
