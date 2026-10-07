@@ -6,6 +6,7 @@
  */
 import { sortableHeader } from 'libra-ui/data-table'
 
+import { formatearCuit } from '@/api/cartas-porte'
 import type { Maestro } from '@/api/maestros'
 import { AbmMaestro } from '@/components/AbmMaestro'
 
@@ -68,8 +69,12 @@ export function Choferes() {
       titulo="Choferes"
       campos={CAMPOS_CHOFER}
       columnas={[col('nombre', 'Nombre'), col('dni', 'DNI'),
+                 // Se guarda en once dígitos; en la tabla se lee con guiones.
+                 { id: 'cuit', header: sortableHeader('CUIT'),
+                   accessorFn: (f: Maestro) => formatearCuit(f.cuit as string | null) },
                  col('telefono', 'Teléfono')]}
-      buscarEn={(f) => [f.nombre as string, f.dni as string, f.telefono as string]}
+      buscarEn={(f) => [f.nombre as string, f.dni as string, f.cuit as string,
+                        formatearCuit(f.cuit as string | null), f.telefono as string]}
     />
   )
 }

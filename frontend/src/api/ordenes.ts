@@ -1,4 +1,24 @@
 import { api } from 'libra-ui/api-client'
+import type { TonoEstado } from 'libra-ui/badge-estado'
+
+/** Por dónde va el viaje (ADR-037). **No es el estado de facturación**: una orden facturada sigue teniendo etapa. */
+export const VALORES_DE_ETAPA = ['asignada', 'cargada', 'en_viaje', 'descargada', 'cerrada'] as const
+export type Etapa = (typeof VALORES_DE_ETAPA)[number]
+
+/** En el orden del viaje: «Siguiente etapa» es la que sigue en esta lista. */
+export const ETAPAS: { valor: Etapa; etiqueta: string }[] = [
+  { valor: 'asignada', etiqueta: 'Asignada' },
+  { valor: 'cargada', etiqueta: 'Cargada' },
+  { valor: 'en_viaje', etiqueta: 'En viaje' },
+  { valor: 'descargada', etiqueta: 'Descargada' },
+  { valor: 'cerrada', etiqueta: 'Cerrada' },
+]
+
+/** La etapa siguiente en el viaje, o `null` si ya es la última. */
+export function etapaSiguiente(etapa: Etapa): Etapa | null {
+  const i = VALORES_DE_ETAPA.indexOf(etapa)
+  return VALORES_DE_ETAPA[i + 1] ?? null
+}
 
 export type Orden = {
   id: number
@@ -23,6 +43,14 @@ export type Orden = {
   total: string
   comision: string
   estado: 'pendiente' | 'facturada' | 'anulada'
+  etapa: Etapa
+  /** Kilos enteros de la pesada al cargar y del ticket al descargar; `null` mientras no se saben. */
+  kg_bruto_carga: number | null
+  kg_tara_carga: number | null
+  kg_neto_carga: number | null
+  kg_bruto_descarga: number | null
+  kg_tara_descarga: number | null
+  kg_neto_descarga: number | null
   comprobante_id: number | null
   observaciones: string | null
   /** Lo que el legado tenia en  cuando no era un numero
@@ -46,6 +74,7 @@ export type Filtros = {
   destino_id?: number
   tipo_carga_id?: number
   estado?: string
+  etapa?: Etapa
   facturada?: boolean
   /** Reservada en una pre factura abierta. `false` son las que se pueden incluir en una pre factura nueva. */
   reservada?: boolean
@@ -56,6 +85,21 @@ export type Filtros = {
    *  impresa sí: pide de a mil hasta traer el listado entero. */
   limite?: number
   desplazamiento?: number
+}
+
+/** Lo que se muestra como etapa de una orden: la anulada y la facturada mandan sobre la etapa del viaje.
+ *
+ *  «Liquidada» es «facturada» (decisión del humano, ADR-037): el estado de facturación no cambia, sólo cómo se lee. */
+export function etapaMostrada(o: Pick<Orden, 'estado' | 'etapa'>): { clave: string; etiqueta: string; tono: TonoEstado } {
+  if (o.estado === 'anulada') return { clave: 'anulada', etiqueta: 'Anulada', tono: 'negativo' }
+  if (o.estado === 'facturada') return { clave: 'liquidada', etiqueta: 'Liquidada', tono: 'ok' }
+  const tono: Record<Etapa, TonoEstado> = {
+    asignada: 'neutro', cargada: 'curso', en_viaje: 'curso', descargada: 'atencion', cerrada: 'ok',
+  }
+  return {
+    clave: o.etapa, tono: tono[o.etapa],
+    etiqueta: ETAPAS.find((e) => e.valor === o.etapa)?.etiqueta ?? o.etapa,
+  }
 }
 
 export function consulta(filtros: Filtros): string {
@@ -80,6 +124,32 @@ export const ordenes = {
   crear: (datos: unknown) => api.post<Orden>('/api/ordenes', datos),
   editar: (id: number, datos: unknown) => api.put<Orden>(`/api/ordenes/${id}`, datos),
   anular: (id: number) => api.del<Orden>(`/api/ordenes/${id}`),
+  /** Vale también para una orden facturada (la etapa es operativa); 409 si está anulada. */
+  cambiarEtapa: (id: number, etapa: Etapa) => api.put<Orden>(`/api/ordenes/${id}/etapa`, { etapa }),
+}
+
+/** Un archivo adjunto a la orden (la foto del ticket de descarga, un remito escaneado), sin su contenido. */
+export type Adjunto = {
+  id: number
+  orden_id: number
+  nombre: string
+  tipo_contenido: string
+  tamanio: number
+  created_at: string
+}
+
+export const adjuntosDeOrden = {
+  listar: (ordenId: number) => api.get<Adjunto[]>(`/api/ordenes/${ordenId}/adjuntos`),
+  /** 422 si está vacío, pasa de 10 MB o no es JPG/PNG/WEBP/HEIC/PDF (lo decide el servidor por el contenido);
+   *  409 si la orden está anulada. Vale también para una facturada. */
+  subir: (ordenId: number, archivo: File) => {
+    const cuerpo = new FormData()
+    cuerpo.append('archivo', archivo)
+    return api.postForm<Adjunto>(`/api/ordenes/${ordenId}/adjuntos`, cuerpo)
+  },
+  borrar: (ordenId: number, id: number) => api.del<void>(`/api/ordenes/${ordenId}/adjuntos/${id}`),
+  /** El archivo: se abre en otra pestaña, la sesión viaja en la cookie. */
+  url: (ordenId: number, id: number) => `/api/ordenes/${ordenId}/adjuntos/${id}`,
 }
 
 /** `detalle` es un texto secundario (el CUIT de un tercero): `Elegir` muestra sólo la etiqueta; los campos que buscan

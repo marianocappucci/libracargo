@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { consulta } from './ordenes'
+import { consulta, etapaMostrada, etapaSiguiente } from './ordenes'
 
 describe('consulta de filtros', () => {
   it('no manda los filtros que no se eligieron', () => {
@@ -27,5 +27,26 @@ describe('consulta de filtros', () => {
     expect(new URLSearchParams(qs).get('desde')).toBe('2026-08-01')
     expect(new URLSearchParams(qs).get('cliente_id')).toBe('3')
     expect(new URLSearchParams(qs).get('facturada')).toBe('false')
+  })
+})
+
+describe('etapa', () => {
+  it('el filtro por etapa viaja en la consulta', () => {
+    expect(consulta({ etapa: 'en_viaje' })).toBe('etapa=en_viaje')
+  })
+
+  it('🔑 liquidada es facturada, y anulada manda sobre todo', () => {
+    expect(etapaMostrada({ estado: 'pendiente', etapa: 'cargada' }))
+      .toMatchObject({ clave: 'cargada', etiqueta: 'Cargada', tono: 'curso' })
+    expect(etapaMostrada({ estado: 'facturada', etapa: 'asignada' }))
+      .toMatchObject({ clave: 'liquidada', etiqueta: 'Liquidada', tono: 'ok' })
+    expect(etapaMostrada({ estado: 'anulada', etapa: 'cerrada' }))
+      .toMatchObject({ clave: 'anulada', etiqueta: 'Anulada', tono: 'negativo' })
+  })
+
+  it('la siguiente etapa sigue el orden del viaje y la última no tiene', () => {
+    expect(etapaSiguiente('asignada')).toBe('cargada')
+    expect(etapaSiguiente('descargada')).toBe('cerrada')
+    expect(etapaSiguiente('cerrada')).toBeNull()
   })
 })

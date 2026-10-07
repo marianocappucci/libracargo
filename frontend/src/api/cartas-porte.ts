@@ -118,6 +118,15 @@ export function formatearCuit(cuit: string | null | undefined): string {
   return digitos.length === 11 ? `${digitos.slice(0, 2)}-${digitos.slice(2, 10)}-${digitos.slice(10)}` : (cuit ?? '')
 }
 
+/** Máscara de un CUIT mientras se escribe: deja sólo dígitos (hasta once) y pone los guiones donde van.
+ *  `2012345678` → `20-12345678`; `20123456786` → `20-12345678-6`. */
+export function enmascararCuit(texto: string): string {
+  const d = texto.replace(/\D/g, '').slice(0, 11)
+  if (d.length <= 2) return d
+  if (d.length <= 10) return `${d.slice(0, 2)}-${d.slice(2)}`
+  return `${d.slice(0, 2)}-${d.slice(2, 10)}-${d.slice(10)}`
+}
+
 /** El nombre del tercero, o su CUIT formateado, o `—`. */
 export function nombreOCuit(parte: Parte | null | undefined): string {
   if (!parte) return '—'

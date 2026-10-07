@@ -7,6 +7,7 @@ from app.models.enums import (
     AccionAuditoria,
     CondicionIVA,
     EstadoOrden,
+    EtapaOrden,
     MedioPago,
     RolCuenta,
     TipoComprobante,
@@ -20,6 +21,7 @@ from app.models.maestros import (
     Vehiculo,
 )
 from app.models.operacion import (
+    AdjuntoDeOrden,
     Comprobante,
     ComprobanteCargo,
     ComprobanteDeApertura,
@@ -30,9 +32,10 @@ from app.models.operacion import (
 )
 
 __all__ = [
-    "AccionAuditoria", "Base", "CartaPorte", "CartaPortePdf", "Chofer", "Comprobante", "ComprobanteCargo",
+    "AccionAuditoria", "AdjuntoDeOrden", "Base", "CartaPorte", "CartaPortePdf", "Chofer", "Comprobante",
+    "ComprobanteCargo",
     "ComprobanteDeApertura", "CondicionIVA",
-    "EstadoOrden", "GastoDeProveedor", "Localidad", "MedioPago", "MovimientoCaja",
+    "EstadoOrden", "EtapaOrden", "GastoDeProveedor", "Localidad", "MedioPago", "MovimientoCaja",
     "MovimientoCuenta", "OrdenCarga", "PreFacturaCargo", "PreFacturaOrden", "ConfiguracionEmpresa",
     "RegistroAuditoria",
     "RolCuenta", "Tercero", "TipoCarga", "TipoComprobante",
