@@ -18,7 +18,7 @@
  * mandarle el link a alguien sin perder dónde estaba.
  */
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
-import { ArrowLeft, Receipt } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -36,6 +36,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
+import { ICONOS_LC } from '@/iconos'
 
 type Borrador = {
   fecha: string
@@ -276,7 +277,7 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
         </Button>
         {editando && titulo
           ? titulo(existente?.numero_interno ?? '')
-          : <TituloPantalla icono={Receipt}>Facturar pendientes</TituloPantalla>}
+          : <TituloPantalla icono={ICONOS_LC.comprobantes}>Facturar pendientes</TituloPantalla>}
       </div>
 
       <p className="text-muted-foreground mb-4 text-sm">

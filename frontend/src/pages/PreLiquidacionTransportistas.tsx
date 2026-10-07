@@ -13,7 +13,7 @@
  * reportes— tiene su **PDF** (con el encabezado de la empresa), que arma el servidor. Ninguno de los
  * dos es un comprobante, y los dos lo dicen.
  */
-import { ArrowLeft, BarChart3, Download, ExternalLink, Printer } from 'lucide-react'
+import { ArrowLeft, Download, ExternalLink, Printer } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
+import { ICONOS_LC } from '@/iconos'
 
 const TITULO = 'Pre liquidación de transportistas'
 const LEYENDA = 'Pre liquidación — no es un comprobante'
@@ -251,7 +252,7 @@ export default function PreLiquidacionTransportistas() {
 
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
-          <TituloPantalla icono={BarChart3}>{TITULO}</TituloPantalla>
+          <TituloPantalla icono={ICONOS_LC.reportes}>{TITULO}</TituloPantalla>
           <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
             Los fletes que hizo cada transportista en el período, con la comisión de cada uno, el
             IVA si es responsable inscripto y los subtotales. Es para mandarle antes de que

@@ -7,7 +7,7 @@
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
 import { BadgeEstado } from 'libra-ui/badge-estado'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
-import { ArrowLeft, Plus, Receipt } from 'lucide-react'
+import { ArrowLeft, Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { irA } from '@/navegacion'
+import { ICONOS_LC } from '@/iconos'
 
 const ESTADOS = Object.keys(NOMBRE_DE_ESTADO) as EstadoPreFactura[]
 
@@ -72,7 +73,7 @@ export default function PreFacturas() {
           <Button variant="ghost" size="icon" asChild aria-label="Volver a Comprobantes">
             <Link to="/comprobantes"><ArrowLeft className="size-4" /></Link>
           </Button>
-          <TituloPantalla icono={Receipt}>Pre facturas</TituloPantalla>
+          <TituloPantalla icono={ICONOS_LC.preFacturas}>Pre facturas</TituloPantalla>
         </div>
         <Button asChild>
           <Link to={irA.facturarPendientes()}>

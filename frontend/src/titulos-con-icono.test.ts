@@ -14,12 +14,12 @@ const SRC = join(process.cwd(), 'src')
 
 describe('el icono del título sale del sidebar', () => {
   it('🔴 ninguna pantalla usa un icono distinto al de su entrada del menú', () => {
-    const { distinto } = auditarTitulos(SRC)
+    const { distinto } = auditarTitulos(SRC, 'libracargo')
     expect(describirDesajustes(distinto)).toEqual([])
   })
 
   it('🔴 ninguna pantalla del menú tiene el título sin icono', () => {
-    const { sinIcono } = auditarTitulos(SRC)
+    const { sinIcono } = auditarTitulos(SRC, 'libracargo')
     expect(describirDesajustes(sinIcono)).toEqual([])
   })
 
@@ -28,7 +28,7 @@ describe('el icono del título sale del sidebar', () => {
     // de encontrar el Layout, el router o las pantallas: dos listas vacías
     // comparadas contra dos listas vacías. Es exactamente la forma en que este
     // guard falló mientras se escribía.
-    const { rutasDelNav, pantallas, conIcono, sinTitulo } = auditarTitulos(SRC)
+    const { rutasDelNav, pantallas, conIcono, sinTitulo } = auditarTitulos(SRC, 'libracargo')
     // Nueve: «Pre facturas» y «Comprobantes de proveedores» dejaron de ser
     // entradas del menú y pasaron a ser parte de «Comprobantes».
     expect(rutasDelNav).toBeGreaterThanOrEqual(9)

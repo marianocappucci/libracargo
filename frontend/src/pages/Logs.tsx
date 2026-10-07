@@ -35,7 +35,7 @@
  */
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
-  BookText, ChevronDown, ChevronLeft, ChevronRight, Inbox, LogIn, LogOut, ScrollText,
+  BookText, ChevronDown, ChevronLeft, ChevronRight, Inbox, LogIn, LogOut,
   Shield, ShieldAlert,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -56,6 +56,7 @@ import {
 } from '@/components/ui/select'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 import { formatearFecha } from '@/components/esquema-orden'
+import { ICONOS_LC } from '@/iconos'
 
 const POR_PAGINA = 50
 
@@ -222,7 +223,7 @@ export default function Logs() {
           (`listado-logs`): desde aca imprimia los 15.884 registros de una,
           porque nada obligaba a poner fechas. */}
       <div className="mb-4">
-        <TituloPantalla icono={ScrollText}>Log de actividad</TituloPantalla>
+        <TituloPantalla icono={ICONOS_LC.logDeActividad}>Log de actividad</TituloPantalla>
       </div>
 
       {/* Las dos mitades, en dos pestañas, igual que en los otros cinco
