@@ -86,6 +86,21 @@ def test_una_instancia_que_nunca_facturo_contesta_null_y_no_rompe(cliente):
     assert estado.json()["configurado"] is False
 
 
+def test_la_pantalla_lista_la_facturacion_y_el_ctg(cliente):
+    """Configuración → ARCA muestra un bloque por servicio: la facturación y el CTG y la Carta de Porte.
+
+    Sin `servicios=("wsfe", "wscpe")` en el montaje, el motor lista sólo la facturación y la pantalla del
+    kit vuelve a la tarjeta de un solo bloque: no hay dónde ver ni cargar el certificado de `wscpe`.
+    """
+    r = cliente.get("/api/arca/servicios")
+    assert r.status_code == 200, r.text
+    assert [s["servicio"] for s in r.json()] == ["wsfe", "wscpe"]
+
+    estado = cliente.get("/api/arca/servicios/wscpe/estado")
+    assert estado.status_code == 200, estado.text
+    assert estado.json()["configurado"] is False
+
+
 # ── 3. Que el montaje llegue a un disco y a una base de verdad ─────────────
 
 def test_el_par_queda_escrito_en_el_CERTS_DIR_de_esta_instancia(cliente):
