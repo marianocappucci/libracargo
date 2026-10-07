@@ -1,7 +1,7 @@
 /** Cobros y pagos. Cada movimiento con tercero deja su contrapartida en la
  *  cuenta corriente, y eso lo hace el servidor en la misma transacción. */
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
-import { Ban, Pencil, Plus, Wallet } from 'lucide-react'
+import { Ban, Pencil, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
@@ -21,6 +21,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
+import { ICONOS_LC } from '@/iconos'
 
 type Borrador = {
   fecha: string
@@ -217,7 +218,7 @@ export default function Caja() {
   return (
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
-        <TituloPantalla icono={Wallet}>Caja</TituloPantalla>
+        <TituloPantalla icono={ICONOS_LC.caja}>Caja</TituloPantalla>
         {/* El listado se imprime desde reportes (`listado-caja`), que exige
             rango. Y de paso deja de estar el truco de `desplazamiento > 0 ? []`:
             aca la hoja pedia UNA tanda y lo que no entraba se perdia callado. */}

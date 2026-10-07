@@ -7,13 +7,12 @@
 // Dos ítems del mismo menú no comparten dibujo — si no, el icono deja de
 // distinguir y hay que leer el texto igual.
 import { createLayout, type NavSection } from 'libra-ui/Layout'
-import {
-  BarChart3, BookOpen, ClipboardList, LayoutDashboard, Receipt, ScrollText, Settings, UserCog, Wallet,
-} from 'lucide-react'
+import { ClipboardList } from 'lucide-react'
 
 import { useConfiguracion } from '@/api/configuracion'
 import { WORDMARK } from '@/branding'
 import { useAuth } from '@/context/AuthContext'
+import { ICONOS_LC } from '@/iconos'
 import { RUTAS_DE_COMPROBANTES } from '@/navegacion'
 
 type Usuario = { role?: string; name?: string; empresa?: string }
@@ -43,16 +42,16 @@ export const NAV_SECCIONES: NavSection<Usuario>[] = [
         // 'Dashboard' y no 'Inicio': es como se llama en Gestiolibra,
         // Contalibra, Restolibra, MedLibra y LibraDesk. Este producto era
         // el unico de la familia que le decia distinto.
-        { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+        { to: '/', label: 'Dashboard', icon: ICONOS_LC.dashboard },
         { to: '/ordenes', label: 'Órdenes de carga', icon: ClipboardList },
-        { to: '/cuentas', label: 'Cuenta corriente', icon: BookOpen },
-        { to: '/caja', label: 'Caja', icon: Wallet },
+        { to: '/cuentas', label: 'Cuenta corriente', icon: ICONOS_LC.cuentaCorriente },
+        { to: '/caja', label: 'Caja', icon: ICONOS_LC.caja },
         // Una sola entrada para todo lo que es un comprobante, con dos pestañas
         // (Clientes y Proveedores). «Pre facturas» y «Comprobantes de
         // proveedores» eran dos entradas sueltas; ahora son accesos y una
         // pestaña de ésta. `activoEn` (libra-ui 0.119.0) la marca en esas rutas.
-        { to: '/comprobantes', label: 'Comprobantes', icon: Receipt, activoEn: RUTAS_DE_COMPROBANTES },
-        { to: '/reportes', label: 'Reportes', icon: BarChart3 },
+        { to: '/comprobantes', label: 'Comprobantes', icon: ICONOS_LC.comprobantes, activoEn: RUTAS_DE_COMPROBANTES },
+        { to: '/reportes', label: 'Reportes', icon: ICONOS_LC.reportes },
       ],
     },
     {
@@ -61,7 +60,7 @@ export const NAV_SECCIONES: NavSection<Usuario>[] = [
       // empresa se cargan una vez y despues se los toca poco; como siete items
       // de menu tenian el mismo peso que las pantallas de todos los dias.
       items: [
-        { to: '/configuracion', label: 'Configuración', icon: Settings },
+        { to: '/configuracion', label: 'Configuración', icon: ICONOS_LC.configuracion },
       ],
     },
     {
@@ -70,10 +69,10 @@ export const NAV_SECCIONES: NavSection<Usuario>[] = [
         // : el router del backend exige rol admin, asi que a un
         // operador el link le daria 403. Un menu que ofrece lo que no se puede
         // usar es peor que no ofrecerlo.
-        { to: '/usuarios', label: 'Usuarios', icon: UserCog, adminOnly: true },
+        { to: '/usuarios', label: 'Usuarios', icon: ICONOS_LC.usuarios, adminOnly: true },
         // Junto a Usuarios: se mira para responder "quién hizo esto", que es
         // una pregunta de administración y no de operación.
-        { to: '/logs', label: 'Log de actividad', icon: ScrollText, adminOnly: true },
+        { to: '/logs', label: 'Log de actividad', icon: ICONOS_LC.logDeActividad, adminOnly: true },
       ],
     },
 ]
@@ -83,7 +82,7 @@ export const Layout = createLayout<Usuario>({
   productInitial: 'C',
   // El fallback del motor, tres escalones abajo de `producto`: la marca de
   // `producto` reemplaza el hueco entero, `icon` incluido.
-  icon: LayoutDashboard,
+  icon: ICONOS_LC.dashboard,
   // La marca (el icono de LibraCargo sobre un cuadrado de su color, libra-ui ADR-033). Las clases del nombre salen de `@/branding`, el mismo
   // archivo que usa el login: es lo que garantiza que las dos pantallas escriban "LibraCargo" igual.
   // `MarcaProducto` ya viene con `h-8 w-8 shrink-0`, que es lo que cabe en la sidebar colapsada (32 px): no hace falta ningun override.

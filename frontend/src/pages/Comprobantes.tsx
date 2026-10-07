@@ -31,6 +31,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { irA } from '@/navegacion'
 import { formatearFecha } from '@/components/esquema-orden'
+import { ICONOS_LC } from '@/iconos'
 
 function Campo({ id, etiqueta, valor, alCambiar, tipo = 'text' }: {
   id: string; etiqueta: string; valor: string
@@ -293,7 +294,7 @@ export default function Comprobantes() {
         <div className="flex gap-2">
           <Button variant="outline" asChild>
             <Link to="/pre-facturas">
-              <FileText className="size-4" /> Pre facturas
+              <ICONOS_LC.preFacturas className="size-4" /> Pre facturas
             </Link>
           </Button>
           <Button asChild>

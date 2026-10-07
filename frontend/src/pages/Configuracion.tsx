@@ -31,9 +31,10 @@
  */
 import { createConfiguracion } from 'libra-ui/Configuracion'
 import {
-  MapPin, Package, Settings, ShieldCheck, Truck, Users, UserSquare,
+  CarFront, MapPin, Package, ShieldCheck, Users, UserSquare,
 } from 'lucide-react'
 
+import { ICONOS_LC } from '@/iconos'
 import { FacturacionArca } from '@/pages/Arca'
 import { DatosDeLaEmpresa } from '@/pages/DatosDeLaEmpresa'
 import {
@@ -42,7 +43,7 @@ import {
 
 export const Configuracion = createConfiguracion({
   // El icono que el sidebar de este producto le da a /configuracion.
-  icono: Settings,
+  icono: ICONOS_LC.configuracion,
   // Sale en el tutorial de Gmail —es el nombre que hay que ponerle a la
   // contraseña de aplicación— y en el de Padrón A13.
   producto: 'LibraCargo',
@@ -66,7 +67,8 @@ export const Configuracion = createConfiguracion({
   propias: [
     { clave: 'terceros', label: 'Terceros', icono: Users, contenido: <Terceros /> },
     { clave: 'choferes', label: 'Choferes', icono: UserSquare, contenido: <Choferes /> },
-    { clave: 'vehiculos', label: 'Vehículos', icono: Truck, contenido: <Vehiculos /> },
+    // `CarFront` y no `Truck`: en LibraCargo el camión es el ícono de los fleteros (catálogo de íconos de identidad, ADR-035).
+    { clave: 'vehiculos', label: 'Vehículos', icono: CarFront, contenido: <Vehiculos /> },
     { clave: 'localidades', label: 'Localidades', icono: MapPin, contenido: <Localidades /> },
     { clave: 'tipos-carga', label: 'Tipos de carga', icono: Package, contenido: <TiposCarga /> },
   ],

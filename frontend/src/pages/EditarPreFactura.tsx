@@ -5,15 +5,15 @@
  * entrada (`Receipt`): el de cada pantalla tiene que ser el de su entrada del sidebar.
  */
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
-import { Receipt } from 'lucide-react'
 
+import { ICONOS_LC } from '@/iconos'
 import FacturarPendientes from '@/pages/FacturarPendientes'
 
 export default function EditarPreFactura() {
   return (
     <FacturarPendientes
       titulo={(numero) => (
-        <TituloPantalla icono={Receipt}>{`Editar pre factura ${numero}`.trim()}</TituloPantalla>
+        <TituloPantalla icono={ICONOS_LC.preFacturas}>{`Editar pre factura ${numero}`.trim()}</TituloPantalla>
       )}
     />
   )
