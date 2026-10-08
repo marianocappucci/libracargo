@@ -7,7 +7,8 @@
 // Dos ítems del mismo menú no comparten dibujo — si no, el icono deja de
 // distinguir y hay que leer el texto igual.
 import { createLayout, type NavSection } from 'libra-ui/Layout'
-import { Building2, ClipboardList, FileCheck } from 'lucide-react'
+import { INDICADORES } from 'libra-ui/iconos-indicador'
+import { Building2, ClipboardList } from 'lucide-react'
 
 import { useConfiguracion } from '@/api/configuracion'
 import { WORDMARK } from '@/branding'
@@ -44,9 +45,10 @@ export const NAV_SECCIONES: NavSection<Usuario>[] = [
         // el unico de la familia que le decia distinto.
         { to: '/', label: 'Dashboard', icon: ICONOS_LC.dashboard },
         { to: '/ordenes', label: 'Órdenes de carga', icon: ClipboardList },
-        // Propia de este producto, como Órdenes: no es un concepto del catálogo de la familia. `FileCheck` es un
-        // dibujo que ningún concepto del catálogo usa (`FileText` es Remitos, `ScrollText` el log, `Truck` los fleteros).
-        { to: '/cartas-porte', label: 'Cartas de porte', icon: FileCheck },
+        // Ahora sale del catálogo de íconos de indicadores del kit (`libra-ui/iconos-indicador`, ADR-038): `cartasDePorte` es `FileBadge`,
+        // el mismo dibujo que lleva en los reportes y en el título de su pantalla. Se escribe `INDICADORES.cartasDePorte` y no
+        // `iconoDelIndicador(…)` porque es la forma que lee el guard de títulos (`auditarTitulos`).
+        { to: '/cartas-porte', label: 'Cartas de porte', icon: INDICADORES.cartasDePorte },
         // Clientes, Fleteros, Choferes y Proveedores en una entrada con pestañas (ADR-040). Propia de este producto, como Órdenes:
         // «Entidades» no es un concepto del catálogo de la familia, y `Building2` es un dibujo que ningún concepto usa.
         { to: '/entidades', label: 'Entidades', icon: Building2 },

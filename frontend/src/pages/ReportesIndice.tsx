@@ -9,14 +9,14 @@
  * fechas: se apretaba con la pantalla recién abierta y salían noventa hojas. Los
  * listados viven acá, donde el rango es obligatorio.
  */
-import { ArrowRight } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 
 import type { Reporte } from '@/api/reportes'
 import { reportes } from '@/api/reportes'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import { TarjetaReporte } from 'libra-ui/TarjetaReporte'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
+import { conceptoDelReporte } from '@/conceptos-de-reportes'
 import { ICONOS_LC } from '@/iconos'
 
 const NOMBRE_DE_PARAMETRO: Record<string, string> = {
@@ -30,19 +30,13 @@ const NOMBRE_DE_PARAMETRO: Record<string, string> = {
 
 function Tarjeta({ r }: { r: Reporte }) {
   return (
-    <Link
-      to={`/reportes/${r.slug}`}
-      className="hover:bg-accent group rounded border p-4 transition-colors"
-    >
-      <div className="flex items-center justify-between">
-        <h2 className="font-semibold">{r.titulo}</h2>
-        <ArrowRight className="text-muted-foreground size-4" />
-      </div>
-      <p className="text-muted-foreground mt-1 text-sm">{r.descripcion}</p>
-      <p className="text-muted-foreground mt-2 text-xs">
-        Se filtra por: {r.parametros.map((p) => NOMBRE_DE_PARAMETRO[p] ?? p).join(', ')}
-      </p>
-    </Link>
+    <TarjetaReporte
+      concepto={conceptoDelReporte(r.slug)}
+      titulo={r.titulo}
+      descripcion={r.descripcion}
+      nota={`Se filtra por: ${r.parametros.map((p) => NOMBRE_DE_PARAMETRO[p] ?? p).join(', ')}`}
+      a={`/reportes/${r.slug}`}
+    />
   )
 }
 

@@ -250,34 +250,36 @@ export default function PreLiquidacionTransportistas() {
         <ArrowLeft className="size-3" /> Todos los reportes
       </Link>
 
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <TituloPantalla icono={ICONOS_LC.reportes}>{TITULO}</TituloPantalla>
-          <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
-            Los fletes que hizo cada transportista en el período, con la comisión de cada uno, el
-            IVA si es responsable inscripto y los subtotales. Es para mandarle antes de que
-            facture. <strong>{LEYENDA}.</strong>
-          </p>
-        </div>
+      <div className="mb-4">
         {/* Sin rango no hay hoja que imprimir: los botones no están, en vez de estar y fallar. */}
-        {hayFletes && (
-          <div className="no-imprimir flex flex-wrap justify-end gap-2">
-            <Button variant="outline" onClick={imprimir} disabled={imprimiendo}>
-              <Printer className="size-4" /> Imprimir
-            </Button>
-            <Button variant="outline" asChild>
-              <a href={urlDelPdf} target="_blank" rel="noreferrer">
-                <ExternalLink className="size-4" /> Ver PDF
-              </a>
-            </Button>
-            <Button variant="outline" asChild>
-              <a href={urlDelPdf}
-                 download={`pre-liquidacion-transportistas-${desde}-${hasta}.pdf`}>
-                <Download className="size-4" /> Descargar PDF
-              </a>
-            </Button>
-          </div>
-        )}
+        <TituloPantalla
+          icono={ICONOS_LC.reportes}
+          acciones={hayFletes && (
+            <div className="no-imprimir flex flex-wrap justify-end gap-2">
+              <Button variant="outline" onClick={imprimir} disabled={imprimiendo}>
+                <Printer className="size-4" /> Imprimir
+              </Button>
+              <Button variant="outline" asChild>
+                <a href={urlDelPdf} target="_blank" rel="noreferrer">
+                  <ExternalLink className="size-4" /> Ver PDF
+                </a>
+              </Button>
+              <Button variant="outline" asChild>
+                <a href={urlDelPdf}
+                   download={`pre-liquidacion-transportistas-${desde}-${hasta}.pdf`}>
+                  <Download className="size-4" /> Descargar PDF
+                </a>
+              </Button>
+            </div>
+          )}
+        >
+          {TITULO}
+        </TituloPantalla>
+        <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
+          Los fletes que hizo cada transportista en el período, con la comisión de cada uno, el
+          IVA si es responsable inscripto y los subtotales. Es para mandarle antes de que
+          facture. <strong>{LEYENDA}.</strong>
+        </p>
       </div>
 
       <div className="no-imprimir mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">

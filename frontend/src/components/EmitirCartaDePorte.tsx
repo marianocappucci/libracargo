@@ -18,7 +18,8 @@
  *  Los textos de error del servidor se muestran siempre tal cual: son los que dicen qué hacer.
  */
 import { ApiError } from 'libra-ui/api-client'
-import { FileCheck, TriangleAlert } from 'lucide-react'
+import { IconoIndicador } from 'libra-ui/IconoIndicador'
+import { TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -669,7 +670,7 @@ function Asistente({ orden, alCerrar, alEmitida }: {
                    onEscapeKeyDown={(e) => { if (enviando) e.preventDefault() }}>
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
-          <FileCheck className="size-5" /> Emitir carta de porte · Orden Nº {String(orden.id).padStart(8, '0')}
+          <IconoIndicador concepto="cartasDePorte" className="size-5" /> Emitir carta de porte · Orden Nº {String(orden.id).padStart(8, '0')}
         </DialogTitle>
         <DialogDescription className="sr-only">
           Asistente para emitir la carta de porte electrónica de esta orden en ARCA.
