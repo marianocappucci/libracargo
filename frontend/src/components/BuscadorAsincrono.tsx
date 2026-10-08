@@ -53,6 +53,8 @@ type Props = {
   minimo?: number
   /** Espera tras la última tecla antes de pedir. */
   esperaMs?: number
+  /** Algo que cambia lo que `buscar` devuelve además del texto (el país elegido al lado): si cambia, se vuelve a pedir. */
+  claveDeBusqueda?: string
   mensajeVacio?: string
   deshabilitado?: boolean
   invalido?: boolean
@@ -63,7 +65,7 @@ type Props = {
 
 export function BuscadorAsincrono({
   id, etiqueta, valorVisible, buscar, alFinal, alQuitar,
-  placeholder = 'Buscar…', consultaInicial, enLinea = false, minimo = 2, esperaMs = 250,
+  placeholder = 'Buscar…', consultaInicial, enLinea = false, minimo = 2, esperaMs = 250, claveDeBusqueda,
   mensajeVacio = 'No hay coincidencias.', deshabilitado, invalido, className, children,
 }: Props) {
   // `null` = no se está buscando: el campo muestra lo elegido. Cerrar la lista por cualquier camino lo deja así.
@@ -107,7 +109,7 @@ export function BuscadorAsincrono({
         .finally(() => { if (vigente) setBuscando(false) })
     }, esperaMs)
     return () => { vigente = false; clearTimeout(t) }
-  }, [consulta, q, suficiente, esperaMs])
+  }, [consulta, q, suficiente, esperaMs, claveDeBusqueda])
 
   const pie = alFinal && suficiente ? alFinal(q) : null
   const items = [...grupos.flatMap((g) => g.items), ...(pie ? [pie] : [])]

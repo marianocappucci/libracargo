@@ -3,6 +3,13 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Localidades del resto del Mercosur; el tarifario en la demo
+
+- **El buscador de localidades suma Brasil, Chile, Paraguay, Bolivia y Uruguay** (ADR-042): 6.621 lugares de GeoNames, con Argentina siempre primero. Cada localidad muestra su país, y un paraje puede ser de afuera.
+- **La demo ya trae el tarifario de referencia** de abril de 2026 en su semilla. Antes se perdía en el reinicio de cada noche.
+- **Migración `0026`**: `pais` en las localidades (`AR` para todas las que existen) y la unicidad suma el país.
+- **Pin**: libracore v1.146.0.
+
 ## [Unreleased] — Localidades del catálogo de Argentina; los parajes, a mano
 
 - **El origen y el destino se buscan en el catálogo oficial de Argentina** (4.027 localidades del INDEC), además de las ya cargadas (ADR-041). Elegir una del catálogo la suma sola. Lo que no está (un paraje, una planta, un campo con nombre) se carga **a mano como paraje**, con su provincia.
