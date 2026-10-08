@@ -15,6 +15,7 @@ import { useConfiguracion } from '@/api/configuracion'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { AdjuntosDeOrden } from '@/components/AdjuntosDeOrden'
 import { CambiarEtapa } from '@/components/CambiarEtapa'
+import { SeccionFlete } from '@/components/FleteDeOrden'
 import { KilosDelDetalle, SeccionKilos } from '@/components/KilosDeOrden'
 import { OrdenImpresa } from '@/components/OrdenImpresa'
 import type { DatosOrden, EntradaOrden } from '@/components/esquema-orden'
@@ -31,7 +32,7 @@ import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 type Form = UseFormReturn<EntradaOrden, unknown, DatosOrden>
 
-const KILOS_EN_LA_TABLA = {
+const COLUMNA_OPCIONAL = {
   className: 'tabular-nums hidden xl:table-cell', colClassName: 'hidden xl:table-column', opcional: true,
 }
 
@@ -150,9 +151,11 @@ export default function Ordenes() {
   function abrir(orden: Orden | null) {
     setEditando(orden)
     setError(null)
-    // Los kilos que no se saben vienen `null`: el campo del formulario es un texto, y vacío es «no se sabe».
+    // Los kilos, los km y la tarifa por tonelada que no se saben vienen `null`: el campo del formulario es un texto, y
+    // vacío es «no se sabe».
     const sinNulos = orden
-      ? Object.fromEntries(Object.entries(orden).map(([k, v]) => [k, k.startsWith('kg_') && v == null ? '' : v]))
+      ? Object.fromEntries(Object.entries(orden).map(([k, v]) => [
+        k, (k.startsWith('kg_') || k === 'km' || k === 'tarifa_tonelada') && v == null ? '' : v]))
       : null
     form.reset(sinNulos
       ? (sinNulos as unknown as EntradaOrden)
@@ -217,10 +220,12 @@ export default function Ordenes() {
       cell: ({ row }: { row: { original: Orden } }) => <EtapaDeOrden orden={row.original} /> },
     // Los kilos netos, sólo donde hay ancho: en una pantalla angosta la tabla ya está justa y los kilos completos
     // (bruto, tara, neto) están en el detalle.
-    { id: 'kg-carga', header: 'Kg carga', meta: KILOS_EN_LA_TABLA,
+    { id: 'kg-carga', header: 'Kg carga', meta: COLUMNA_OPCIONAL,
       accessorFn: (o: Orden) => formatearKilos(o.kg_neto_carga) },
-    { id: 'kg-descarga', header: 'Kg descarga', meta: KILOS_EN_LA_TABLA,
+    { id: 'kg-descarga', header: 'Kg descarga', meta: COLUMNA_OPCIONAL,
       accessorFn: (o: Orden) => formatearKilos(o.kg_neto_descarga) },
+    // Los km, también sólo donde hay ancho; la tarifa por tonelada está en el detalle.
+    { id: 'km', header: 'Km', meta: COLUMNA_OPCIONAL, accessorFn: (o: Orden) => o.km ?? '—' },
     { id: 'estado', header: sortableHeader('Estado'),
       accessorFn: (o: Orden) => o.estado,
       cell: ({ row }: { row: { original: Orden } }) => (
@@ -307,6 +312,7 @@ export default function Ordenes() {
             <Campo form={form} nombre="observaciones" etiqueta="Observaciones" />
             <Etapa form={form} />
             <SeccionKilos form={form} />
+            <SeccionFlete form={form} />
             {/* El IVA y el total NO se editan: los calcula el servidor desde la
                 tarifa y la alícuota. Un campo editable mentiría sobre quién
                 decide el importe, que es el defecto que trae el legado. */}
@@ -367,6 +373,8 @@ export default function Ordenes() {
                  [detalle.cantidad, detalle.unidad].filter(Boolean).join(' ')
                    || detalle.cantidad_legado || '—'],
                 ['Tarifa', formatearImporte(detalle.tarifa)],
+                ['Km', detalle.km == null ? '—' : String(detalle.km)],
+                ['Tarifa por tonelada', formatearImporte(detalle.tarifa_tonelada) || '—'],
                 [`IVA (${detalle.alicuota_iva}%)`, formatearImporte(detalle.iva)],
                 ['Total', formatearImporte(detalle.total)],
                 ['Comisión', formatearImporte(detalle.comision)],

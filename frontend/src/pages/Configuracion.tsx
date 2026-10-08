@@ -31,7 +31,7 @@
  */
 import { createConfiguracion } from 'libra-ui/Configuracion'
 import {
-  CarFront, MapPin, Package, ShieldCheck, Users, UserSquare,
+  CarFront, MapPin, Package, Route, ShieldCheck, Users, UserSquare,
 } from 'lucide-react'
 
 import { ICONOS_LC } from '@/iconos'
@@ -40,6 +40,7 @@ import { DatosDeLaEmpresa } from '@/pages/DatosDeLaEmpresa'
 import {
   Choferes, Localidades, Terceros, TiposCarga, Vehiculos,
 } from '@/pages/maestros'
+import { TarifarioDeReferencia } from '@/pages/Tarifario'
 
 export const Configuracion = createConfiguracion({
   // El icono que el sidebar de este producto le da a /configuracion.
@@ -71,6 +72,9 @@ export const Configuracion = createConfiguracion({
     { clave: 'vehiculos', label: 'Vehículos', icono: CarFront, contenido: <Vehiculos /> },
     { clave: 'localidades', label: 'Localidades', icono: MapPin, contenido: <Localidades /> },
     { clave: 'tipos-carga', label: 'Tipos de carga', icono: Package, contenido: <TiposCarga /> },
+    // `Route` y no `Ruler`/`Gauge`: es la tarifa por kilómetro. No está en el catálogo de íconos de identidad (ADR-035)
+    // ni en el menú de este producto, así que no repite el dibujo de ningún concepto.
+    { clave: 'tarifario', label: 'Tarifario de referencia', icono: Route, contenido: <TarifarioDeReferencia /> },
   ],
 })
 

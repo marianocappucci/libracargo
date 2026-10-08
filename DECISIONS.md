@@ -962,3 +962,17 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 - Migración `0022` sobre una tabla con filas: agrega la columna con default `cerrada` y después lo cambia a `asignada`. Hay un test que siembra antes de subir.
 - **Considerado y descartado por ahora: un módulo de adjuntos en el motor.** MedLibra y LibraDesk ya tienen los suyos (en disco, cada uno a su manera) y ninguno los comparte. Si un segundo producto necesita adjuntos genéricos, este se muda a `libracore` (`reglas/producto.md`: «el arreglo de fondo vive en el motor») en vez de copiarse.
 - Pendientes: que la Carta de Porte vinculada complete los kilos de descarga de la orden, la cola de choferes (fase 6) y las reglas por etapa que confirme el cliente.
+
+## ADR-038 — El tarifario de referencia en el sistema; la orden lleva km y tarifa por tonelada, que varía por viaje
+
+**Contexto.** Suitrans cotiza el flete con la **tarifa de referencia de cereales y oleaginosas** que publica el sector: una tarifa en pesos **por tonelada** para **cada kilómetro**, más un valor de estadía. La vigente es la del 10 de abril de 2026, con 9.636,69 $/t de 1 a 10 km, 23.205,57 a 80 km y 108.021,12 a 1.000 km. Viene en un PDF con la tipografía codificada: los dígitos son otros glifos y se decodifican con una sustitución simple. Audios del dueño (2026-10-07): «en 100 km una tarifa, en 101 otra… siempre se ponen los kilómetros y la tarifa, y la tarifa es **por tonelada descargada**». En la CPE de Pereiro, 80 km a 19.724,73 $/t es **exactamente el 85 %** de la referencia. El humano (2026-10-08): el porcentaje **varía por viaje**, no es fijo por cliente; y el tarifario se hace **antes** de terminar la emisión de cartas de porte, para que la emisión ya traiga km y tarifa.
+
+**Decisión.**
+1. **`tarifarios` + `tarifas_referencia`** (migración `0023`): una edición por **vigencia** (única), con su nombre y el valor de estadía, y una fila por km. Las ediciones viejas se quedan. **La referencia de una orden es la del tarifario que regía en su fecha**: la vigencia más reciente que no sea posterior. Un km que no está en la tabla **no se extrapola**: se informa que falta.
+2. **Carga por CSV** `km;tarifa`, que admite `9.636,69`, con o sin encabezado y con `;` o `,`. Sólo un administrador. La misma vigencia se **reemplaza entera** y queda en la auditoría con las filas y el rango de km. El PDF no se lee en el sistema: su tipografía codificada puede cambiar en cada edición, así que se convierte a CSV fuera.
+3. **La orden gana `km` y `tarifa_tonelada`**, opcionales. La pantalla propone la tarifa como referencia × porcentaje, y **el porcentaje que sugiere es el del último viaje de ese cliente** (`GET /api/tarifario/sugerencia`). No se guarda un porcentaje por cliente, porque varía por viaje.
+4. **No liquida todavía**: `tarifa`, el importe, sigue siendo lo que se factura. Liquidar «toneladas descargadas × tarifa por tonelada + IVA» es la fase 5, con su decisión de facturación aparte.
+
+**Consecuencias.**
+- La emisión de la Carta de Porte (fase 4) toma `km` y `tarifa_tonelada` de la orden. El esquema de ARCA admite hasta 99.999,99 $/t; una referencia de más de 1.000 km lo supera, y ahí la emisión avisa.
+- Del PDF de abril salen completos los km de 1 a 1.000. Más allá, sólo filas sueltas: lo que no está se informa como faltante.

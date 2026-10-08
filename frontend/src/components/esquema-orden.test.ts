@@ -135,3 +135,43 @@ describe('formatearTamanio', () => {
     expect(formatearTamanio(10 * 1024 * 1024)).toBe('10 MB')
   })
 })
+
+describe('esquema de la orden · km y tarifa por tonelada', () => {
+  const base = {
+    fecha: '2026-10-05', cliente_id: '1', origen_id: '2', destino_id: '3',
+    tarifa: '1000.00', alicuota_iva: '21.00', comision: '0.00',
+  }
+  const salida = (extra: Record<string, unknown>) => {
+    const r = esquemaOrden.safeParse({ ...base, ...extra })
+    return r.success ? r.data : r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`)
+  }
+
+  it('sin km ni tarifa por tonelada se mandan null, no cero ni vacío', () => {
+    expect(salida({})).toMatchObject({ km: null, tarifa_tonelada: null })
+    expect(salida({ km: '', tarifa_tonelada: '' })).toMatchObject({ km: null, tarifa_tonelada: null })
+    expect(salida({ km: null, tarifa_tonelada: null })).toMatchObject({ km: null, tarifa_tonelada: null })
+  })
+
+  it('los km son un entero de 1 a 99999 (el texto del input se convierte)', () => {
+    expect(salida({ km: '80' })).toMatchObject({ km: 80 })
+    expect(salida({ km: '99999' })).toMatchObject({ km: 99999 })
+    expect(salida({ km: '0' })).toEqual(['km: los km son 1 o más'])
+    expect(salida({ km: '100000' })).toEqual(['km: los km no pueden pasar de 99999'])
+    expect(salida({ km: '80.5' })).toEqual(['km: los km son un número entero'])
+    expect(salida({ km: 'lejos' })).toEqual(['km: los km tienen que ser un número'])
+  })
+
+  it('🔑 la tarifa por tonelada viaja como TEXTO con dos decimales, y acepta la coma', () => {
+    expect(salida({ tarifa_tonelada: '19724.73' })).toMatchObject({ tarifa_tonelada: '19724.73' })
+    expect(salida({ tarifa_tonelada: '19724.7' })).toMatchObject({ tarifa_tonelada: '19724.70' })
+    expect(salida({ tarifa_tonelada: '19724' })).toMatchObject({ tarifa_tonelada: '19724.00' })
+    expect(salida({ tarifa_tonelada: '19724,73' })).toMatchObject({ tarifa_tonelada: '19724.73' })
+    expect(salida({ tarifa_tonelada: '19.724,73' })).toMatchObject({ tarifa_tonelada: '19724.73' })
+  })
+
+  it('una tarifa por tonelada que no es un importe se rechaza en su campo', () => {
+    expect(salida({ tarifa_tonelada: 'mucho' })).toEqual(['tarifa_tonelada: importe inválido'])
+    expect(salida({ tarifa_tonelada: '1.234' })).toEqual(['tarifa_tonelada: importe inválido'])
+    expect(salida({ tarifa_tonelada: '-5' })).toEqual(['tarifa_tonelada: importe inválido'])
+  })
+})

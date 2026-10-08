@@ -30,6 +30,7 @@ from app.models.operacion import (
     PreFacturaCargo,
     PreFacturaOrden,
 )
+from app.models.tarifario import TarifaDeReferencia, Tarifario
 
 __all__ = [
     "AccionAuditoria", "AdjuntoDeOrden", "Base", "CartaPorte", "CartaPortePdf", "Chofer", "Comprobante",
@@ -38,6 +39,6 @@ __all__ = [
     "EstadoOrden", "EtapaOrden", "GastoDeProveedor", "Localidad", "MedioPago", "MovimientoCaja",
     "MovimientoCuenta", "OrdenCarga", "PreFacturaCargo", "PreFacturaOrden", "ConfiguracionEmpresa",
     "RegistroAuditoria",
-    "RolCuenta", "Tercero", "TipoCarga", "TipoComprobante",
+    "RolCuenta", "TarifaDeReferencia", "Tarifario", "Tercero", "TipoCarga", "TipoComprobante",
     "TipoMovimientoCaja", "Vehiculo",
 ]

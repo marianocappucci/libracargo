@@ -32,6 +32,7 @@ const ORDEN = {
   etapa: 'cerrada' as const,
   kg_bruto_carga: null, kg_tara_carga: null, kg_neto_carga: null,
   kg_bruto_descarga: null, kg_tara_descarga: null, kg_neto_descarga: null,
+  km: null, tarifa_tonelada: null,
 }
 
 const EMPRESA = {
