@@ -141,7 +141,7 @@ function ConflictoDeCuit({ repetido, rol, ctx, alVer }: {
 }
 
 /** Lo que cuelga de un fletero: sus choferes y sus vehículos, de sólo lectura. Se carga y se edita en su lugar
- *  (pestaña Choferes; Configuración > Vehículos), a donde llevan los enlaces. */
+ *  (pestaña Choferes; menú Vehículos), a donde llevan los enlaces. */
 function FichaDelFletero({ fleteroId }: { fleteroId: number }) {
   const [choferes, setChoferes] = useState<Maestro[] | null>(null)
   const [vehiculos, setVehiculos] = useState<Maestro[] | null>(null)
@@ -188,7 +188,7 @@ function FichaDelFletero({ fleteroId }: { fleteroId: number }) {
               {vehiculos.map((v) => (
                 <li key={v.id} className="flex flex-wrap items-center justify-between gap-2">
                   <Link className="underline underline-offset-2"
-                        to={`/configuracion?seccion=vehiculos&ver=${v.id}`}>
+                        to={irA.vehiculos(v.id)}>
                     {String(v.patente_chasis ?? `Vehículo ${v.id}`)}
                   </Link>
                   <span className="text-muted-foreground">

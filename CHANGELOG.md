@@ -3,6 +3,15 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Todo desplegable de datos se busca escribiendo; el título a la altura del nombre de la app; Vehículos en el menú
+
+- **Se busca por letras en todos los desplegables donde se elige información**: clientes, fleteros, choferes, vehículos, proveedores, terceros, localidades, usuarios, entidades del log, provincias del paraje, el fletero de un chofer o de un vehículo, los catálogos de la Carta de Porte (grano, provincia, localidad, planta) y el titular. Antes sólo buscaban los de 12 opciones o más; ahora no depende de cuántos datos tenga cada empresa.
+- **Los de pocas opciones fijas** (etapa del viaje, estado, tipo de comprobante, medio de pago, país, condición de IVA en Datos de la empresa) siguen siendo desplegables comunes.
+- **El título de cada pantalla arranca a la altura del nombre de la aplicación**: se quitó el relleno de más de arriba de las pantallas (un `p-6` propio sumado al del contenedor dejaba un espacio vacío).
+- **«Vehículos» sale de Configuración y pasa al menú principal**, debajo de «Entidades». El enlace viejo (`/configuracion?seccion=vehiculos`, con o sin `&ver=`) lleva a `/vehiculos`.
+- **Guards**: `selects-buscables.test.ts` y `relleno-de-pantallas.test.ts` (leen los fuentes) impiden que vuelva a nacer un desplegable de datos sin búsqueda o una pantalla con relleno propio.
+- **Pin**: libra-ui v0.129.0.
+
 ## [Unreleased] — Emitir la Carta de Porte desde la orden
 
 - **«Emitir carta de porte» en la orden** (ADR-043): a nombre del titular que delegó (por ejemplo, Agropecuaria Pereiro), con los datos ya cargados desde la orden (chofer, dominios, fletero, cliente, kilos, km y tarifa por tonelada) y desde **lo último emitido para ese titular** (origen, grano, cosecha, destino, planta). Muestra lo que falta completar, pide una confirmación explícita para emitir una carta real y devuelve el **CTG y el PDF**.

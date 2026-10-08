@@ -218,7 +218,7 @@ export default function CartasDePorte() {
   ]
 
   return (
-    <div className="p-6">
+    <div>
       <div className="mb-4">
         <TituloPantalla
           icono={INDICADORES.cartasDePorte}
