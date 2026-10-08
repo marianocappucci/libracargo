@@ -1,4 +1,4 @@
-/** El origen y el destino de una orden se eligen con el buscador combinado (ADR-041): maestro + catálogo de Argentina.
+/** El origen y el destino de una orden se eligen con el buscador combinado (ADR-041, ADR-042): maestro + catálogo (Argentina y Mercosur).
  *
  *  La prueba de fondo es de punta a punta en lo que importa: elegir una localidad **del catálogo** en una orden la trae al
  *  maestro y lo que viaja en la orden es el **id del maestro** que devolvió el servidor, no el código censal.
@@ -38,8 +38,8 @@ const orden = {
   km: null, tarifa_tonelada: null,
 }
 const MAESTRO = [
-  { id: 1, nombre: 'Suipacha', provincia: 'Buenos Aires', es_paraje: false, activo: true, catalogo_id: '06784020' },
-  { id: 2, nombre: 'Rosario', provincia: 'Santa Fe', es_paraje: false, activo: true, catalogo_id: '82084010' },
+  { id: 1, nombre: 'Suipacha', provincia: 'Buenos Aires', pais: 'AR', es_paraje: false, activo: true, catalogo_id: '06784020' },
+  { id: 2, nombre: 'Rosario', provincia: 'Santa Fe', pais: 'AR', es_paraje: false, activo: true, catalogo_id: '82084010' },
 ]
 
 beforeEach(() => {
@@ -64,7 +64,7 @@ beforeEach(() => {
 
 describe('Órdenes · origen y destino con el catálogo', () => {
   it('🔑 elegir una del catálogo la trae al maestro y la orden viaja con el id del maestro', async () => {
-    post.mockResolvedValue({ id: 55, nombre: 'Paraná', provincia: 'Entre Ríos', es_paraje: false, activo: true, catalogo_id: '30003010' })
+    post.mockResolvedValue({ id: 55, nombre: 'Paraná', provincia: 'Entre Ríos', pais: 'AR', es_paraje: false, activo: true, catalogo_id: '30003010' })
     put.mockResolvedValue(orden)
     render(<MemoryRouter initialEntries={['/ordenes']}><Ordenes /></MemoryRouter>)
     await screen.findByText('R-1')
@@ -78,7 +78,7 @@ describe('Órdenes · origen y destino con el catálogo', () => {
 
     fireEvent.focus(origen)
     fireEvent.change(origen, { target: { value: 'para' } })
-    expect(await within(dialogo).findByText('Del catálogo de Argentina')).toBeInTheDocument()
+    expect(await within(dialogo).findByText('Del catálogo (Argentina y Mercosur)')).toBeInTheDocument()
     fireEvent.click(within(dialogo).getByRole('option', { name: 'Paraná — Entre Ríos' }))
     await waitFor(() => expect(post).toHaveBeenCalledWith('/api/localidades/desde-catalogo', { catalogo_id: '30003010' }))
     await waitFor(() => expect(origen).toHaveValue('Paraná — Entre Ríos'))

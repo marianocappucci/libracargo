@@ -73,3 +73,27 @@ def test_unificar_mueve_las_ordenes_y_da_de_baja(cliente, datos):
     assert cliente.post(f"/api/localidades/{buena['id']}/unificar", json={"en_id": buena["id"]}).status_code == 422
     asiento = cliente.get("/api/auditoria?entidad=localidades").json()["registros"][0]
     assert asiento["datos_despues"]["ordenes_movidas"] == 2
+
+
+# ── El resto del Mercosur (ADR-042) ────────────────────────────────────────
+
+def test_el_buscador_trae_el_mercosur_despues_de_argentina(cliente):
+    r = cliente.get("/api/localidades/buscar/combinado", params={"q": "nueva palmira"}).json()
+    assert [(c["nombre"], c["provincia"], c["pais"]) for c in r["catalogo"]] == [("Nueva Palmira", "Colonia", "UY")]
+    nueva = cliente.post("/api/localidades/desde-catalogo", json={"catalogo_id": r["catalogo"][0]["id"]})
+    assert nueva.status_code == 201, nueva.text
+    assert (nueva.json()["nombre"], nueva.json()["provincia"], nueva.json()["pais"]) == (
+        "Nueva Palmira", "Colonia", "UY")
+    sa = cliente.get("/api/localidades/buscar/combinado", params={"q": "san"}).json()["catalogo"]
+    paises = [c["pais"] for c in sa]
+    assert paises[0] == "AR" and paises == sorted(paises, key=lambda p: p != "AR")
+
+
+def test_un_paraje_de_afuera(cliente):
+    r = cliente.post("/api/localidades", json={"nombre": "Terminal TGU", "provincia": "Colonia", "pais": "UY",
+                                               "es_paraje": True})
+    assert r.status_code == 201 and r.json()["pais"] == "UY"
+    assert cliente.post("/api/localidades", json={"nombre": "X", "pais": "uruguay"}).status_code == 422
+    # El mismo nombre y provincia en otro país es otro lugar.
+    assert cliente.post("/api/localidades", json={"nombre": "Terminal TGU", "provincia": "Colonia",
+                                                  "es_paraje": True}).status_code == 201

@@ -35,9 +35,11 @@ class _OpenerAlTestClient:
         self.cliente, self.base = cliente, base
 
     def open(self, req, timeout=30):
+        # El `Content-Type` que puso la semilla (el multipart del tarifario lleva su `boundary`); JSON si no puso.
+        tipo = req.get_header("Content-type") or "application/json"
         r = self.cliente.request(
             req.get_method(), req.full_url[len(self.base):], content=req.data,
-            headers={"Content-Type": "application/json"})
+            headers={"Content-Type": tipo})
         if r.status_code >= 400:
             raise urllib.error.HTTPError(req.full_url, r.status_code, "", {}, io.BytesIO(r.content))
         return _Respuesta(r)

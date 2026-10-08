@@ -102,7 +102,7 @@ function Elegir({ form, nombre, etiqueta, opciones, opcional }: {
   )
 }
 
-/** Origen y destino: el selector que busca en el maestro y en el catálogo de Argentina, y deja cargar un paraje (ADR-041).
+/** Origen y destino: el selector que busca en el maestro y en el catálogo de Argentina y del Mercosur, y deja cargar un paraje (ADR-041).
  *  La localidad que se trae del catálogo o se carga a mano se suma a la lista del formulario (`alIncorporar`) para que
  *  su nombre se pueda mostrar, y se elige. */
 function ElegirLocalidadDeOrden({ form, nombre, etiqueta, opciones, alIncorporar }: {

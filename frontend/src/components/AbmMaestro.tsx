@@ -138,6 +138,8 @@ function CampoForm({ campo, valor, borrador, alCambiar }: {
     return (
       <SelectProvincia id={id} etiqueta={campo.etiqueta}
                        valor={valor === null || valor === undefined ? '' : String(valor)}
+                       // Sólo las localidades llevan `pais` (ADR-042); en los demás maestros es Argentina.
+                       pais={typeof borrador.pais === 'string' ? borrador.pais : undefined}
                        alCambiar={alCambiar} />
     )
   }

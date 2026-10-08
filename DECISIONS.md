@@ -1033,3 +1033,16 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 **Consecuencias.**
 - **Mercosur, todavía no:** el catálogo es sólo de Argentina. Brasil, Uruguay, Paraguay, Bolivia y Chile necesitan una fuente externa (GeoNames) y un formato distinto; se suma al motor si el humano lo confirma. Mientras tanto, un lugar del exterior se carga como paraje.
 - El código de localidad **de ARCA** (para la Carta de Porte) es otro catálogo. Se mapea en la fase 4b, por nombre y provincia.
+
+## ADR-042 — Las localidades del resto del Mercosur, del mismo catálogo; el tarifario en la semilla de la demo
+
+**Contexto.** El humano (2026-10-08) confirmó sumar el Mercosur al catálogo de localidades (ADR-041 lo había dejado pendiente). LibraCore v1.146.0 agrega Brasil, Chile, Paraguay, Bolivia y Uruguay: 6.621 lugares de GeoNames (`cities1000`, CC-BY 4.0), con ids `{PAÍS}-{geonameid}` y el país en cada fila. Por omisión sigue siendo sólo Argentina. Aparte, el tarifario de referencia cargado a mano en la demo **desapareció con el reinicio nocturno** (05:00, `reset_libracargo.sh`), y la sección «Flete» de la demo quedó sin referencia.
+
+**Decisión.**
+1. **`localidades.pais`** (ISO de dos letras, `AR` para lo existente). `catalogo_id` pasa a 20 caracteres y la unicidad pasa a `(nombre, provincia, pais)` (migración `0026`).
+2. El **buscador combinado** trae todo el Mercosur, Argentina primero; traer o vincular desde el catálogo copia el país. Un **paraje** puede ser de afuera, con su país y su división.
+3. **La semilla de la demo carga el tarifario** de abril de 2026, que es público y del sector, desde un CSV junto al script. Lo hace por la API, como el resto de la semilla. El test de la semilla lo cubre; para eso, su adaptador ahora respeta el `Content-Type` del pedido.
+
+**Consecuencias.**
+- Un lugar de afuera que no esté entre los más de 1.000 habitantes de GeoNames (un puerto chico, una planta) se carga como paraje, igual que en Argentina.
+- El mapeo al código de localidad **de ARCA** para la Carta de Porte es sólo para Argentina: un destino de afuera no lleva CPE de granos nacional.

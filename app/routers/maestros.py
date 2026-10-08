@@ -313,7 +313,7 @@ TODOS = [terceros, localidades, choferes, vehiculos, tipos_carga]
 
 
 class _CatalogoIn(BaseModel):
-    catalogo_id: str = Field(min_length=1, max_length=8)
+    catalogo_id: str = Field(min_length=1, max_length=20)
 
 
 class _UnificarIn(BaseModel):
@@ -338,7 +338,9 @@ def buscar_localidades(q: str = Query(min_length=1), limite: int = Query(default
     propias.sort(key=lambda loc: (not geografia.normalizar(loc.nombre).startswith(aguja), loc.nombre))
     ya = {loc.catalogo_id for loc in propias if loc.catalogo_id} | set(
         sesion.scalars(select(Localidad.catalogo_id).where(Localidad.catalogo_id.is_not(None))))
-    catalogo = [c for c in geografia.localidades(q=q, limite=limite + len(ya)) if c["id"] not in ya][:limite]
+    # Todo el Mercosur, con Argentina primero (ADR-042).
+    catalogo = [c for c in geografia.localidades(q=q, limite=limite + len(ya), pais=None)
+                if c["id"] not in ya][:limite]
     return {"maestro": [_a_salida(loc, LocalidadOut, "activa") for loc in propias[:limite]], "catalogo": catalogo}
 
 
@@ -353,7 +355,8 @@ def traer_del_catalogo(datos: _CatalogoIn, response: Response, sesion: Session =
         return _a_salida(existente, LocalidadOut, "activa")
     mismo = next((x for x in sesion.scalars(select(Localidad).where(Localidad.catalogo_id.is_(None)))
                   if geografia.normalizar(x.nombre) == geografia.normalizar(loc["nombre"])
-                  and geografia.normalizar(x.provincia or "") == geografia.normalizar(loc["provincia"])), None)
+                  and geografia.normalizar(x.provincia or "") == geografia.normalizar(loc["provincia"])
+                  and x.pais == loc["pais"]), None)
     if mismo is not None:
         antes = auditoria.instantanea(mismo)
         mismo.catalogo_id, mismo.es_paraje, mismo.activa = loc["id"], False, True
@@ -361,7 +364,8 @@ def traer_del_catalogo(datos: _CatalogoIn, response: Response, sesion: Session =
                             antes=antes, despues=mismo)
         sesion.commit()
         return _a_salida(mismo, LocalidadOut, "activa")
-    nueva = Localidad(nombre=loc["nombre"], provincia=loc["provincia"], catalogo_id=loc["id"], activa=True)
+    nueva = Localidad(nombre=loc["nombre"], provincia=loc["provincia"], pais=loc["pais"], catalogo_id=loc["id"],
+                      activa=True)
     sesion.add(nueva)
     try:
         sesion.flush()
@@ -388,7 +392,7 @@ def vincular_al_catalogo(id_: int, datos: _CatalogoIn, sesion: Session = Depends
         raise HTTPException(409, f"«{loc['nombre']}» del catálogo ya está vinculada a «{otra.nombre}» (id {otra.id})"
                                  ": si son la misma, unificalas")
     antes = auditoria.instantanea(obj)
-    obj.catalogo_id, obj.es_paraje = loc["id"], False
+    obj.catalogo_id, obj.es_paraje, obj.pais = loc["id"], False, loc["pais"]
     obj.provincia = obj.provincia or loc["provincia"]
     try:
         auditoria.registrar(sesion, actual, "localidades", obj.id, AccionAuditoria.MODIFICACION,
