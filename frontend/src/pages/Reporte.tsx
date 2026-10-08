@@ -336,28 +336,30 @@ export default function Reporte() {
         <ArrowLeft className="size-3" /> Todos los reportes
       </Link>
 
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <TituloPantalla icono={ICONOS_LC.reportes}>{entrada?.titulo ?? slug}</TituloPantalla>
-          {entrada && (
-            <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
-              {entrada.descripcion}
-            </p>
-          )}
-        </div>
+      <div className="mb-4">
         {/* Sin rango no hay hoja que imprimir: el botón no está, en vez de estar
             y fallar. Es la mitad del cambio — la otra es el 422 del backend. */}
-        {!falta && (
-          <BotonImprimir
-            titulo={entrada?.titulo ?? slug}
-            filtros={descripcion}
-            columnas={resumen
-              ? [{ encabezado: 'Concepto', valor: (f: Fila) => f.concepto },
-                 { encabezado: 'Valor', valor: (f: Fila) => f.valor, numerica: true }]
-              : columnas}
-            traer={async () => ({ filas: resumen ? filasDelResumen : filas, truncado })}
-            totales={resumen ? undefined : totalesDe(slug)}
-          />
+        <TituloPantalla
+          icono={ICONOS_LC.reportes}
+          acciones={!falta && (
+            <BotonImprimir
+              titulo={entrada?.titulo ?? slug}
+              filtros={descripcion}
+              columnas={resumen
+                ? [{ encabezado: 'Concepto', valor: (f: Fila) => f.concepto },
+                   { encabezado: 'Valor', valor: (f: Fila) => f.valor, numerica: true }]
+                : columnas}
+              traer={async () => ({ filas: resumen ? filasDelResumen : filas, truncado })}
+              totales={resumen ? undefined : totalesDe(slug)}
+            />
+          )}
+        >
+          {entrada?.titulo ?? slug}
+        </TituloPantalla>
+        {entrada && (
+          <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
+            {entrada.descripcion}
+          </p>
         )}
       </div>
 

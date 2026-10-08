@@ -302,13 +302,17 @@ export default function Ordenes() {
 
   return (
     <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <TituloPantalla icono={ClipboardList}>Órdenes de carga</TituloPantalla>
+      <div className="mb-4">
         {/* El listado se imprime desde reportes (`listado-ordenes`), que exige
             rango: desde aca el boton salia con la pantalla recien abierta y
             mandaba las 4.337 ordenes al papel. El icono de la fila queda: es
             UNA orden, una hoja. */}
-        <Button onClick={() => abrir(null)}><Plus className="size-4" /> Nueva</Button>
+        <TituloPantalla
+          icono={ClipboardList}
+          acciones={<Button onClick={() => abrir(null)}><Plus className="size-4" /> Nueva</Button>}
+        >
+          Órdenes de carga
+        </TituloPantalla>
       </div>
 
       <FiltrosOrdenes valor={filtros} opciones={opciones} alCambiar={setFiltros} />

@@ -218,16 +218,22 @@ export default function CartasDePorte() {
 
   return (
     <div className="p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <TituloPantalla icono={FileCheck}>Cartas de porte</TituloPantalla>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={actualizarAbiertas} disabled={actualizandoTodas}>
-            <RefreshCw className="size-4" /> {actualizandoTodas ? 'Actualizando…' : 'Actualizar abiertas'}
-          </Button>
-          <Button onClick={() => setTrayendo(true)}>
-            <Download className="size-4" /> Traer de ARCA
-          </Button>
-        </div>
+      <div className="mb-4">
+        <TituloPantalla
+          icono={FileCheck}
+          acciones={(
+            <>
+              <Button variant="outline" onClick={actualizarAbiertas} disabled={actualizandoTodas}>
+                <RefreshCw className="size-4" /> {actualizandoTodas ? 'Actualizando…' : 'Actualizar abiertas'}
+              </Button>
+              <Button onClick={() => setTrayendo(true)}>
+                <Download className="size-4" /> Traer de ARCA
+              </Button>
+            </>
+          )}
+        >
+          Cartas de porte
+        </TituloPantalla>
       </div>
 
       <p className="text-muted-foreground mb-4 text-sm">

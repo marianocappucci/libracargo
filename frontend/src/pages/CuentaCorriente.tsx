@@ -223,25 +223,29 @@ export default function CuentaCorriente() {
 
   return (
     <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <TituloPantalla icono={ICONOS_LC.cuentaCorriente}>Cuenta corriente</TituloPantalla>
-        {datos && (
-          <BotonImprimir
-            titulo="Cuenta corriente"
-            filtros={`${listaDeTerceros.find((o) => o.id === terceroId)?.etiqueta ?? ''} · cuenta ${rol}`
-                     + (hasta ? ` · al ${hasta}` : '')}
-            columnas={COLUMNAS_IMPRESAS}
-            traer={async () => ({ filas: datos.movimientos, truncado: false })}
-            totales={() => [
-              { etiqueta: 'Saldo', valor: datos.saldo },
-              // Los dos saldos tambien en el papel: si no coinciden, el que
-              // mira la hoja impresa tiene que poder verlo igual que en pantalla.
-              { etiqueta: 'Saldo recorriendo los movimientos',
-                valor: datos.saldo_recorriendo },
-              { etiqueta: 'Coinciden', valor: datos.coinciden ? 'sí' : '🔴 NO' },
-            ]}
-          />
-        )}
+      <div className="mb-4">
+        <TituloPantalla
+          icono={ICONOS_LC.cuentaCorriente}
+          acciones={datos && (
+            <BotonImprimir
+              titulo="Cuenta corriente"
+              filtros={`${listaDeTerceros.find((o) => o.id === terceroId)?.etiqueta ?? ''} · cuenta ${rol}`
+                       + (hasta ? ` · al ${hasta}` : '')}
+              columnas={COLUMNAS_IMPRESAS}
+              traer={async () => ({ filas: datos.movimientos, truncado: false })}
+              totales={() => [
+                { etiqueta: 'Saldo', valor: datos.saldo },
+                // Los dos saldos tambien en el papel: si no coinciden, el que
+                // mira la hoja impresa tiene que poder verlo igual que en pantalla.
+                { etiqueta: 'Saldo recorriendo los movimientos',
+                  valor: datos.saldo_recorriendo },
+                { etiqueta: 'Coinciden', valor: datos.coinciden ? 'sí' : '🔴 NO' },
+              ]}
+            />
+          )}
+        >
+          Cuenta corriente
+        </TituloPantalla>
       </div>
 
       <Tabs value={rol} onValueChange={elegirPestana} className="gap-4">
