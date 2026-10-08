@@ -3,6 +3,14 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — «Entidades» en el menú: clientes, fleteros, choferes y proveedores
+
+- **Nuevo ítem del menú «Entidades»** (ADR-040), con pestañas **Clientes, Fleteros, Choferes y Proveedores**. Terceros y Choferes salen de Configuración.
+- **Una persona o empresa es una sola entidad, con uno o más roles.** Si se da de alta un CUIT que ya existe, el sistema no la duplica: avisa quién es y ofrece **sumarle el rol**, por ejemplo cuando un fletero también es proveedor.
+- **La ficha del fletero** muestra sus choferes y sus vehículos.
+- **API**: `POST /api/terceros/{id}/roles/{rol}`; 409 con la entidad existente cuando el CUIT se repite; `?fletero_id=` en `/api/choferes` y `/api/vehiculos`; la búsqueda de choferes incluye el CUIT.
+- Sin migración.
+
 ## [Unreleased] — El tarifario se carga desde el PDF; la carta de porte dice desde cuándo está en su estado
 
 - **Cargar el tarifario desde el PDF** que se descarga de la página (ADR-039). El sistema lee la tabla de km y tarifas, la vigencia y el valor de estadía, y muestra una **vista previa** antes de cargarlo, para comparar con el PDF. Los números del PDF vienen codificados en otra tipografía: el sistema los decodifica y verifica que la tabla tenga sentido (km consecutivos y tarifas que no bajan). Si no puede leerla con seguridad, no carga nada y lo avisa. El CSV sigue como alternativa.

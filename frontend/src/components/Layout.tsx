@@ -7,7 +7,7 @@
 // Dos ítems del mismo menú no comparten dibujo — si no, el icono deja de
 // distinguir y hay que leer el texto igual.
 import { createLayout, type NavSection } from 'libra-ui/Layout'
-import { ClipboardList, FileCheck } from 'lucide-react'
+import { Building2, ClipboardList, FileCheck } from 'lucide-react'
 
 import { useConfiguracion } from '@/api/configuracion'
 import { WORDMARK } from '@/branding'
@@ -47,6 +47,9 @@ export const NAV_SECCIONES: NavSection<Usuario>[] = [
         // Propia de este producto, como Órdenes: no es un concepto del catálogo de la familia. `FileCheck` es un
         // dibujo que ningún concepto del catálogo usa (`FileText` es Remitos, `ScrollText` el log, `Truck` los fleteros).
         { to: '/cartas-porte', label: 'Cartas de porte', icon: FileCheck },
+        // Clientes, Fleteros, Choferes y Proveedores en una entrada con pestañas (ADR-040). Propia de este producto, como Órdenes:
+        // «Entidades» no es un concepto del catálogo de la familia, y `Building2` es un dibujo que ningún concepto usa.
+        { to: '/entidades', label: 'Entidades', icon: Building2 },
         { to: '/cuentas', label: 'Cuenta corriente', icon: ICONOS_LC.cuentaCorriente },
         { to: '/caja', label: 'Caja', icon: ICONOS_LC.caja },
         // Una sola entrada para todo lo que es un comprobante, con dos pestañas

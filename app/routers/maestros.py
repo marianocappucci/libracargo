@@ -13,8 +13,8 @@ por dónde se busca, cómo se ordena— entra por parámetro.
 # es un error al importar — las rutas simplemente **no se registran**, y el
 # `openapi()` explota mucho después con un mensaje que no nombra la causa.
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import String, cast, or_, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -63,7 +63,14 @@ def traducir_integridad(err: IntegrityError) -> HTTPException:
 def construir_router(
     *, prefijo: str, etiqueta: str, modelo, entrada, salida,
     campo_orden: str, buscar_en: tuple[str, ...], campo_activo: str = "activo",
+    filtros: tuple[str, ...] = (), validar=None,
 ) -> APIRouter:
+    """El ABM de un maestro. Dos costuras para lo que no comparten todos:
+
+    - `filtros`: columnas enteras por las que se puede filtrar el listado por igualdad (`?fletero_id=7`).
+    - `validar(sesion, obj, id_actual)`: se llama antes de guardar un alta o una modificación, con el objeto ya
+      cargado; levanta `HTTPException` si no va (el CUIT repetido de `terceros`, ADR-040).
+    """
     router = APIRouter(
         prefix=f"/api/{prefijo}", tags=[etiqueta], dependencies=[Depends(require_staff)]
     )
@@ -84,8 +91,15 @@ def construir_router(
         activo: bool | None = Query(default=None),
         limite: int = Query(default=200, ge=1, le=1000),
         desplazamiento: int = Query(default=0, ge=0),
+        request: Request = None,
     ):
         consulta = select(modelo)
+        for campo in filtros:
+            valor = request.query_params.get(campo) if request is not None else None
+            if valor is not None:
+                if not valor.isdigit():
+                    raise HTTPException(422, f"{campo} tiene que ser un número")
+                consulta = consulta.where(getattr(modelo, campo) == int(valor))
         if activo is not None:
             consulta = consulta.where(getattr(modelo, campo_activo).is_(activo))
         if q:
@@ -109,6 +123,8 @@ def construir_router(
               actual: dict = Depends(get_current_user)):
         obj = modelo(**datos.model_dump(exclude={"activo"}))
         setattr(obj, campo_activo, datos.activo)
+        if validar is not None:
+            validar(sesion, obj, None)
         sesion.add(obj)
         try:
             # `flush` antes del asiento: sin id, la auditoría no puede decir a
@@ -131,6 +147,8 @@ def construir_router(
         for campo, valor in datos.model_dump(exclude={"activo"}).items():
             setattr(obj, campo, valor)
         setattr(obj, campo_activo, datos.activo)
+        if validar is not None:
+            validar(sesion, obj, obj.id)
         try:
             auditoria.registrar(sesion, actual, prefijo, obj.id,
                                 AccionAuditoria.MODIFICACION, antes=antes, despues=obj)
@@ -164,11 +182,70 @@ def construir_router(
     return router
 
 
+_ROLES = {"cliente": "es_cliente", "fletero": "es_fletero", "proveedor": "es_proveedor"}
+
+
+def _digitos(cuit: str | None) -> str:
+    return "".join(c for c in (cuit or "") if c.isdigit())
+
+
+def _roles_de(t: Tercero) -> list[str]:
+    return [rol for rol, columna in _ROLES.items() if getattr(t, columna)]
+
+
+def _cuit_no_repetido(sesion: Session, obj: Tercero, id_actual: int | None) -> None:
+    """Una persona o empresa es **una sola entidad** con uno o más roles (ADR-040): un CUIT que ya tiene otra
+    entidad no se vuelve a dar de alta; se le suma el rol a la que existe.
+
+    Sólo cuenta un CUIT de 11 dígitos. El legado dejó CUIT de relleno («1») en 68 terceros de Suitrans: esos no
+    identifican a nadie y no se comparan.
+    """
+    cuit = _digitos(obj.cuit)
+    if len(cuit) != 11:
+        return
+    limpio = func.replace(func.replace(func.coalesce(Tercero.cuit, ""), "-", ""), ".", "")
+    consulta = select(Tercero).where(limpio == cuit)
+    if id_actual is not None:
+        consulta = consulta.where(Tercero.id != id_actual)
+    otro = sesion.scalars(consulta.order_by(Tercero.id).limit(1)).first()
+    if otro is None:
+        return
+    roles = _roles_de(otro)
+    raise HTTPException(409, {
+        "mensaje": (f"El CUIT {obj.cuit} ya es de «{otro.razon_social}»"
+                    + (f" ({', '.join(roles)})" if roles else "")
+                    + ". Sumale el rol en vez de cargarla de nuevo."),
+        "existente": {"id": otro.id, "razon_social": otro.razon_social, "roles": roles, "activo": otro.activo},
+    })
+
+
 terceros = construir_router(
     prefijo="terceros", etiqueta="terceros", modelo=Tercero,
     entrada=TerceroIn, salida=TerceroOut, campo_orden="razon_social",
     buscar_en=("razon_social", "cuit", "localidad", "contacto"),
+    validar=_cuit_no_repetido,
 )
+
+
+@terceros.post("/{id_}/roles/{rol}", response_model=TerceroOut)
+def sumar_rol(id_: int, rol: str, sesion: Session = Depends(obtener_sesion),
+              actual: dict = Depends(get_current_user)):
+    """Le suma un rol (cliente, fletero o proveedor) a una entidad que ya existe, y la reactiva si estaba de baja.
+
+    Es lo que ofrece la pantalla cuando el alta choca con un CUIT existente (ADR-040).
+    """
+    if rol not in _ROLES:
+        raise HTTPException(404, f"rol desconocido: {rol!r} (cliente, fletero o proveedor)")
+    t = sesion.get(Tercero, id_)
+    if t is None:
+        raise HTTPException(404, f"no existe terceros con id {id_}")
+    antes = auditoria.instantanea(t)
+    setattr(t, _ROLES[rol], True)
+    t.activo = True
+    auditoria.registrar(sesion, actual, "terceros", t.id, AccionAuditoria.MODIFICACION, antes=antes, despues=t)
+    sesion.commit()
+    sesion.refresh(t)
+    return _a_salida(t, TerceroOut, "activo")
 
 
 # El filtro por rol va aparte del constructor: es lo único que `terceros` no
@@ -203,13 +280,15 @@ localidades = construir_router(
 choferes = construir_router(
     prefijo="choferes", etiqueta="choferes", modelo=Chofer,
     entrada=ChoferIn, salida=ChoferOut, campo_orden="nombre",
-    buscar_en=("nombre", "dni", "telefono"),
+    buscar_en=("nombre", "dni", "cuit", "telefono"),
+    filtros=("fletero_id",),
 )
 
 vehiculos = construir_router(
     prefijo="vehiculos", etiqueta="vehiculos", modelo=Vehiculo,
     entrada=VehiculoIn, salida=VehiculoOut, campo_orden="patente_chasis",
     buscar_en=("patente_chasis", "patente_acoplado"),
+    filtros=("fletero_id",),
 )
 
 tipos_carga = construir_router(

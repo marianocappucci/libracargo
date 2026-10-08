@@ -4,7 +4,8 @@ import { estaActivo } from 'libra-ui/Layout'
 import { describe, expect, it } from 'vitest'
 
 import {
-  MAESTROS_AUDITADOS, destinoDeFilaDeReporte, destinoDelLog, irA, origenDelMovimiento, RUTAS_DE_COMPROBANTES, seccionDe,
+  MAESTROS_AUDITADOS, PESTANAS_DE_ENTIDADES, SECCIONES_MUDADAS_A_ENTIDADES, destinoDeFilaDeReporte, destinoDelLog, irA,
+  origenDelMovimiento, pestanaDeEntidades, RUTAS_DE_COMPROBANTES, seccionDe,
 } from './navegacion'
 
 function movimiento(extra: Record<string, unknown>) {
@@ -67,7 +68,8 @@ describe('destinoDelLog', () => {
     // base dice `localidades` y no `localidad`. Un mapa escrito en singular
     // habria compilado igual y no habria linkeado nada.
     expect(destinoDelLog('localidades', 3)).toBe('/localidades')
-    expect(destinoDelLog('terceros', 3)).toBe('/terceros')
+    expect(destinoDelLog('terceros', 3)).toBe('/entidades')
+    expect(destinoDelLog('choferes', 3)).toBe('/entidades?pestana=choferes')
     // La razón social se retiró (ADR-035): un asiento viejo del log ya no lleva a ninguna pantalla.
     expect(destinoDelLog('razones-sociales', 3)).toBeNull()
   })
@@ -149,4 +151,31 @@ describe('Comprobantes: secciones y menú', () => {
     for (const ruta of ['/', '/ordenes', '/cuentas', '/caja', '/reportes/por-cliente', '/gastos-raros', '/pre-facturasX'])
       expect(estaActivo(ruta, '/comprobantes', RUTAS_DE_COMPROBANTES), ruta).toBe(false)
 })
+})
+
+describe('Entidades (ADR-040)', () => {
+  it('la pestaña sale del query, y lo desconocido cae en Clientes', () => {
+    expect(PESTANAS_DE_ENTIDADES).toEqual(['clientes', 'fleteros', 'choferes', 'proveedores'])
+    expect(pestanaDeEntidades('fleteros')).toBe('fleteros')
+    expect(pestanaDeEntidades('choferes')).toBe('choferes')
+    expect(pestanaDeEntidades(null)).toBe('clientes')
+    expect(pestanaDeEntidades('cualquier-cosa')).toBe('clientes')
+  })
+
+  it('irA.entidades arma la pestaña y la ficha', () => {
+    expect(irA.entidades()).toBe('/entidades')
+    expect(irA.entidades('fleteros')).toBe('/entidades?pestana=fleteros')
+    expect(irA.entidades('choferes', 4)).toBe('/entidades?pestana=choferes&ver=4')
+  })
+
+  it('🔑 las secciones que salieron de Configuración tienen su pestaña', () => {
+    expect(SECCIONES_MUDADAS_A_ENTIDADES).toEqual({ terceros: 'clientes', choferes: 'choferes' })
+  })
+
+  it('🔴 App.tsx tiene la ruta /entidades y redirige las viejas', () => {
+    const app = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+    expect(app).toContain('path="/entidades"')
+    expect(app).toMatch(/path="\/terceros" element=\{<Navigate/)
+    expect(app).toMatch(/path="\/choferes" element=\{<Navigate/)
+  })
 })
