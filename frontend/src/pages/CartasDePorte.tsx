@@ -9,8 +9,9 @@
  */
 import { BadgeEstado } from 'libra-ui/badge-estado'
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
+import { INDICADORES } from 'libra-ui/iconos-indicador'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
-import { Download, FileCheck, FileDown, Link2, RefreshCw } from 'lucide-react'
+import { Download, FileDown, Link2, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { MouseEvent } from 'react'
 import { Link } from 'react-router-dom'
@@ -220,7 +221,7 @@ export default function CartasDePorte() {
     <div className="p-6">
       <div className="mb-4">
         <TituloPantalla
-          icono={FileCheck}
+          icono={INDICADORES.cartasDePorte}
           acciones={(
             <>
               <Button variant="outline" onClick={actualizarAbiertas} disabled={actualizandoTodas}>
