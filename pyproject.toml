@@ -61,7 +61,8 @@ dependencies = [
     # v1.143.0 -> v1.144.0 (2026-10-08): la emision de la Carta de Porte en `libracore.arca_wscpe` (ADR-035 de libracore); la usa la emision desde la orden (fase 4). Sin migracion del motor.
     # v1.144.0 -> v1.145.0 (2026-10-08): `geografia.localidad(id)` para vincular las localidades al catalogo (ADR-041). Sin migracion del motor.
     # v1.145.0 -> v1.146.0 (2026-10-08): el resto del Mercosur en el catalogo geografico (geografia.paises, parametro pais). Sin migracion del motor.
-    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.146.0",
+    # v1.146.0 -> v1.147.0 (2026-10-08): el pedido de certificado de ARCA se genera en el servidor (ADR-036 de libracore: rutas `.../pedido`; `GET .../servicios` suma `admite_pedido`). Sin migracion.
+    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.147.0",
 ]
 
 # Los motores de la familia entran en F1, desde repos privados por deploy key.

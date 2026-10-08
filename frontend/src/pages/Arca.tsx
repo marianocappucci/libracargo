@@ -24,6 +24,8 @@
  */
 import { ArcaCard } from 'libra-ui/Configuracion'
 
+import { useConfiguracion } from '@/api/configuracion'
+
 /** El slug con el que se crea la fila de `arca_config`.
  *
  *  Tiene que decir lo mismo que `EMPRESA_ARCA` en
@@ -37,7 +39,12 @@ import { ArcaCard } from 'libra-ui/Configuracion'
 const EMPRESA = 'agencia'
 
 export function FacturacionArca() {
-  return <ArcaCard producto="LibraCargo" basePath="/api/arca" empresa={EMPRESA} />
+  // La razón social de los datos de la empresa: prellena el diálogo de «Generar pedido de certificado» (ADR-041 del kit).
+  const empresa = useConfiguracion()
+  return (
+    <ArcaCard producto="LibraCargo" basePath="/api/arca" empresa={EMPRESA}
+              razonSocial={empresa.razon_social || undefined} />
+  )
 }
 
 export default FacturacionArca

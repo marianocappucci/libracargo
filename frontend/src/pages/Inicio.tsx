@@ -23,6 +23,7 @@ import { mensajeDeError } from '@/components/AbmMaestro'
 import { irA } from '@/navegacion'
 import { formatearImporte } from '@/components/esquema-orden'
 import { sumarImportes } from '@/api/comprobantes'
+import { GrillaDeIndicadores } from 'libra-ui/GrillaDeIndicadores'
 import { TarjetaIndicador } from 'libra-ui/TarjetaIndicador'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 import { formatearFecha } from '@/components/esquema-orden'
@@ -80,7 +81,7 @@ export default function Inicio() {
       )}
 
       {mes && historico && (
-        <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <GrillaDeIndicadores variante="ancha" className="mt-6">
           <TarjetaIndicador etiqueta="Órdenes del mes" concepto="ordenesDeCarga" a="/ordenes"
                             valor={String(mes.ordenes)}
                             ayuda={`${historico.ordenes} en total`} />
@@ -108,7 +109,7 @@ export default function Inicio() {
           <TarjetaIndicador etiqueta="Comisión del mes" concepto="comisiones" a="/reportes/por-fletero"
                             valor={formatearImporte(mes.comision)}
                             ayuda="de las órdenes del mes" />
-        </div>
+        </GrillaDeIndicadores>
       )}
 
       <section className="mt-8">

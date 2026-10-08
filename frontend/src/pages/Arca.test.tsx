@@ -26,7 +26,8 @@ const { FacturacionArca } = await import('./Arca')
 
 describe('la pantalla de ARCA', () => {
   it('le pide la configuración y el estado al router de ESTE producto', async () => {
-    get.mockResolvedValue(null)
+    // Los datos de la empresa (de ahí sale la razón social del pedido de certificado); lo demás, nada.
+    get.mockImplementation(async (ruta: string) => (ruta === '/api/configuracion' ? { razon_social: 'Transportes Demo S.A.' } : null))
     render(<FacturacionArca />)
 
     await waitFor(() => expect(get.mock.calls.length).toBeGreaterThanOrEqual(2))
