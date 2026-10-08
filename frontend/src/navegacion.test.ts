@@ -4,8 +4,8 @@ import { estaActivo } from 'libra-ui/Layout'
 import { describe, expect, it } from 'vitest'
 
 import {
-  MAESTROS_AUDITADOS, PESTANAS_DE_ENTIDADES, SECCIONES_MUDADAS_A_ENTIDADES, destinoDeFilaDeReporte, destinoDelLog, irA,
-  origenDelMovimiento, pestanaDeEntidades, RUTAS_DE_COMPROBANTES, seccionDe,
+  MAESTROS_AUDITADOS, PESTANAS_DE_CARTAS_DE_PORTE, PESTANAS_DE_ENTIDADES, SECCIONES_MUDADAS_A_ENTIDADES, destinoDeFilaDeReporte, destinoDelLog, irA,
+  origenDelMovimiento, pestanaDeCartasDePorte, pestanaDeEntidades, RUTAS_DE_COMPROBANTES, seccionDe,
 } from './navegacion'
 
 function movimiento(extra: Record<string, unknown>) {
@@ -182,5 +182,25 @@ describe('Entidades (ADR-040)', () => {
     expect(app).toContain('path="/entidades"')
     expect(app).toMatch(/path="\/terceros" element=\{<Navigate/)
     expect(app).toMatch(/path="\/choferes" element=\{<Navigate/)
+  })
+})
+
+describe('Cartas de porte: pestañas y titulares (ADR-044)', () => {
+  it('la pestaña sale del query, y lo desconocido cae en el listado', () => {
+    expect(PESTANAS_DE_CARTAS_DE_PORTE).toEqual(['cartas', 'titulares'])
+    expect(pestanaDeCartasDePorte('titulares')).toBe('titulares')
+    expect(pestanaDeCartasDePorte(null)).toBe('cartas')
+    expect(pestanaDeCartasDePorte('cualquier-cosa')).toBe('cartas')
+  })
+
+  it('irA.titulares arma la pestaña y la ficha', () => {
+    expect(irA.titulares()).toBe('/cartas-porte?pestana=titulares')
+    expect(irA.titulares(3)).toBe('/cartas-porte?pestana=titulares&ver=3')
+  })
+
+  it('el log lleva el titular y su plantilla a la ficha del titular', () => {
+    expect(destinoDelLog('titular_cpe', 3)).toBe('/cartas-porte?pestana=titulares&ver=3')
+    expect(destinoDelLog('plantilla_cpe', 3)).toBe('/cartas-porte?pestana=titulares&ver=3')
+    expect(destinoDelLog('titular_cpe', null)).toBeNull()
   })
 })

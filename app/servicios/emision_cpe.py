@@ -28,6 +28,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from libracore import arca_wscpe as w
 from libracore.geografia import normalizar
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -39,7 +40,7 @@ from app.models import (
     Tercero,
     Vehiculo,
 )
-from app.models.cartas_porte import CartaPorte, PlantillaCpe
+from app.models.cartas_porte import EMITE_NOSOTROS, CartaPorte, PlantillaCpe, TitularCpe
 from app.servicios import auditoria
 from app.servicios import cartas_porte as cpe_servicio
 from app.servicios.cartas_porte import Rechazo, digitos
@@ -54,6 +55,12 @@ _CACHE: dict[tuple, tuple[float, object]] = {}
 CAMPOS_DE_PLANTILLA = ("sucursal", "origen", "cod_grano", "cosecha", "destino", "cuit_destinatario",
                        "intervinientes", "cuit_remitente_comercial_productor", "mercaderia_fumigada", "km",
                        "observaciones")
+
+#: Los intervinientes opcionales con el nombre del WSDL de ARCA (`IntervinientesSolicitud`). Es la lista que el motor
+#: tiene en `_ORDEN_INTERVINIENTES` (privada): un test las compara, para que un interviniente nuevo no se pierda.
+INTERVINIENTES = ("cuitRemitenteComercialVentaPrimaria", "cuitRemitenteComercialVentaSecundaria",
+                  "cuitRemitenteComercialVentaSecundaria2", "cuitMercadoATermino", "cuitCorredorVentaPrimaria",
+                  "cuitCorredorVentaSecundaria", "cuitRepresentanteEntregador", "cuitRepresentanteRecibidor")
 
 #: El enlace al PDF que se le pasa al chofer vence a los 7 días.
 VIGENCIA_ENLACE = 7 * 24 * 3600
@@ -285,6 +292,21 @@ def _solicitud(d: dict) -> w.SolicitudCpe:
     )
 
 
+def _exigir_que_emitamos_nosotros(sesion: Session, cuit: str) -> None:
+    """Un titular **cargado** como «emite él» o dado de baja (ADR-044) no se emite desde acá, aunque ARCA tenga su
+    delegación: alguien dijo que no es así, y emitir a su nombre es irreversible. Uno que no está cargado sigue
+    pasando: la delegación de ARCA es la autoridad y esta lista, una libreta."""
+    titular = sesion.scalar(select(TitularCpe).where(TitularCpe.cuit == cuit))
+    if titular is None:
+        return
+    if titular.emite != EMITE_NOSOTROS:
+        raise Rechazo(409, f"«{titular.razon_social}» emite sus propias cartas de porte: está cargado en Titulares "
+                           "como «El titular». Si cambió, corregilo ahí.")
+    if not titular.activo:
+        raise Rechazo(409, f"«{titular.razon_social}» está dado de baja en Titulares: reactivalo para emitir a su "
+                           "nombre.")
+
+
 def emitir(sesion: Session, usuario: dict | None, orden_id: int, datos: dict, *, confirmo: bool) -> CartaPorte:
     """Emite la CPE de la orden a nombre del titular de `datos` y la guarda vinculada. Ver el docstring del módulo."""
     orden = sesion.get(OrdenCarga, orden_id)
@@ -298,6 +320,7 @@ def emitir(sesion: Session, usuario: dict | None, orden_id: int, datos: dict, *,
         raise Rechazo(409, "La emisión de Cartas de Porte reales está apagada: la habilita un administrador.")
     if amb == "produccion" and not confirmo:
         raise Rechazo(422, "Confirmá que vas a emitir una Carta de Porte real.")
+    _exigir_que_emitamos_nosotros(sesion, digitos(datos.get("cuit_titular", "")))
     cuit, amb, ticket = _acceso(datos.get("cuit_titular", ""))
     habilitados = w.cuits_habilitados(ticket)
     if habilitados and cuit not in habilitados:

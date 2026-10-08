@@ -24,14 +24,17 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import type {
-  CartaPorte, EstadoDeEmision, OpcionDeArca, Planta, Propuesta, Representados,
+  CartaPorte, EstadoDeEmision, ListadoDeTitulares, OpcionDeArca, Planta, Propuesta,
 } from '@/api/cartas-porte'
 import {
-  cartasPorte, enmascararCuit, formatearCuit, formatearInstante, formatearKilos, nombreOCuit,
+  cartasPorte, formatearCuit, formatearInstante, formatearKilos,
 } from '@/api/cartas-porte'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { CompartirCartaDePorte } from '@/components/CompartirCartaDePorte'
 import { Elegir } from '@/components/Elegir'
+import {
+  Campo, Casilla, Catalogo, Seccion, Texto, TextoCuit, TextoNumero,
+} from '@/components/campos-cpe'
 import { formatearImporte } from '@/components/esquema-orden'
 import type { Borrador } from '@/components/emision-cpe'
 import {
@@ -42,7 +45,6 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 
@@ -56,7 +58,6 @@ const PASOS: { paso: Paso; etiqueta: string }[] = [
 ]
 
 const SIN_CATALOGO: OpcionDeArca[] = []
-const aOpciones = (lista: OpcionDeArca[]) => lista.map((o) => ({ id: o.codigo, etiqueta: o.nombre }))
 const nombreDel = (lista: OpcionDeArca[] | undefined, codigo: string) =>
   lista?.find((o) => String(o.codigo) === codigo)?.nombre ?? ''
 
@@ -65,90 +66,23 @@ function esIncierto(e: unknown): boolean {
   return !(e instanceof ApiError) || e.status >= 500
 }
 
-// ── Campos ────────────────────────────────────────────────────────────────
-
-function Campo({ id, etiqueta, error, ayuda, children, className }: {
-  id: string
-  etiqueta: string
-  error?: string
-  ayuda?: string
-  children: React.ReactNode
-  className?: string
-}) {
-  return (
-    <div className={cn('grid min-w-0 content-start gap-1', className)}>
-      <Label htmlFor={id}>{etiqueta}</Label>
-      {children}
-      {ayuda && !error && <p className="text-muted-foreground text-xs">{ayuda}</p>}
-      {error && <p id={`${id}-error`} className="text-destructive text-xs">{error}</p>}
-    </div>
-  )
-}
-
-function Texto({ id, etiqueta, valor, alCambiar, error, ayuda, className, ...resto }: {
-  id: string
-  etiqueta: string
-  valor: string
-  alCambiar: (v: string) => void
-  error?: string
-  ayuda?: string
-  className?: string
-} & Omit<React.ComponentProps<typeof Input>, 'id' | 'value' | 'onChange'>) {
-  return (
-    <Campo id={id} etiqueta={etiqueta} error={error} ayuda={ayuda} className={className}>
-      <Input id={id} value={valor} onChange={(e) => alCambiar(e.target.value)}
-             aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-error` : undefined} {...resto} />
-    </Campo>
-  )
-}
-
-const TextoCuit = (p: Omit<Parameters<typeof Texto>[0], 'alCambiar' | 'inputMode' | 'placeholder'> & {
-  alCambiar: (v: string) => void
-}) => (
-  <Texto {...p} inputMode="numeric" placeholder="00-00000000-0" alCambiar={(v) => p.alCambiar(enmascararCuit(v))} />
-)
-
-const TextoNumero = (p: Parameters<typeof Texto>[0]) => (
-  <Texto {...p} inputMode="numeric" alCambiar={(v) => p.alCambiar(v.replace(/\D/g, ''))} />
-)
-
-/** Un select de un catálogo de ARCA, con el error debajo (el de `Elegir` no pinta el borde). */
-function Catalogo({ id, etiqueta, valor, opciones, alCambiar, error, deshabilitado }: {
-  id: string
-  etiqueta: string
-  valor: string
-  opciones: OpcionDeArca[]
-  alCambiar: (v: string) => void
-  error?: string
-  deshabilitado?: boolean
-}) {
-  return (
-    <div className="grid min-w-0 content-start gap-1">
-      <Elegir id={id} etiqueta={etiqueta} vacio="Elegir…" valor={valor} opciones={aOpciones(opciones)}
-              alCambiar={alCambiar} deshabilitado={deshabilitado} />
-      {error && <p className="text-destructive text-xs">{error}</p>}
-    </div>
-  )
-}
-
-function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }) {
-  return (
-    <fieldset className="grid gap-3 rounded-md border p-4">
-      <legend className="px-1 text-sm font-semibold">{titulo}</legend>
-      <div className="grid gap-3 md:grid-cols-2">{children}</div>
-    </fieldset>
-  )
-}
-
-function Casilla({ id, etiqueta, marcada, alCambiar, className }: {
-  id: string; etiqueta: string; marcada: boolean; alCambiar: (v: boolean) => void; className?: string
-}) {
-  return (
-    <div className={cn('flex items-center gap-2 self-end pb-2', className)}>
-      <input id={id} type="checkbox" checked={marcada} onChange={(e) => alCambiar(e.target.checked)} />
-      <Label htmlFor={id}>{etiqueta}</Label>
-    </div>
-  )
+/** A nombre de quién se puede emitir: los titulares cargados que son «nosotros» y están activos **y delegados en ARCA**,
+ *  más los CUIT que ARCA trae y no están cargados (ADR-044). Estos últimos se ofrecen marcados: la delegación es lo que
+ *  autoriza —y el servidor la vuelve a verificar al emitir—, y la lista de Titulares es una libreta que puede ir atrás
+ *  (el primer cliente que delegó, antes de cargarlo). Lo que no se ofrece nunca: uno que emite él, uno dado de baja, ni
+ *  uno cuya delegación ARCA todavía no informa. */
+export function opcionesDeTitulares(l: ListadoDeTitulares | null): {
+  cuit: string; nombre: string; etiqueta: string; sinCargar: boolean
+}[] {
+  if (!l || !l.verificado) return []
+  const cargados = l.titulares
+    .filter((t) => t.activo && t.emite === 'nosotros' && t.delegacion === 'delegado')
+    .map((t) => ({ cuit: t.cuit, nombre: t.razon_social, etiqueta: t.razon_social, sinCargar: false }))
+  const sinCargar = l.sin_cargar.map((s) => {
+    const nombre = s.tercero?.razon_social ?? formatearCuit(s.cuit)
+    return { cuit: s.cuit, nombre, etiqueta: `${nombre} · sin cargar en Titulares`, sinCargar: true }
+  })
+  return [...cargados, ...sinCargar]
 }
 
 // ── El asistente ──────────────────────────────────────────────────────────
@@ -161,7 +95,7 @@ function Asistente({ orden, alCerrar, alEmitida }: {
   const [paso, setPaso] = useState<Paso>('titular')
 
   // Paso 1: titular
-  const [representados, setRepresentados] = useState<Representados | null>(null)
+  const [titulares, setTitulares] = useState<ListadoDeTitulares | null>(null)
   const [errorDeAcceso, setErrorDeAcceso] = useState<string | null>(null)
   const [estado, setEstado] = useState<EstadoDeEmision | null>(null)
   const [errorDeEstado, setErrorDeEstado] = useState<string | null>(null)
@@ -193,12 +127,12 @@ function Asistente({ orden, alCerrar, alEmitida }: {
   // sistema y se tiene que poder leer aunque ARCA no conteste a la lista de titulares.
   useEffect(() => {
     let vigente = true
-    setRepresentados(null); setErrorDeAcceso(null); setEstado(null); setErrorDeEstado(null)
+    setTitulares(null); setErrorDeAcceso(null); setEstado(null); setErrorDeEstado(null)
     cartasPorte.estadoDeEmision()
       .then((r) => { if (vigente) setEstado(r) })
       .catch((e) => { if (vigente) setErrorDeEstado(mensajeDeError(e)) })
-    cartasPorte.representados()
-      .then((r) => { if (vigente) setRepresentados(r) })
+    cartasPorte.titulares()
+      .then((r) => { if (vigente) setTitulares(r) })
       .catch((e) => { if (vigente) setErrorDeAcceso(mensajeDeError(e)) })
     return () => { vigente = false }
   }, [intento])
@@ -234,8 +168,9 @@ function Asistente({ orden, alCerrar, alEmitida }: {
   const problemas = useMemo(() => (b ? problemasDe(b) : {}), [b])
   const cantidadDeProblemas = Object.keys(problemas).length
 
-  const titular = representados?.cuits.find((c) => c.cuit === cuit)
-  const nombreDelTitular = titular ? nombreOCuit(titular) : formatearCuit(cuit)
+  const opcionesDeTitular = useMemo(() => opcionesDeTitulares(titulares), [titulares])
+  const titular = opcionesDeTitular.find((o) => o.cuit === cuit)
+  const nombreDelTitular = titular ? titular.nombre : formatearCuit(cuit)
   const produccion = estado?.ambiente === 'produccion'
   const homologacion = estado?.ambiente === 'homologacion'
 
@@ -313,9 +248,12 @@ function Asistente({ orden, alCerrar, alEmitida }: {
   let pie: React.ReactNode
 
   if (paso === 'titular') {
-    const sinDelegaciones = representados !== null && representados.cuits.length === 0
-    // Sin certificado, `/representados` también contesta 409: lo dice el cartel de estado y no hace falta repetirlo.
-    const errorVisible = errorDeAcceso && estado?.ambiente !== null ? errorDeAcceso : null
+    // Un titular al que se le puede emitir tiene que estar delegado en ARCA (ADR-044): el listado ya trae ese estado
+    // leído del ticket. Si no se pudo leer, se dice por qué y no se ofrece a nadie: no se adivina una delegación.
+    const sinOpciones = titulares !== null && titulares.verificado && opcionesDeTitular.length === 0
+    // Sin certificado, la lista también viene sin verificar: lo dice el cartel de estado y no hace falta repetirlo.
+    const errorVisible = (errorDeAcceso ?? (titulares && !titulares.verificado ? titulares.motivo : null))
+    const mostrarError = errorVisible && estado?.ambiente !== null ? errorVisible : null
     cuerpo = (
       <div className="grid gap-3">
         <p className="text-sm">
@@ -326,17 +264,24 @@ function Asistente({ orden, alCerrar, alEmitida }: {
         {cartelDeEstado && (
           <p role="alert" className="rounded border-2 border-destructive p-3 text-sm font-medium">{cartelDeEstado}</p>
         )}
-        {errorVisible && <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{errorVisible}</p>}
-        {representados === null && !errorDeAcceso ? (
+        {mostrarError && <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{mostrarError}</p>}
+        {titulares === null && !errorDeAcceso ? (
           <p className="text-muted-foreground text-sm">Consultando a ARCA por quién se puede emitir…</p>
-        ) : representados && (
+        ) : titulares && titulares.verificado && (
           <Elegir id="cpe-titular" etiqueta="A nombre de" vacio="Elegir…" valor={cuit}
-                  opciones={representados.cuits.map((c) => ({ id: c.cuit, etiqueta: nombreOCuit(c) }))}
+                  opciones={opcionesDeTitular.map((o) => ({ id: o.cuit, etiqueta: o.etiqueta }))}
                   alCambiar={setCuit} />
         )}
-        {sinDelegaciones && (
+        {titular?.sinCargar && (
+          <p role="status" className="text-muted-foreground text-xs">
+            Este CUIT le delegó la emisión a este certificado en ARCA, pero no está cargado en Cartas de porte →
+            Titulares: cargalo ahí para guardar sus datos habituales.
+          </p>
+        )}
+        {sinOpciones && (
           <p role="alert" className="text-destructive text-xs">
-            El certificado no tiene ninguna delegación: ARCA no informa a nombre de quién emitir.
+            Ningún titular activo le delegó la emisión a este certificado (o emiten ellos mismos): revisá la pestaña
+            Titulares de Cartas de porte.
           </p>
         )}
         {produccion && <p className="text-muted-foreground text-xs">Ambiente: producción</p>}
