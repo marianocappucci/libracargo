@@ -5,9 +5,13 @@
  * `PUT /etapa` también en una facturada; los archivos a `/adjuntos`). Las reglas de fondo son del servidor y su
  * 422 se muestra tal cual.
  */
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// La sección «Flete» consulta la referencia con una espera de 250 ms antes de pedirla: en el CI, con este archivo
+// tardando ~50 s, el segundo por defecto de `waitFor` no alcanza y el test falla por tiempo, no por lógica.
+configure({ asyncUtilTimeout: 5000 })
 
 const get = vi.fn()
 const put = vi.fn()
