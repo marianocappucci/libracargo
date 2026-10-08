@@ -33,7 +33,16 @@ export type PartidaDelAlta = { cuit: string; razon_social: string; tercero_id: n
 
 /** Qué dice cada estado de delegación, para que quien mira sepa qué hacer. */
 function explicacion(t: Titular, motivo: string | null): string {
-  if (t.emite === 'titular') return 'Emite él con su propio acceso: nosotros sólo consultamos sus cartas por CTG.'
+  if (t.emite === 'titular') {
+    if (t.delegacion === 'delegado') {
+      return 'Emite él con su propio acceso. ARCA informa que nos delegó el servicio: podemos consultar sus cartas por CTG.'
+    }
+    if (t.delegacion === 'pendiente') {
+      return 'Emite él con su propio acceso, pero para consultar sus cartas por CTG tiene que delegarnos el servicio. '
+        + 'ARCA todavía no lo informa: lo suma con el próximo ticket, que puede tardar hasta 12 horas desde que lo hace.'
+    }
+    return `Emite él con su propio acceso. No se pudo verificar en ARCA si nos delegó la consulta${motivo ? `: ${motivo}` : '.'}`
+  }
   if (t.delegacion === 'delegado') return 'ARCA informa que este CUIT le delegó la emisión a nuestro certificado.'
   if (t.delegacion === 'pendiente') {
     return 'Está cargado, pero ARCA todavía no informa su delegación. ARCA la suma con el próximo ticket, que puede '
@@ -164,7 +173,7 @@ function Formulario({ titular, partida, esAdmin, cuitParaCatalogos, motivo, alCe
             <Label htmlFor="titular-emite-titular" className="grid gap-0.5 font-normal">
               <span className="font-medium">El titular</span>
               <span className="text-muted-foreground text-xs">
-                Emite él; nosotros sólo consultamos sus cartas por CTG.
+                Emite él; nosotros no emitimos, sólo consultamos sus cartas por CTG (para eso también tiene que delegarnos).
               </span>
             </Label>
           </div>
@@ -216,8 +225,8 @@ function Formulario({ titular, partida, esAdmin, cuitParaCatalogos, motivo, alCe
         </DialogFooter>
       </form>
 
-      {titular && titular.delegacion === 'pendiente' && titular.emite === 'nosotros' && (
-        <InstruccionesDeDelegacion titular={titular.razon_social} />
+      {titular && titular.delegacion === 'pendiente' && (
+        <InstruccionesDeDelegacion titular={titular.razon_social} soloConsulta={titular.emite === 'titular'} />
       )}
 
       {titular && titular.emite === 'nosotros' && (

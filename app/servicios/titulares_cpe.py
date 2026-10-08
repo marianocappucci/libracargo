@@ -14,6 +14,9 @@ tampoco lo impide: si le delegó a este certificado la emisión de `wscpe`, el t
 - **delegado sin cargar**: está en el ticket y no en la lista (`sin_cargar`), para darlo de alta con un clic;
 - **sin verificar**: no hay certificado `wscpe` o ARCA no contestó. No es un error de la pantalla: se dice el motivo.
 
+🔑 **La delegación se mira para todos los titulares, emita quien emita.** Delegar `wscpe` habilita las dos cosas:
+consultar una CPE por CTG (como `cuitRepresentada`) y emitirla. «Quién emite» sólo decide si se le ofrece emitir.
+
 🔴 **El ticket es el que ya está en el disco.** Pedir uno a WSAA tiene costo y ARCA rechaza otro mientras el vigente
 no venció (`alreadyAuthenticated`). Se usa `cartas_porte._ticket`, que pasa por `arca_wscpe.autenticar` y éste por la
 caché del motor: sólo pide uno cuando no hay ninguno vigente, igual que la emisión y la consulta. Nunca se fuerza.
@@ -32,7 +35,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import AccionAuditoria, Tercero
-from app.models.cartas_porte import EMITE_NOSOTROS, EMITE_TITULAR, PlantillaCpe, TitularCpe
+from app.models.cartas_porte import PlantillaCpe, TitularCpe
 from app.schemas.cartas_porte import PlantillaIn, TitularEdicion, TitularIn
 from app.servicios import auditoria
 from app.servicios import cartas_porte as cpe_servicio
@@ -42,8 +45,6 @@ from app.servicios.emision_arca import EMPRESA_ARCA
 DELEGADO = "delegado"
 PENDIENTE = "pendiente"
 SIN_VERIFICAR = "sin_verificar"
-#: El titular emite por su cuenta: no hay delegación que mirar.
-NO_APLICA = "no_aplica"
 
 
 # ── Qué dice ARCA ──────────────────────────────────────────────────────────
@@ -76,8 +77,8 @@ def delegaciones() -> Delegaciones:
 
 
 def _estado_de(titular: TitularCpe, d: Delegaciones) -> str:
-    if titular.emite == EMITE_TITULAR:
-        return NO_APLICA
+    # 🔑 «Quién emite» no cambia lo que hay que mirar: la delegación de `wscpe` habilita consultar una CPE por CTG y
+    # emitirla, así que también el que emite él la necesita para que podamos consultarle (ADR-044, 2026-10-08).
     if d.cuits is None:
         return SIN_VERIFICAR
     return DELEGADO if titular.cuit in d.cuits else PENDIENTE
@@ -127,7 +128,7 @@ def _fila(titular: TitularCpe, d: Delegaciones, tercero: Tercero | None, plantil
 
 def como_fila(sesion: Session, titular: TitularCpe) -> dict:
     """Un titular recién escrito, con la forma de una fila del listado. No consulta a ARCA: la delegación vuelve «sin
-    verificar» (o «no aplica») y se refresca con el próximo listado."""
+    verificar» y se refresca con el próximo listado."""
     tercero = (sesion.get(Tercero, titular.tercero_id) if titular.tercero_id
                else _tercero_por_cuit(sesion, titular.cuit))
     return _fila(titular, Delegaciones(None, None, None), tercero, _plantillas(sesion))
@@ -161,8 +162,8 @@ def listar(sesion: Session) -> dict:
 def de_tercero(sesion: Session, tercero_id: int) -> dict | None:
     """El titular de esa entidad (por vínculo o por CUIT) con su estado, para la ficha del cliente; `None` si no lo es.
 
-    Sólo consulta a ARCA cuando hay un titular que emitimos nosotros: la ficha de cualquier otro cliente no cuesta
-    nada.
+    Sólo consulta a ARCA cuando la entidad es titular, emita quien emita (la delegación sirve para consultar y para
+    emitir): la ficha de cualquier otro cliente no cuesta nada.
     """
     tercero = sesion.get(Tercero, tercero_id)
     if tercero is None:
@@ -174,7 +175,7 @@ def de_tercero(sesion: Session, tercero_id: int) -> dict | None:
         .order_by(TitularCpe.tercero_id.is_(None), TitularCpe.id).limit(1)).first()
     if titular is None:
         return None
-    d = delegaciones() if titular.emite == EMITE_NOSOTROS else Delegaciones(None, None, None)
+    d = delegaciones()
     return {**_fila(titular, d, tercero, _plantillas(sesion)), "motivo": d.motivo}
 
 

@@ -99,7 +99,10 @@ describe('titulares: cómo se leen (ADR-044)', () => {
     expect(etiquetaDeDelegacion('delegado')).toBe('Delegado ✓')
     expect(etiquetaDeDelegacion('pendiente')).toBe('Pendiente')
     expect(etiquetaDeDelegacion('sin_verificar')).toBe('Sin verificar')
-    expect(etiquetaDeDelegacion('no_aplica', 'titular')).toBe('Emite él')
+    // Emite él: la delegación se muestra igual, con para qué sirve (consultar).
+    expect(etiquetaDeDelegacion('delegado', 'titular')).toBe('Emite él · consulta habilitada ✓')
+    expect(etiquetaDeDelegacion('pendiente', 'titular')).toBe('Emite él · falta delegar (para consultar)')
+    expect(etiquetaDeDelegacion('sin_verificar', 'titular')).toBe('Emite él · sin verificar')
     expect(tonoDeDelegacion('delegado')).toBe('ok')
     expect(tonoDeDelegacion('pendiente')).toBe('atencion')
     expect(tonoDeDelegacion('sin_verificar')).toBe('neutro')
@@ -107,11 +110,17 @@ describe('titulares: cómo se leen (ADR-044)', () => {
 
   it('la línea de la ficha del cliente', () => {
     expect(lineaDeCartaDePorte({ emite: 'nosotros', delegacion: 'delegado', activo: true })).toBe('delegó a nosotros ✓')
-    expect(lineaDeCartaDePorte({ emite: 'titular', delegacion: 'no_aplica', activo: true })).toBe('emite él')
+    expect(lineaDeCartaDePorte({ emite: 'titular', delegacion: 'delegado', activo: true }))
+      .toBe('emite él · consulta habilitada ✓')
+    expect(lineaDeCartaDePorte({ emite: 'titular', delegacion: 'pendiente', activo: true }))
+      .toBe('emite él · falta que delegue (para consultar sus cartas por CTG)')
+    expect(lineaDeCartaDePorte({ emite: 'titular', delegacion: 'sin_verificar', activo: true }))
+      .toBe('emite él (sin verificar en ARCA)')
     expect(lineaDeCartaDePorte({ emite: 'nosotros', delegacion: 'pendiente', activo: true })).toMatch(/^pendiente/)
     expect(lineaDeCartaDePorte({ emite: 'nosotros', delegacion: 'sin_verificar', activo: true }))
       .toBe('emitimos nosotros (sin verificar en ARCA)')
-    expect(lineaDeCartaDePorte({ emite: 'titular', delegacion: 'no_aplica', activo: false })).toBe('emite él · dado de baja')
+    expect(lineaDeCartaDePorte({ emite: 'titular', delegacion: 'delegado', activo: false }))
+      .toBe('emite él · consulta habilitada ✓ · dado de baja')
   })
 })
 
@@ -129,6 +138,12 @@ describe('textoDeInstrucciones', () => {
     expect(otro).toContain('CUIT 27-22222222-4')
     expect(otro).toContain('elegir otroalias')
     expect(otro).not.toContain('libracargowscpeprod')
+  })
+
+  it('para el que emite él pide delegar la consulta, no la emisión', () => {
+    expect(textoDeInstrucciones(cert, 'Agro Norte SA', true)).toContain('podamos consultar tus cartas de porte por CTG')
+    expect(textoDeInstrucciones(cert, 'Agro Norte SA', true)).toContain('wscpe (Carta de Porte Electrónica)')
+    expect(textoDeInstrucciones(cert)).toContain('podamos emitir tus cartas de porte')
   })
 
   it('nombra al titular si se lo conoce', () => {
