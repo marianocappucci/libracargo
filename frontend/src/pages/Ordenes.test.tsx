@@ -12,6 +12,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // La sección «Flete» consulta la referencia con una espera de 250 ms antes de pedirla: en el CI, con este archivo
 // tardando ~50 s, el segundo por defecto de `waitFor` no alcanza y el test falla por tiempo, no por lógica.
 configure({ asyncUtilTimeout: 5000 })
+// Y por lo mismo, el tiempo total de cada test: en el CI varios tests del flete pasan los 5 s por defecto de vitest.
+vi.setConfig({ testTimeout: 20_000 })
 
 const get = vi.fn()
 const put = vi.fn()
