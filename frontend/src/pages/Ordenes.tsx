@@ -2,7 +2,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
 import { SelectBuscable } from 'libra-ui/SelectBuscable'
-import { Ban, ClipboardList, Eye, Pencil, Plus, Printer } from 'lucide-react'
+import { Ban, ClipboardList, Eye, FileCheck, Pencil, Plus, Printer } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { UseFormReturn } from 'react-hook-form'
 import { useForm } from 'react-hook-form'
@@ -17,6 +17,7 @@ import { aOpcionLocalidad } from '@/api/localidades'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { AdjuntosDeOrden } from '@/components/AdjuntosDeOrden'
 import { CambiarEtapa } from '@/components/CambiarEtapa'
+import { EmitirCartaDePorte } from '@/components/EmitirCartaDePorte'
 import { ElegirLocalidad } from '@/components/ElegirLocalidad'
 import { SeccionFlete } from '@/components/FleteDeOrden'
 import { KilosDelDetalle, SeccionKilos } from '@/components/KilosDeOrden'
@@ -146,6 +147,8 @@ export default function Ordenes() {
   const [abierto, setAbierto] = useState(false)
   const [editando, setEditando] = useState<Orden | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // La orden de la que se está emitiendo la carta de porte (ADR-043). Aparte del detalle: el asistente se abre encima.
+  const [emitiendo, setEmitiendo] = useState<Orden | null>(null)
 
   const form = useForm<EntradaOrden, unknown, DatosOrden>({
     resolver: zodResolver(esquemaOrden),
@@ -447,6 +450,12 @@ export default function Ordenes() {
             </div>
           )}
           <DialogFooter>
+            {/* Una orden anulada no viaja: no se le emite carta de porte. */}
+            {detalle && detalle.estado !== 'anulada' && (
+              <Button variant="outline" onClick={() => setEmitiendo(detalle)}>
+                <FileCheck className="size-4" /> Emitir carta de porte
+              </Button>
+            )}
             {detalle && (
               <Button variant="outline" onClick={() => imprimir(detalle)}>
                 <Printer className="size-4" /> Imprimir orden
@@ -456,6 +465,10 @@ export default function Ordenes() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {emitiendo && (
+        <EmitirCartaDePorte orden={emitiendo} abierto alCambiar={(v) => { if (!v) setEmitiendo(null) }} />
+      )}
 
       {aImprimir && (
         <OrdenImpresa orden={aImprimir} opciones={opciones} empresa={empresa} />

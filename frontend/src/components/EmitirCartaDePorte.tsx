@@ -1,0 +1,707 @@
+/** «Emitir carta de porte»: el asistente que emite la CPE en ARCA desde una orden de carga (ADR-043).
+ *
+ *  Es un documento fiscal y de circulación: una vez emitido, sólo se puede anular. Por eso el asistente es lento a
+ *  propósito, en cuatro pasos —titular, datos, revisar y confirmar, resultado— y cada decisión que puede salir cara
+ *  tiene su freno:
+ *
+ *  🔑 **«A nombre de» no tiene valor por defecto**, ni siquiera con un solo titular (como «Consultar como» en
+ *  `TraerCartasDePorte`): la carta queda a nombre de quien se elija, y un titular equivocado no es un error visible.
+ *
+ *  🔑 **En producción, un recuadro y un «Confirmo» obligatorio**: sin el check no se puede enviar (y el servidor
+ *  tampoco lo acepta). En homologación se avisa que es de prueba.
+ *
+ *  🔑 **Un solo envío.** Mientras se envía el botón está deshabilitado y el cierre bloqueado. Si el servidor contesta un
+ *  502 (ARCA no contestó: puede haberla emitido) o un 500 («SE EMITIÓ… no la vuelvas a emitir»), o si la conexión se
+ *  corta sin respuesta, el asistente pasa a un estado final en rojo **sin botón de reintento**: emitir de nuevo sería
+ *  duplicar una carta de porte real. Lo único que se ofrece es ir a verificar en «Cartas de porte».
+ *
+ *  Los textos de error del servidor se muestran siempre tal cual: son los que dicen qué hacer.
+ */
+import { ApiError } from 'libra-ui/api-client'
+import { FileCheck, TriangleAlert } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+
+import type {
+  CartaPorte, EstadoDeEmision, OpcionDeArca, Planta, Propuesta, Representados,
+} from '@/api/cartas-porte'
+import {
+  cartasPorte, enmascararCuit, formatearCuit, formatearInstante, formatearKilos, nombreOCuit,
+} from '@/api/cartas-porte'
+import { mensajeDeError } from '@/components/AbmMaestro'
+import { CompartirCartaDePorte } from '@/components/CompartirCartaDePorte'
+import { Elegir } from '@/components/Elegir'
+import { formatearImporte } from '@/components/esquema-orden'
+import type { Borrador } from '@/components/emision-cpe'
+import {
+  INTERVINIENTES, MAX_DOMINIOS, borradorDe, datosDe, netoDe, problemasDe,
+} from '@/components/emision-cpe'
+import type { Orden } from '@/api/ordenes'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { cn } from '@/lib/utils'
+
+type Paso = 'titular' | 'datos' | 'confirmar' | 'resultado' | 'incierto'
+
+const PASOS: { paso: Paso; etiqueta: string }[] = [
+  { paso: 'titular', etiqueta: 'Titular' },
+  { paso: 'datos', etiqueta: 'Datos' },
+  { paso: 'confirmar', etiqueta: 'Confirmar' },
+  { paso: 'resultado', etiqueta: 'Resultado' },
+]
+
+const SIN_CATALOGO: OpcionDeArca[] = []
+const aOpciones = (lista: OpcionDeArca[]) => lista.map((o) => ({ id: o.codigo, etiqueta: o.nombre }))
+const nombreDel = (lista: OpcionDeArca[] | undefined, codigo: string) =>
+  lista?.find((o) => String(o.codigo) === codigo)?.nombre ?? ''
+
+/** Un 5xx o una respuesta que no llegó: no se sabe si ARCA emitió. Un 409/422 es un «no» claro, antes de emitir. */
+function esIncierto(e: unknown): boolean {
+  return !(e instanceof ApiError) || e.status >= 500
+}
+
+// ── Campos ────────────────────────────────────────────────────────────────
+
+function Campo({ id, etiqueta, error, ayuda, children, className }: {
+  id: string
+  etiqueta: string
+  error?: string
+  ayuda?: string
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <div className={cn('grid min-w-0 content-start gap-1', className)}>
+      <Label htmlFor={id}>{etiqueta}</Label>
+      {children}
+      {ayuda && !error && <p className="text-muted-foreground text-xs">{ayuda}</p>}
+      {error && <p id={`${id}-error`} className="text-destructive text-xs">{error}</p>}
+    </div>
+  )
+}
+
+function Texto({ id, etiqueta, valor, alCambiar, error, ayuda, className, ...resto }: {
+  id: string
+  etiqueta: string
+  valor: string
+  alCambiar: (v: string) => void
+  error?: string
+  ayuda?: string
+  className?: string
+} & Omit<React.ComponentProps<typeof Input>, 'id' | 'value' | 'onChange'>) {
+  return (
+    <Campo id={id} etiqueta={etiqueta} error={error} ayuda={ayuda} className={className}>
+      <Input id={id} value={valor} onChange={(e) => alCambiar(e.target.value)}
+             aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-error` : undefined} {...resto} />
+    </Campo>
+  )
+}
+
+const TextoCuit = (p: Omit<Parameters<typeof Texto>[0], 'alCambiar' | 'inputMode' | 'placeholder'> & {
+  alCambiar: (v: string) => void
+}) => (
+  <Texto {...p} inputMode="numeric" placeholder="00-00000000-0" alCambiar={(v) => p.alCambiar(enmascararCuit(v))} />
+)
+
+const TextoNumero = (p: Parameters<typeof Texto>[0]) => (
+  <Texto {...p} inputMode="numeric" alCambiar={(v) => p.alCambiar(v.replace(/\D/g, ''))} />
+)
+
+/** Un select de un catálogo de ARCA, con el error debajo (el de `Elegir` no pinta el borde). */
+function Catalogo({ id, etiqueta, valor, opciones, alCambiar, error, deshabilitado }: {
+  id: string
+  etiqueta: string
+  valor: string
+  opciones: OpcionDeArca[]
+  alCambiar: (v: string) => void
+  error?: string
+  deshabilitado?: boolean
+}) {
+  return (
+    <div className="grid min-w-0 content-start gap-1">
+      <Elegir id={id} etiqueta={etiqueta} vacio="Elegir…" valor={valor} opciones={aOpciones(opciones)}
+              alCambiar={alCambiar} deshabilitado={deshabilitado} />
+      {error && <p className="text-destructive text-xs">{error}</p>}
+    </div>
+  )
+}
+
+function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+  return (
+    <fieldset className="grid gap-3 rounded-md border p-4">
+      <legend className="px-1 text-sm font-semibold">{titulo}</legend>
+      <div className="grid gap-3 md:grid-cols-2">{children}</div>
+    </fieldset>
+  )
+}
+
+function Casilla({ id, etiqueta, marcada, alCambiar, className }: {
+  id: string; etiqueta: string; marcada: boolean; alCambiar: (v: boolean) => void; className?: string
+}) {
+  return (
+    <div className={cn('flex items-center gap-2 self-end pb-2', className)}>
+      <input id={id} type="checkbox" checked={marcada} onChange={(e) => alCambiar(e.target.checked)} />
+      <Label htmlFor={id}>{etiqueta}</Label>
+    </div>
+  )
+}
+
+// ── El asistente ──────────────────────────────────────────────────────────
+
+function Asistente({ orden, alCerrar, alEmitida }: {
+  orden: Orden
+  alCerrar: () => void
+  alEmitida?: (carta: CartaPorte) => void
+}) {
+  const [paso, setPaso] = useState<Paso>('titular')
+
+  // Paso 1: titular
+  const [representados, setRepresentados] = useState<Representados | null>(null)
+  const [errorDeAcceso, setErrorDeAcceso] = useState<string | null>(null)
+  const [estado, setEstado] = useState<EstadoDeEmision | null>(null)
+  const [errorDeEstado, setErrorDeEstado] = useState<string | null>(null)
+  const [intento, setIntento] = useState(0)
+  const [cuit, setCuit] = useState('')
+  const [cargando, setCargando] = useState(false)
+  const [errorDePaso, setErrorDePaso] = useState<string | null>(null)
+
+  // Paso 2: datos
+  const [propuesta, setPropuesta] = useState<Propuesta | null>(null)
+  const [titularDeLaPropuesta, setTitularDeLaPropuesta] = useState('')
+  const [b, setB] = useState<Borrador | null>(null)
+  const [granos, setGranos] = useState<OpcionDeArca[]>(SIN_CATALOGO)
+  const [provincias, setProvincias] = useState<OpcionDeArca[]>(SIN_CATALOGO)
+  const [localidades, setLocalidades] = useState<Record<string, OpcionDeArca[]>>({})
+  const [errorDeCatalogo, setErrorDeCatalogo] = useState<string | null>(null)
+  const [plantas, setPlantas] = useState<{ cuit: string; lista: Planta[] | null } | null>(null)
+  const pedidas = useRef(new Set<string>())
+
+  // Pasos 3 y 4
+  const [confirmo, setConfirmo] = useState(false)
+  const [enviando, setEnviando] = useState(false)
+  const enviandoYa = useRef(false)
+  const [errorDeEnvio, setErrorDeEnvio] = useState<string | null>(null)
+  const [incierto, setIncierto] = useState<string | null>(null)
+  const [emitida, setEmitida] = useState<CartaPorte | null>(null)
+
+  // Al abrir (y al reintentar): por quién se puede emitir y si se puede emitir. Dos pedidos aparte: el estado es de este
+  // sistema y se tiene que poder leer aunque ARCA no conteste a la lista de titulares.
+  useEffect(() => {
+    let vigente = true
+    setRepresentados(null); setErrorDeAcceso(null); setEstado(null); setErrorDeEstado(null)
+    cartasPorte.estadoDeEmision()
+      .then((r) => { if (vigente) setEstado(r) })
+      .catch((e) => { if (vigente) setErrorDeEstado(mensajeDeError(e)) })
+    cartasPorte.representados()
+      .then((r) => { if (vigente) setRepresentados(r) })
+      .catch((e) => { if (vigente) setErrorDeAcceso(mensajeDeError(e)) })
+    return () => { vigente = false }
+  }, [intento])
+
+  // Las localidades de ARCA se piden por provincia, la primera vez que se elige.
+  const provinciaDeOrigen = b?.origenProvincia ?? ''
+  const provinciaDeDestino = b?.destinoProvincia ?? ''
+  useEffect(() => {
+    if (!cuit || (paso !== 'datos' && paso !== 'confirmar')) return
+    for (const provincia of new Set([provinciaDeOrigen, provinciaDeDestino])) {
+      if (!provincia || pedidas.current.has(provincia)) continue
+      pedidas.current.add(provincia)
+      cartasPorte.localidades(cuit, Number(provincia))
+        .then((lista) => setLocalidades((l) => ({ ...l, [provincia]: lista })))
+        .catch((e) => {
+          pedidas.current.delete(provincia)
+          setErrorDeCatalogo(mensajeDeError(e))
+        })
+    }
+  }, [cuit, paso, provinciaDeOrigen, provinciaDeDestino])
+
+  // Las plantas inscriptas del destino, cuando ya hay un CUIT completo.
+  const cuitDelDestino = (b?.destinoCuit ?? '').replace(/\D/g, '')
+  useEffect(() => {
+    if (!cuit || paso !== 'datos' || cuitDelDestino.length !== 11) return
+    let vigente = true
+    cartasPorte.plantas(cuit, cuitDelDestino)
+      .then((lista) => { if (vigente) setPlantas({ cuit: cuitDelDestino, lista }) })
+      .catch(() => { if (vigente) setPlantas({ cuit: cuitDelDestino, lista: null }) })
+    return () => { vigente = false }
+  }, [cuit, paso, cuitDelDestino])
+
+  const problemas = useMemo(() => (b ? problemasDe(b) : {}), [b])
+  const cantidadDeProblemas = Object.keys(problemas).length
+
+  const titular = representados?.cuits.find((c) => c.cuit === cuit)
+  const nombreDelTitular = titular ? nombreOCuit(titular) : formatearCuit(cuit)
+  const produccion = estado?.ambiente === 'produccion'
+  const homologacion = estado?.ambiente === 'homologacion'
+
+  function cambiar<K extends keyof Borrador>(campo: K, valor: Borrador[K]) {
+    setB((actual) => (actual ? { ...actual, [campo]: valor } : actual))
+  }
+
+  async function irADatos() {
+    if (!cuit) return
+    // Volver al paso 1 y seguir con el mismo titular no vuelve a pedir la propuesta: se perderían las ediciones.
+    if (propuesta && titularDeLaPropuesta === cuit && b) { setPaso('datos'); return }
+    setErrorDePaso(null); setCargando(true)
+    try {
+      const [p, g, pr] = await Promise.all([
+        cartasPorte.propuesta(orden.id, cuit), cartasPorte.granos(cuit), cartasPorte.provincias(cuit),
+      ])
+      pedidas.current = new Set()
+      setLocalidades({}); setPlantas(null); setErrorDeCatalogo(null)
+      setPropuesta(p); setTitularDeLaPropuesta(cuit); setGranos(g); setProvincias(pr)
+      setB(borradorDe(p)); setConfirmo(false); setErrorDeEnvio(null)
+      setPaso('datos')
+    } catch (e) {
+      setErrorDePaso(mensajeDeError(e))
+    } finally {
+      setCargando(false)
+    }
+  }
+
+  function cambiarDestinoCuit(valor: string) {
+    setB((actual) => {
+      if (!actual) return actual
+      const mismo = actual.cuitDestinatario === '' || actual.cuitDestinatario === actual.destinoCuit
+      return {
+        ...actual, destinoCuit: valor, cuitDestinatario: mismo ? valor : actual.cuitDestinatario,
+        // Las plantas son de ese CUIT: con otro, la elegida ya no vale.
+        destinoPlanta: valor === actual.destinoCuit ? actual.destinoPlanta : '',
+      }
+    })
+  }
+
+  async function emitir() {
+    if (enviandoYa.current || !b) return
+    enviandoYa.current = true
+    setEnviando(true); setErrorDeEnvio(null)
+    try {
+      const carta = await cartasPorte.emitir(orden.id, confirmo, datosDe(b, cuit))
+      setEmitida(carta); setPaso('resultado')
+      alEmitida?.(carta)
+    } catch (e) {
+      const mensaje = mensajeDeError(e)
+      if (esIncierto(e)) {
+        setIncierto(e instanceof ApiError ? mensaje
+          : `No se supo si ARCA recibió el pedido (${mensaje}). Verificá en Cartas de porte antes de intentar de nuevo.`)
+        setPaso('incierto')
+      } else {
+        // 409/422: ARCA o el servidor dijeron que no ANTES de emitir. Se corrige y se vuelve a enviar.
+        setErrorDeEnvio(mensaje)
+      }
+    } finally {
+      enviandoYa.current = false
+      setEnviando(false)
+    }
+  }
+
+  const cartelDeEstado = estado && !estado.puede_emitir
+    ? (estado.ambiente === null
+      ? 'No hay un certificado de «CTG y Carta de Porte» cargado: cargalo en Configuración / ARCA.'
+      : 'La emisión real está apagada. La habilita un administrador en Configuración / ARCA.')
+    : null
+  const puedeAvanzar = Boolean(cuit) && estado !== null && estado.puede_emitir && !cargando
+  const puedeEmitir = !enviando && b !== null && cantidadDeProblemas === 0 && (!produccion || confirmo)
+
+  // ── Pasos ──
+  let cuerpo: React.ReactNode
+  let pie: React.ReactNode
+
+  if (paso === 'titular') {
+    const sinDelegaciones = representados !== null && representados.cuits.length === 0
+    // Sin certificado, `/representados` también contesta 409: lo dice el cartel de estado y no hace falta repetirlo.
+    const errorVisible = errorDeAcceso && estado?.ambiente !== null ? errorDeAcceso : null
+    cuerpo = (
+      <div className="grid gap-3">
+        <p className="text-sm">
+          La carta de porte se emite <strong>a nombre de un titular</strong> que le delegó la emisión a este
+          certificado en ARCA. Elegí a nombre de quién va: no se puede cambiar después.
+        </p>
+        {errorDeEstado && <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{errorDeEstado}</p>}
+        {cartelDeEstado && (
+          <p role="alert" className="rounded border-2 border-destructive p-3 text-sm font-medium">{cartelDeEstado}</p>
+        )}
+        {errorVisible && <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{errorVisible}</p>}
+        {representados === null && !errorDeAcceso ? (
+          <p className="text-muted-foreground text-sm">Consultando a ARCA por quién se puede emitir…</p>
+        ) : representados && (
+          <Elegir id="cpe-titular" etiqueta="A nombre de" vacio="Elegir…" valor={cuit}
+                  opciones={representados.cuits.map((c) => ({ id: c.cuit, etiqueta: nombreOCuit(c) }))}
+                  alCambiar={setCuit} />
+        )}
+        {sinDelegaciones && (
+          <p role="alert" className="text-destructive text-xs">
+            El certificado no tiene ninguna delegación: ARCA no informa a nombre de quién emitir.
+          </p>
+        )}
+        {produccion && <p className="text-muted-foreground text-xs">Ambiente: producción</p>}
+        {homologacion && (
+          <p className="text-xs font-medium text-amber-800 dark:text-amber-400">
+            Ambiente: homologación (de prueba, sin efecto fiscal)
+          </p>
+        )}
+        {errorDePaso && <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{errorDePaso}</p>}
+      </div>
+    )
+    pie = (
+      <>
+        <Button variant="ghost" onClick={alCerrar}>Cancelar</Button>
+        {(errorDeAcceso || errorDeEstado) && (
+          <Button variant="outline" onClick={() => setIntento(intento + 1)}>Reintentar</Button>
+        )}
+        <Button onClick={irADatos} disabled={!puedeAvanzar}>
+          {cargando ? 'Pidiendo los datos…' : 'Siguiente'}
+        </Button>
+      </>
+    )
+  } else if (paso === 'datos' && b && propuesta) {
+    const locOrigen = localidades[b.origenProvincia] ?? SIN_CATALOGO
+    const locDestino = localidades[b.destinoProvincia] ?? SIN_CATALOGO
+    const neto = netoDe(b)
+    const listaDePlantas = plantas?.cuit === cuitDelDestino ? plantas.lista : null
+    const numerosDePlanta = new Set((listaDePlantas ?? []).map((p) => String(p.numero)))
+    const opcionesDePlanta: OpcionDeArca[] = (listaDePlantas ?? []).map((p) => ({
+      codigo: p.numero, nombre: `Planta ${p.numero}`,
+    }))
+    // Una planta que viene de la plantilla y ARCA no lista no se pierde en silencio: queda elegible, a la vista.
+    if (b.destinoPlanta && !numerosDePlanta.has(b.destinoPlanta)) {
+      opcionesDePlanta.push({ codigo: Number(b.destinoPlanta), nombre: `Planta ${b.destinoPlanta}` })
+    }
+    const hayIntervinientes = INTERVINIENTES.some((i) => b.intervinientes[i.clave])
+      || b.remitenteProductor || b.cuitIntermediario
+
+    cuerpo = (
+      <form id="cpe-datos" className="grid gap-4" onSubmit={(e) => { e.preventDefault(); if (!cantidadDeProblemas) setPaso('confirmar') }}>
+        {(propuesta.faltantes.length > 0) && (
+          <section aria-label="Avisos" role="alert"
+                   className="rounded-md border border-amber-600/50 bg-amber-500/10 p-3 text-sm">
+            <p className="flex items-center gap-2 font-medium"><TriangleAlert className="size-4" /> Falta completar</p>
+            <ul className="mt-1 list-disc pl-6">
+              {propuesta.faltantes.map((f) => <li key={f}>{f}</li>)}
+            </ul>
+          </section>
+        )}
+        {propuesta.de_plantilla && (
+          <p role="status" className="text-muted-foreground text-sm">
+            Se completó con lo último emitido para este titular.
+          </p>
+        )}
+        {errorDeCatalogo && (
+          <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{errorDeCatalogo}</p>
+        )}
+
+        <Seccion titulo="Origen">
+          <Campo id="cpe-origen-tipo" etiqueta="Tipo de origen">
+            <select id="cpe-origen-tipo" className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
+                    value={b.origenTipo}
+                    onChange={(e) => cambiar('origenTipo', e.target.value === 'planta' ? 'planta' : 'campo')}>
+              <option value="campo">Campo</option>
+              <option value="planta">Planta</option>
+            </select>
+          </Campo>
+          <Catalogo id="cpe-origen-provincia" etiqueta="Provincia de origen" valor={b.origenProvincia}
+                    opciones={provincias} error={problemas.origenProvincia}
+                    alCambiar={(v) => setB({ ...b, origenProvincia: v, origenLocalidad: '' })} />
+          <Catalogo id="cpe-origen-localidad" etiqueta="Localidad de origen" valor={b.origenLocalidad}
+                    opciones={locOrigen} error={problemas.origenLocalidad} deshabilitado={!b.origenProvincia}
+                    alCambiar={(v) => cambiar('origenLocalidad', v)} />
+          {b.origenTipo === 'planta' ? (
+            <TextoNumero id="cpe-origen-planta" etiqueta="N.º de planta de origen" valor={b.origenPlanta}
+                         error={problemas.origenPlanta} alCambiar={(v) => cambiar('origenPlanta', v)} />
+          ) : (
+            <Texto id="cpe-origen-renspa" etiqueta="RENSPA" valor={b.origenRenspa} ayuda="Opcional."
+                   alCambiar={(v) => cambiar('origenRenspa', v)} />
+          )}
+        </Seccion>
+
+        <Seccion titulo="Carga">
+          <Catalogo id="cpe-grano" etiqueta="Grano" valor={b.codGrano} opciones={granos} error={problemas.codGrano}
+                    alCambiar={(v) => cambiar('codGrano', v)} />
+          <Texto id="cpe-cosecha" etiqueta="Cosecha" valor={b.cosecha} maxLength={4} inputMode="numeric"
+                 ayuda="2526 = 2025/2026" error={problemas.cosecha}
+                 alCambiar={(v) => cambiar('cosecha', v.replace(/\D/g, ''))} />
+          <TextoNumero id="cpe-bruto" etiqueta="Peso bruto (kg)" valor={b.pesoBruto} error={problemas.pesoBruto}
+                       alCambiar={(v) => cambiar('pesoBruto', v)} />
+          <TextoNumero id="cpe-tara" etiqueta="Peso tara (kg)" valor={b.pesoTara} error={problemas.pesoTara}
+                       alCambiar={(v) => cambiar('pesoTara', v)} />
+          <p className="text-sm md:col-span-2" aria-live="polite">
+            Neto: <strong className="tabular-nums">{neto != null && neto > 0 ? `${formatearKilos(neto)} kg` : '—'}</strong>
+            <span className="text-muted-foreground"> (bruto menos tara)</span>
+          </p>
+        </Seccion>
+
+        <Seccion titulo="Destino">
+          <TextoCuit id="cpe-destino-cuit" etiqueta="CUIT del destino" valor={b.destinoCuit}
+                     error={problemas.destinoCuit} alCambiar={cambiarDestinoCuit} />
+          {opcionesDePlanta.length > 0 ? (
+            <Catalogo id="cpe-destino-planta" etiqueta="N.º de planta de destino" valor={b.destinoPlanta}
+                      opciones={opcionesDePlanta} alCambiar={(v) => cambiar('destinoPlanta', v)} />
+          ) : (
+            <TextoNumero id="cpe-destino-planta" etiqueta="N.º de planta de destino" valor={b.destinoPlanta}
+                         ayuda={cuitDelDestino.length === 11 && plantas?.cuit === cuitDelDestino
+                           ? 'ARCA no informó plantas para este CUIT: escribí el número.' : undefined}
+                         alCambiar={(v) => cambiar('destinoPlanta', v)} />
+          )}
+          <Catalogo id="cpe-destino-provincia" etiqueta="Provincia de destino" valor={b.destinoProvincia}
+                    opciones={provincias} error={problemas.destinoProvincia}
+                    alCambiar={(v) => setB({ ...b, destinoProvincia: v, destinoLocalidad: '' })} />
+          <Catalogo id="cpe-destino-localidad" etiqueta="Localidad de destino" valor={b.destinoLocalidad}
+                    opciones={locDestino} error={problemas.destinoLocalidad} deshabilitado={!b.destinoProvincia}
+                    alCambiar={(v) => cambiar('destinoLocalidad', v)} />
+          <Casilla id="cpe-destino-campo" etiqueta="El destino es un campo" marcada={b.destinoEsCampo}
+                   alCambiar={(v) => cambiar('destinoEsCampo', v)} />
+          <TextoCuit id="cpe-destinatario" etiqueta="CUIT del destinatario" valor={b.cuitDestinatario}
+                     ayuda="Por defecto, el del destino." error={problemas.cuitDestinatario}
+                     alCambiar={(v) => cambiar('cuitDestinatario', v)} />
+        </Seccion>
+
+        <Seccion titulo="Transporte">
+          <TextoCuit id="cpe-transportista" etiqueta="CUIT del transportista" valor={b.cuitTransportista}
+                     ayuda="Por defecto, el fletero de la orden; puede ser la propia empresa u otro."
+                     error={problemas.cuitTransportista} alCambiar={(v) => cambiar('cuitTransportista', v)} />
+          <TextoCuit id="cpe-chofer" etiqueta="CUIT del chofer" valor={b.cuitChofer} error={problemas.cuitChofer}
+                     alCambiar={(v) => cambiar('cuitChofer', v)} />
+          <div className="grid gap-1 md:col-span-2">
+            <div className="grid gap-3 sm:grid-cols-3">
+              {Array.from({ length: MAX_DOMINIOS }, (_, i) => (
+                <Texto key={i} id={`cpe-dominio-${i + 1}`}
+                       etiqueta={i === 0 ? 'Dominio 1 (chasis)' : `Dominio ${i + 1} (acoplado)`}
+                       valor={b.dominios[i] ?? ''} maxLength={7} autoCapitalize="characters"
+                       aria-invalid={problemas.dominios && i === 0 ? true : undefined}
+                       alCambiar={(v) => setB({
+                         ...b, dominios: b.dominios.map((d, j) => (j === i ? v.toUpperCase().replace(/\s/g, '') : d)),
+                       })} />
+              ))}
+            </div>
+            {problemas.dominios
+              ? <p className="text-destructive text-xs">{problemas.dominios}</p>
+              : <p className="text-muted-foreground text-xs">De 1 a 3 dominios; cada uno de 6 o 7 caracteres.</p>}
+          </div>
+          <Texto id="cpe-partida" etiqueta="Fecha y hora de partida" type="datetime-local" valor={b.partida}
+                 ayuda="Hora argentina. Se propone dentro de una hora."
+                 error={problemas.partida} alCambiar={(v) => cambiar('partida', v)} />
+          <TextoNumero id="cpe-km" etiqueta="Kilómetros a recorrer" valor={b.km} error={problemas.km}
+                       alCambiar={(v) => cambiar('km', v)} />
+          <TextoCuit id="cpe-pagador" etiqueta="CUIT del pagador del flete" valor={b.cuitPagador}
+                     error={problemas.cuitPagador} alCambiar={(v) => cambiar('cuitPagador', v)} />
+          <Texto id="cpe-tarifa" etiqueta="Tarifa por tonelada ($)" valor={b.tarifa} inputMode="decimal"
+                 ayuda="Opcional." error={problemas.tarifa}
+                 alCambiar={(v) => cambiar('tarifa', v.replace(/[^\d.,]/g, ''))} />
+          <Casilla id="cpe-fumigada" etiqueta="Mercadería fumigada" marcada={b.fumigada}
+                   alCambiar={(v) => cambiar('fumigada', v)} />
+        </Seccion>
+
+        <details open={Boolean(hayIntervinientes)} className="rounded-md border p-4">
+          <summary className="cursor-pointer text-sm font-semibold">Intervinientes (opcionales)</summary>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {INTERVINIENTES.map(({ clave, etiqueta }) => (
+              <TextoCuit key={clave} id={`cpe-int-${clave}`} etiqueta={etiqueta}
+                         valor={b.intervinientes[clave] ?? ''} error={problemas[`interviniente:${clave}`]}
+                         alCambiar={(v) => setB({ ...b, intervinientes: { ...b.intervinientes, [clave]: v } })} />
+            ))}
+            <TextoCuit id="cpe-remitente-productor" etiqueta="Remitente comercial productor (retira el productor)"
+                       valor={b.remitenteProductor} error={problemas.remitenteProductor}
+                       alCambiar={(v) => cambiar('remitenteProductor', v)} />
+            <TextoCuit id="cpe-intermediario" etiqueta="Intermediario del flete" valor={b.cuitIntermediario}
+                       error={problemas.cuitIntermediario} alCambiar={(v) => cambiar('cuitIntermediario', v)} />
+          </div>
+        </details>
+
+        <Campo id="cpe-observaciones" etiqueta="Observaciones" error={problemas.observaciones}>
+          <textarea id="cpe-observaciones" rows={2} value={b.observaciones}
+                    onChange={(e) => cambiar('observaciones', e.target.value)}
+                    className="border-input bg-background w-full rounded-md border px-3 py-2 text-sm" />
+        </Campo>
+      </form>
+    )
+    pie = (
+      <>
+        {cantidadDeProblemas > 0 && (
+          <p role="status" className="text-destructive mr-auto self-center text-sm">
+            {cantidadDeProblemas === 1
+              ? 'Hay 1 dato obligatorio o con error.' : `Hay ${cantidadDeProblemas} datos obligatorios o con error.`}
+          </p>
+        )}
+        <Button variant="ghost" onClick={alCerrar}>Cancelar</Button>
+        <Button variant="outline" onClick={() => setPaso('titular')}>Atrás</Button>
+        <Button type="submit" form="cpe-datos" disabled={cantidadDeProblemas > 0}>Revisar</Button>
+      </>
+    )
+  } else if (paso === 'confirmar' && b) {
+    const nombreDeLoc = (prov: string, loc: string) => {
+      const l = nombreDel(localidades[prov], loc)
+      const p = nombreDel(provincias, prov)
+      return [l || `Localidad ${loc}`, p].filter(Boolean).join(', ')
+    }
+    const neto = netoDe(b)
+    const dominios = b.dominios.map((d) => d.trim()).filter(Boolean).join(', ')
+    const filas: [string, React.ReactNode][] = [
+      ['Titular', `${nombreDelTitular} (${formatearCuit(cuit)})`],
+      ['Origen', `${b.origenTipo === 'planta' ? `Planta ${b.origenPlanta} · ` : ''}${nombreDeLoc(b.origenProvincia, b.origenLocalidad)}`],
+      ['Destino', `${nombreDeLoc(b.destinoProvincia, b.destinoLocalidad)}${b.destinoPlanta ? ` · Planta ${b.destinoPlanta}` : ''}${b.destinoEsCampo ? ' · Campo' : ''}`],
+      ['Destinatario', `${formatearCuit(b.cuitDestinatario)}${b.destinoCuit !== b.cuitDestinatario ? '' : ' (el destino)'}`],
+      ['Grano', `${nombreDel(granos, b.codGrano) || b.codGrano} · cosecha ${b.cosecha}`],
+      ['Kilos', `${formatearKilos(Number(b.pesoBruto))} bruto − ${formatearKilos(Number(b.pesoTara))} tara = ${neto != null ? formatearKilos(neto) : '—'} neto`],
+      ['Transportista', formatearCuit(b.cuitTransportista)],
+      ['Chofer', formatearCuit(b.cuitChofer)],
+      ['Dominios', dominios],
+      ['Partida', formatearInstante(`${b.partida}:00-03:00`)],
+      ['Kilómetros', formatearKilos(Number(b.km))],
+      ['Pagador del flete', formatearCuit(b.cuitPagador)],
+      ['Tarifa por tonelada', b.tarifa.trim() ? formatearImporte(b.tarifa.trim().replace(',', '.')) : '—'],
+      ['Mercadería fumigada', b.fumigada ? 'Sí' : 'No'],
+    ]
+    if (b.observaciones.trim()) filas.push(['Observaciones', b.observaciones.trim()])
+
+    cuerpo = (
+      <div className="grid gap-4">
+        <dl className="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-2">
+          {filas.map(([etiqueta, valor]) => (
+            <div key={etiqueta} className="min-w-0">
+              <dt className="text-muted-foreground text-xs">{etiqueta}</dt>
+              <dd className="font-medium break-words">{valor}</dd>
+            </div>
+          ))}
+        </dl>
+        {produccion && (
+          <div role="alert" className="border-destructive bg-destructive/10 grid gap-3 rounded-md border-2 p-4">
+            <p className="font-semibold">
+              Vas a emitir una Carta de Porte REAL ante ARCA a nombre de {nombreDelTitular}. Queda registrada y sólo
+              se puede anular.
+            </p>
+            <div className="flex items-center gap-2">
+              <input id="cpe-confirmo" type="checkbox" checked={confirmo} disabled={enviando}
+                     onChange={(e) => setConfirmo(e.target.checked)} className="size-4" />
+              <Label htmlFor="cpe-confirmo" className="font-semibold">Confirmo</Label>
+            </div>
+          </div>
+        )}
+        {homologacion && (
+          <p role="status" className="rounded-md border border-amber-600/50 bg-amber-500/10 p-3 text-sm font-medium">
+            Homologación: es de prueba, no tiene efecto fiscal.
+          </p>
+        )}
+        {errorDeEnvio && (
+          <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{errorDeEnvio}</p>
+        )}
+      </div>
+    )
+    pie = (
+      <>
+        <Button variant="ghost" onClick={alCerrar} disabled={enviando}>Cancelar</Button>
+        <Button variant="outline" onClick={() => setPaso('datos')} disabled={enviando}>Atrás</Button>
+        <Button onClick={emitir} disabled={!puedeEmitir} variant={produccion ? 'destructive' : 'default'}>
+          {enviando ? 'Emitiendo…' : 'Emitir ahora'}
+        </Button>
+      </>
+    )
+  } else if (paso === 'resultado' && emitida && b) {
+    cuerpo = (
+      <div className="grid gap-4">
+        <p role="status" className="text-sm font-medium">
+          {emitida.ambiente === 'homologacion'
+            ? 'La carta de porte se emitió en homologación: es de prueba, no tiene efecto fiscal.'
+            : 'La carta de porte se emitió en ARCA.'}
+        </p>
+        <div className="grid gap-4 rounded-md border p-4 sm:grid-cols-2">
+          <div>
+            <p className="text-muted-foreground text-xs">CTG</p>
+            <p className="text-3xl font-semibold tabular-nums">{emitida.nro_ctg}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground text-xs">N.º de carta de porte</p>
+            <p className="text-3xl font-semibold tabular-nums">{emitida.numero}</p>
+          </div>
+        </div>
+        {emitida.tiene_pdf ? (
+          <div className="grid gap-3">
+            <div className="flex flex-wrap gap-2">
+              {emitida.id !== null && (
+                <Button asChild>
+                  <a href={cartasPorte.urlDelPdf(emitida.id)} target="_blank" rel="noreferrer">Ver PDF</a>
+                </Button>
+              )}
+            </div>
+            <CompartirCartaDePorte
+              carta={emitida}
+              origen={nombreDel(localidades[b.origenProvincia], b.origenLocalidad) || undefined}
+              destino={nombreDel(localidades[b.destinoProvincia], b.destinoLocalidad) || undefined} />
+          </div>
+        ) : (
+          <p className="text-muted-foreground text-sm">
+            ARCA todavía no devolvió el PDF. Cuando lo tenga, lo vas a encontrar en Cartas de porte.
+          </p>
+        )}
+      </div>
+    )
+    pie = <Button onClick={alCerrar}>Cerrar</Button>
+  } else if (paso === 'incierto') {
+    cuerpo = (
+      <div role="alert" className="border-destructive bg-destructive/10 grid gap-3 rounded-md border-2 p-4">
+        <p className="flex items-center gap-2 text-base font-semibold">
+          <TriangleAlert className="size-5" /> No se sabe si la carta de porte se emitió
+        </p>
+        <p className="text-sm font-medium">{incierto}</p>
+        <p className="text-sm">
+          <strong>No la vuelvas a emitir.</strong> Primero verificá en Cartas de porte (con «Traer de ARCA» y el CTG)
+          si quedó emitida: emitirla de nuevo puede duplicar una carta de porte real.
+        </p>
+      </div>
+    )
+    pie = (
+      <>
+        <Button variant="ghost" onClick={alCerrar}>Cerrar</Button>
+        <Button asChild variant="outline"><Link to="/cartas-porte" onClick={alCerrar}>Ir a Cartas de porte</Link></Button>
+      </>
+    )
+  } else {
+    cuerpo = null
+    pie = <Button onClick={alCerrar}>Cerrar</Button>
+  }
+
+  return (
+    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl" showCloseButton={!enviando}
+                   onInteractOutside={(e) => e.preventDefault()}
+                   onEscapeKeyDown={(e) => { if (enviando) e.preventDefault() }}>
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <FileCheck className="size-5" /> Emitir carta de porte · Orden Nº {String(orden.id).padStart(8, '0')}
+        </DialogTitle>
+        <DialogDescription className="sr-only">
+          Asistente para emitir la carta de porte electrónica de esta orden en ARCA.
+        </DialogDescription>
+      </DialogHeader>
+      {paso !== 'incierto' && (
+        <ol aria-label="Pasos" className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
+          {PASOS.map(({ paso: p, etiqueta }, i) => (
+            <li key={p} aria-current={p === paso ? 'step' : undefined}
+                className={cn(p === paso && 'text-foreground font-semibold')}>
+              {i + 1}. {etiqueta}
+            </li>
+          ))}
+        </ol>
+      )}
+      {cuerpo}
+      <DialogFooter className="items-center">{pie}</DialogFooter>
+    </DialogContent>
+  )
+}
+
+export function EmitirCartaDePorte({ orden, abierto, alCambiar, alEmitida }: {
+  orden: Orden
+  abierto: boolean
+  alCambiar: (abierto: boolean) => void
+  /** Se llama con la carta emitida, por si la pantalla de atrás quiere refrescarse. */
+  alEmitida?: (carta: CartaPorte) => void
+}) {
+  return (
+    <Dialog open={abierto} onOpenChange={alCambiar}>
+      {/* El contenido de un diálogo cerrado no se monta: cada apertura arranca limpia, con el titular sin elegir. */}
+      {abierto && <Asistente orden={orden} alCerrar={() => alCambiar(false)} alEmitida={alEmitida} />}
+    </Dialog>
+  )
+}

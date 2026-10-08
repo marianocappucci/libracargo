@@ -56,7 +56,7 @@ function responder() {
   get.mockImplementation((ruta: string) => {
     const porRol = ruta.match(/^\/api\/terceros\/rol\/(\w+)\?solo_activos=false$/)
     if (porRol) return Promise.resolve(ENTIDADES.filter((e) => e[`es_${porRol[1]}` as 'es_cliente']))
-    if (ruta.startsWith('/api/configuracion')) return Promise.resolve({ razon_social: 'Suitrans' })
+    if (ruta.startsWith('/api/configuracion')) return Promise.resolve({ razon_social: 'Transportes del Plata' })
     if (ruta === '/api/choferes') return Promise.resolve(CHOFERES)
     if (ruta === '/api/choferes?fletero_id=2') return Promise.resolve(CHOFERES.filter((c) => c.fletero_id === 2))
     if (ruta === '/api/vehiculos?fletero_id=2') return Promise.resolve(VEHICULOS)

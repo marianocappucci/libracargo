@@ -152,7 +152,8 @@ def test_upgrade_downgrade_upgrade(base_limpia):
         # Y subió a 18 con la `0021` (`cartas_porte` y `cartas_porte_pdf`, ADR-036).
         # Y a 19 con la `0022` (`ordenes_adjuntos`, ADR-037).
         # Y a 21 con la `0023` (`tarifarios` y `tarifas_referencia`, ADR-038).
-        assert tablas - del_motor == 21
+        # Y a 22 con la `0027` (`plantillas_cpe`, ADR-043).
+        assert tablas - del_motor == 22
         eng.dispose()
     finally:
         if original:

@@ -341,6 +341,7 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
         app.include_router(router)
     app.include_router(ordenes.router)
     app.include_router(cartas_porte.router)
+    app.include_router(cartas_porte.publico)
     app.include_router(tarifario.router)
     app.include_router(cuentas.router)
     # Gastos de proveedor: el bloque que el legado llamaba COMPROBANTES

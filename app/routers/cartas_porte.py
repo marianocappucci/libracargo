@@ -5,12 +5,13 @@ WSAA) son sincrónicos y bloquearían el loop de uvicorn. Lo asincrónico va con
 (ver `servicios.cartas_porte`).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from libracore import arca_wscpe
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user, require_staff
+from app.auth import get_current_user, require_admin, require_staff
 from app.db import obtener_sesion
 from app.models.cartas_porte import CartaPorte, CartaPortePdf
 from app.schemas.cartas_porte import (
@@ -24,6 +25,7 @@ from app.schemas.cartas_porte import (
     VincularIn,
 )
 from app.servicios import cartas_porte as servicio
+from app.servicios import emision_cpe
 
 router = APIRouter(prefix="/api/cartas-porte", tags=["cartas-porte"],
                    dependencies=[Depends(require_staff)])
@@ -67,7 +69,7 @@ def _de_fila(sesion: Session, fila: CartaPorte, tiene_pdf: bool) -> CartaPorteOu
         cod_provincia_destino=fila.cod_provincia_destino, cod_localidad_destino=fila.cod_localidad_destino,
         planta_destino=fila.planta_destino, km=fila.km, tarifa=fila.tarifa, tiene_pdf=tiene_pdf,
         tiene_descarga=fila.peso_bruto_descarga is not None, consultada_en=fila.consultada_en,
-        orden_carga_id=fila.orden_carga_id,
+        orden_carga_id=fila.orden_carga_id, emitida=bool(fila.emitida),
     )
 
 
@@ -162,6 +164,100 @@ def actualizar_abiertas(sesion: Session = Depends(obtener_sesion), actual: dict 
     return servicio.actualizar_abiertas(sesion, actual)
 
 
+# ── Emitir desde la orden (ADR-043) ─────────────────────────────────────────
+# 🔑 Rutas de dos segmentos: una de uno (`/emision`) chocaría con `GET /{id_}` y daría 422.
+
+
+class _HabilitadaIn(BaseModel):
+    habilitada: bool
+
+
+class _EmitirIn(BaseModel):
+    orden_id: int
+    #: Obligatorio en producción: «sí, es una Carta de Porte real».
+    confirmo: bool = False
+    datos: dict
+
+
+class _AnularIn(BaseModel):
+    observaciones: str | None = Field(default=None, max_length=100)
+
+
+def _o_http(funcion, *args, **kwargs):
+    try:
+        return funcion(*args, **kwargs)
+    except servicio.Rechazo as e:
+        raise _rechazo(e) from None
+
+
+@router.get("/emision/estado")
+def estado_de_emision(sesion: Session = Depends(obtener_sesion)):
+    """En qué ambiente se emitiría y si la emisión real está habilitada."""
+    return emision_cpe.estado(sesion)
+
+
+@router.put("/emision/habilitada", dependencies=[Depends(require_admin)])
+def habilitar_emision(datos: _HabilitadaIn, sesion: Session = Depends(obtener_sesion),
+                      actual: dict = Depends(get_current_user)):
+    """Prende o apaga la emisión de Cartas de Porte **reales**. Sólo un administrador; queda en la auditoría."""
+    return _o_http(emision_cpe.habilitar, sesion, actual, datos.habilitada)
+
+
+@router.get("/emision/propuesta")
+def propuesta_de_emision(orden_id: int, cuit_titular: str, sesion: Session = Depends(obtener_sesion)):
+    """Lo que la orden y la plantilla del titular proponen para emitir, con lo que falta completar."""
+    return _o_http(emision_cpe.propuesta, sesion, orden_id, cuit_titular)
+
+
+@router.post("/emision/emitir", response_model=CartaPorteOut, status_code=201)
+def emitir(datos: _EmitirIn, sesion: Session = Depends(obtener_sesion), actual: dict = Depends(get_current_user)):
+    """Emite la Carta de Porte de la orden a nombre del titular, la guarda vinculada y devuelve su CTG y su PDF."""
+    fila = _o_http(emision_cpe.emitir, sesion, actual, datos.orden_id, datos.datos, confirmo=datos.confirmo)
+    return _de_fila(sesion, fila, bool(_con_pdf(sesion, [fila.id])))
+
+
+@router.get("/catalogos/granos")
+def catalogo_granos(cuit_titular: str):
+    return [{"codigo": c, "nombre": n} for c, n in sorted(_o_http(emision_cpe.granos, cuit_titular).items(),
+                                                          key=lambda x: x[1])]
+
+
+@router.get("/catalogos/provincias")
+def catalogo_provincias(cuit_titular: str):
+    return [{"codigo": c, "nombre": n} for c, n in sorted(
+        _o_http(emision_cpe.provincias_arca, cuit_titular).items(), key=lambda x: x[1])]
+
+
+@router.get("/catalogos/localidades")
+def catalogo_localidades(cuit_titular: str, provincia: int):
+    return [{"codigo": c, "nombre": n} for c, n in sorted(
+        _o_http(emision_cpe.localidades_arca, cuit_titular, provincia).items(), key=lambda x: x[1])]
+
+
+@router.get("/catalogos/plantas")
+def catalogo_plantas(cuit_titular: str, cuit: str):
+    return _o_http(emision_cpe.plantas, cuit_titular, cuit)
+
+
+@router.post("/{id_}/anular", response_model=CartaPorteOut, dependencies=[Depends(require_admin)])
+def anular(id_: int, datos: _AnularIn, sesion: Session = Depends(obtener_sesion),
+           actual: dict = Depends(get_current_user)):
+    """Anula en ARCA una CPE emitida desde acá. Sólo un administrador."""
+    fila = _traer(sesion, id_)
+    fila = _o_http(emision_cpe.anular, sesion, actual, fila, datos.observaciones)
+    return _de_fila(sesion, fila, bool(_con_pdf(sesion, [fila.id])))
+
+
+@router.get("/{id_}/enlace")
+def enlace(id_: int, request: Request, sesion: Session = Depends(obtener_sesion)):
+    """Un enlace al PDF que se le puede pasar al chofer (no tiene usuario): firmado, vence a los 7 días."""
+    fila = _traer(sesion, id_)
+    if not _con_pdf(sesion, [fila.id]):
+        raise HTTPException(404, "ARCA no devolvió el PDF de esta carta de porte")
+    ruta, vence = _o_http(emision_cpe.enlace, fila.id)
+    return {"url": str(request.base_url).rstrip("/") + "/api/publico" + ruta, "vence": vence}
+
+
 @router.get("/{id_}", response_model=CartaPorteOut)
 def ver(id_: int, sesion: Session = Depends(obtener_sesion)):
     fila = _traer(sesion, id_)
@@ -205,3 +301,22 @@ def pdf(id_: int, sesion: Session = Depends(obtener_sesion)):
     nombre = f"CPE-{fila.nro_ctg}.pdf"
     return Response(doc.contenido, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{nombre}"'})
+
+
+#: Sin sesión: el chofer abre el PDF desde el enlace que le mandan por WhatsApp. La firma es la autorización.
+publico = APIRouter(prefix="/api/publico", tags=["cartas-porte"])
+
+
+@publico.get("/cpe/{id_}/{vence}/{firma}.pdf")
+def pdf_publico(id_: int, vence: int, firma: str, sesion: Session = Depends(obtener_sesion)):
+    try:
+        valido = emision_cpe.verificar_enlace(id_, vence, firma)
+    except servicio.Rechazo:
+        valido = False
+    if not valido:
+        raise HTTPException(404, "el enlace no existe o venció")
+    doc = sesion.get(CartaPortePdf, id_)
+    if doc is None:
+        raise HTTPException(404, "el enlace no existe o venció")
+    return Response(doc.contenido, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="CPE-{id_}.pdf"', "Cache-Control": "no-store"})

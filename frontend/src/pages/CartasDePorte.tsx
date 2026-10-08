@@ -20,14 +20,16 @@ import {
   cartasPorte, esEstadoFinal, formatearCuit, formatearDiaDelInstante, formatearKilos, nombreOCuit, tonoDeEstado,
 } from '@/api/cartas-porte'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import { CompartirCartaDePorte } from '@/components/CompartirCartaDePorte'
 import { FichaDeCartaDePorte } from '@/components/FichaDeCartaDePorte'
 import { TraerCartasDePorte } from '@/components/TraerCartasDePorte'
 import { Button } from '@/components/ui/button'
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useAuth } from '@/context/AuthContext'
 import { irA } from '@/navegacion'
 
 type Celda = { row: { original: CartaPorte } }
@@ -40,7 +42,12 @@ function kilosDeDescarga(c: CartaPorte): string {
 
 const sinPropagar = (e: MouseEvent) => e.stopPropagation()
 
+/** El tope de las observaciones de una anulación en ARCA. */
+const MAX_OBSERVACIONES = 100
+
 export default function CartasDePorte() {
+  const { user } = useAuth()
+  const esAdmin = user?.role === 'admin'
   const [filas, setFilas] = useState<CartaPorte[]>([])
   const [soloAbiertas, setSoloAbiertas] = useState(false)
   const [recarga, setRecarga] = useState(0)
@@ -55,6 +62,11 @@ export default function CartasDePorte() {
   const [vinculando, setVinculando] = useState<CartaPorte | null>(null)
   const [numeroDeOrden, setNumeroDeOrden] = useState('')
   const [errorDeVinculo, setErrorDeVinculo] = useState<string | null>(null)
+  // Anular en ARCA una carta emitida desde acá (ADR-043): sólo un administrador, y con un motivo opcional.
+  const [anulando, setAnulando] = useState<CartaPorte | null>(null)
+  const [observaciones, setObservaciones] = useState('')
+  const [errorDeAnulacion, setErrorDeAnulacion] = useState<string | null>(null)
+  const [enviandoAnulacion, setEnviandoAnulacion] = useState(false)
 
   useEffect(() => {
     let vigente = true
@@ -113,6 +125,28 @@ export default function CartasDePorte() {
     } catch (e) {
       // El 404 de «no existe la orden» se lee en el diálogo, al lado del número que lo causó.
       setErrorDeVinculo(mensajeDeError(e))
+    }
+  }
+
+  function abrirAnulacion(carta: CartaPorte) {
+    setAnulando(carta); setObservaciones(''); setErrorDeAnulacion(null)
+  }
+
+  async function anular() {
+    if (!anulando || anulando.id === null || enviandoAnulacion) return
+    setErrorDeAnulacion(null); setEnviandoAnulacion(true)
+    try {
+      const anulada = await cartasPorte.anular(anulando.id, observaciones.trim() || undefined)
+      reemplazar(anulada)
+      setDetalle((actual) => (actual?.id === anulada.id ? anulada : actual))
+      setAviso(`CTG ${anulada.nro_ctg} anulada en ARCA.`)
+      setAnulando(null)
+    } catch (e) {
+      // Se lee en el diálogo, al lado del botón que lo causó: el 409 («sólo se anulan las emitidas desde acá») o el
+      // rechazo de ARCA con su código.
+      setErrorDeAnulacion(mensajeDeError(e))
+    } finally {
+      setEnviandoAnulacion(false)
     }
   }
 
@@ -250,9 +284,49 @@ export default function CartasDePorte() {
             <DialogTitle>{detalle && `Carta de porte ${detalle.numero || detalle.nro_ctg}`}</DialogTitle>
           </DialogHeader>
           {detalle && <FichaDeCartaDePorte carta={detalle} />}
+          {detalle && <CompartirCartaDePorte carta={detalle} />}
           <DialogFooter>
+            {/* Sólo las que emitió este sistema y que no están en un estado final, y sólo un administrador. */}
+            {esAdmin && detalle?.emitida === true && !esEstadoFinal(detalle.estado) && (
+              <Button variant="outline" className="text-destructive sm:mr-auto" onClick={() => abrirAnulacion(detalle)}>
+                Anular
+              </Button>
+            )}
             <Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={anulando !== null} onOpenChange={(v) => { if (!v && !enviandoAnulacion) setAnulando(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{anulando && `Anular carta de porte ${anulando.numero || anulando.nro_ctg}`}</DialogTitle>
+            <DialogDescription>
+              Se anula en ARCA, a nombre de {anulando && formatearCuit(anulando.cuit_representada)}. No se puede
+              deshacer.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); void anular() }}>
+            <div className="grid gap-1">
+              <Label htmlFor="cpe-anular-obs">Observaciones</Label>
+              <Input id="cpe-anular-obs" value={observaciones} maxLength={MAX_OBSERVACIONES}
+                     onChange={(e) => setObservaciones(e.target.value)} />
+              <p className="text-muted-foreground text-xs">
+                Opcional, hasta {MAX_OBSERVACIONES} caracteres ({observaciones.length}/{MAX_OBSERVACIONES}).
+              </p>
+            </div>
+            {errorDeAnulacion && (
+              <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{errorDeAnulacion}</p>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="ghost" disabled={enviandoAnulacion} onClick={() => setAnulando(null)}>
+                Cancelar
+              </Button>
+              <Button type="submit" variant="destructive" disabled={enviandoAnulacion}>
+                {enviandoAnulacion ? 'Anulando…' : 'Anular en ARCA'}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

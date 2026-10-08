@@ -78,6 +78,8 @@ class CartaPorteOut(BaseModel):
     cod_provincia_destino: int | None
     cod_localidad_destino: int | None
     planta_destino: int | None
+    #: La emitió LibraCargo (ADR-043): sólo esas se pueden anular desde acá.
+    emitida: bool = False
     km: int | None
     tarifa: Decimal | None
     tiene_pdf: bool

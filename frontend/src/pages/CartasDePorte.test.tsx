@@ -16,9 +16,10 @@ vi.mock('libra-ui/api-client', async () => {
   return { ApiError, api: { get, post, put, del: vi.fn(), postForm: vi.fn() } }
 })
 
-// Un operador cualquiera: la pantalla es de staff, no de administración.
+// Un operador cualquiera: la pantalla es de staff, no de administración. Anular sí es sólo de un administrador.
+const sesion = vi.hoisted(() => ({ rol: 'operador' }))
 vi.mock('@/context/AuthContext', () => ({
-  useAuth: () => ({ user: { role: 'operador', name: 'Ana' }, loading: false, logout: vi.fn() }),
+  useAuth: () => ({ user: { role: sesion.rol, name: 'Ana' }, loading: false, logout: vi.fn() }),
 }))
 
 const { default: CartasDePorte } = await import('./CartasDePorte')
@@ -34,7 +35,7 @@ function carta(id: number, extra: Record<string, unknown> = {}) {
     fecha_emision: '2026-10-05T14:30:00', fecha_vencimiento: '2026-10-08T14:30:00',
     fecha_partida: '2026-10-05T16:00:00-03:00',
     cuit_representada: '30222222223', ambiente: 'produccion',
-    transportista: parte('30222222223', 'Suitrans'), pagador_flete: parte('30111111118'),
+    transportista: parte('30222222223', 'Transportes del Plata'), pagador_flete: parte('30111111118'),
     chofer: parte('20333333336'), origen: parte('30444444441'), destino: parte('30555555558'),
     destinatario: parte('30555555558'), dominios: ['AB123CD', 'EF456GH'],
     cod_grano: 15, cosecha: 2526,
@@ -49,7 +50,7 @@ function carta(id: number, extra: Record<string, unknown> = {}) {
 
 const REPRESENTADOS = {
   ambiente: 'produccion',
-  cuits: [{ cuit: '30222222223', nombre: 'Suitrans SRL' }, { cuit: '30999999995', nombre: null }],
+  cuits: [{ cuit: '30222222223', nombre: 'Transportes del Plata SRL' }, { cuit: '30999999995', nombre: null }],
 }
 
 type Respuestas = {
@@ -84,6 +85,7 @@ function abrir() {
 
 beforeEach(() => {
   get.mockReset(); post.mockReset(); put.mockReset()
+  sesion.rol = 'operador'
   responder()
 })
 
@@ -309,7 +311,7 @@ describe('Cartas de porte · Traer de ARCA', () => {
     const select = await within(dialogo).findByLabelText('Consultar como')
     // Sin valor por defecto, aunque haya un solo CUIT. Muestra el nombre y, si no hay, el CUIT con guiones.
     expect(select).toHaveValue('')
-    expect(within(dialogo).getByRole('option', { name: 'Suitrans SRL' })).toBeInTheDocument()
+    expect(within(dialogo).getByRole('option', { name: 'Transportes del Plata SRL' })).toBeInTheDocument()
     expect(within(dialogo).getByRole('option', { name: '30-99999999-5' })).toBeInTheDocument()
 
     fireEvent.change(within(dialogo).getByLabelText('CTG'), { target: { value: '10123456781' } })
@@ -493,5 +495,115 @@ describe('Cartas de porte · el menú', () => {
     const items = NAV_SECCIONES.flatMap((s) => s.items)
     const posicion = items.findIndex((i) => i.to === '/ordenes')
     expect(items[posicion + 1]).toMatchObject({ to: '/cartas-porte', label: 'Cartas de porte' })
+  })
+})
+
+describe('Cartas de porte · emitidas desde acá (ADR-043)', () => {
+  const abrirDetalle = async (extra: Record<string, unknown> = {}) => {
+    responder({ lista: [carta(1, { emitida: true, tiene_pdf: true, ...extra })] })
+    abrir()
+    fireEvent.click(await screen.findByText('10123456781'))
+    return await screen.findByRole('dialog')
+  }
+
+  it('«Anular» es sólo de un administrador', async () => {
+    const detalle = await abrirDetalle()
+    expect(within(detalle).queryByRole('button', { name: 'Anular' })).toBeNull()
+  })
+
+  it('«Anular» sólo está en las que emitió este sistema y que no están anuladas ni en otro estado final', async () => {
+    sesion.rol = 'admin'
+    // Traída de ARCA, sin marca de emitida desde acá: no se ofrece (el backend la rechazaría con un 409).
+    const detalle = await abrirDetalle({ emitida: false })
+    expect(within(detalle).queryByRole('button', { name: 'Anular' })).toBeNull()
+  })
+
+  it('y si el backend no manda la marca, tampoco se ofrece: ante la duda, no', async () => {
+    sesion.rol = 'admin'
+    const detalle = await abrirDetalle({ emitida: undefined })
+    expect(within(detalle).queryByRole('button', { name: 'Anular' })).toBeNull()
+  })
+
+  it('una emitida desde acá y abierta sí tiene «Anular» para el administrador', async () => {
+    sesion.rol = 'admin'
+    const detalle = await abrirDetalle()
+    expect(within(detalle).getByRole('button', { name: 'Anular' })).toBeInTheDocument()
+  })
+
+  it('una emitida y anulada ya no se puede anular otra vez', async () => {
+    sesion.rol = 'admin'
+    const detalle = await abrirDetalle({ estado: 'AN', estado_descripcion: 'Anulada' })
+    expect(within(detalle).queryByRole('button', { name: 'Anular' })).toBeNull()
+  })
+
+  it('un administrador anula con observaciones de hasta 100 caracteres y la ficha pasa a anulada', async () => {
+    sesion.rol = 'admin'
+    post.mockResolvedValue(carta(1, { emitida: true, tiene_pdf: true, estado: 'AN', estado_descripcion: 'Anulada' }))
+    const detalle = await abrirDetalle()
+    fireEvent.click(within(detalle).getByRole('button', { name: 'Anular' }))
+
+    const dialogo = (await screen.findAllByRole('dialog')).at(-1)!
+    expect(within(dialogo).getByText('Anular carta de porte 00001-00072411')).toBeInTheDocument()
+    const obs = within(dialogo).getByLabelText('Observaciones')
+    expect(obs).toHaveAttribute('maxLength', '100')
+    fireEvent.change(obs, { target: { value: 'Se cargó mal el chofer' } })
+    expect(within(dialogo).getByText('Opcional, hasta 100 caracteres (22/100).')).toBeInTheDocument()
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Anular en ARCA' }))
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/api/cartas-porte/1/anular', { observaciones: 'Se cargó mal el chofer' }))
+    expect(await screen.findByText('CTG 10123456781 anulada en ARCA.')).toBeInTheDocument()
+    // La fila y la ficha muestran lo que devolvió el servidor.
+    await waitFor(() => expect(screen.getAllByText('Anulada').length).toBeGreaterThanOrEqual(2))
+    expect(screen.queryByRole('button', { name: 'Anular' })).toBeNull()
+  })
+
+  it('sin observaciones anula con el cuerpo vacío', async () => {
+    sesion.rol = 'admin'
+    post.mockResolvedValue(carta(1, { emitida: true, estado: 'AN', estado_descripcion: 'Anulada' }))
+    const detalle = await abrirDetalle()
+    fireEvent.click(within(detalle).getByRole('button', { name: 'Anular' }))
+    const dialogo = (await screen.findAllByRole('dialog')).at(-1)!
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Anular en ARCA' }))
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/api/cartas-porte/1/anular', {}))
+  })
+
+  it('el rechazo de ARCA se lee en el diálogo y la carta sigue como estaba', async () => {
+    sesion.rol = 'admin'
+    post.mockRejectedValue(await error(409, 'Sólo se anulan desde acá las cartas de porte que emitió este sistema.'))
+    const detalle = await abrirDetalle()
+    fireEvent.click(within(detalle).getByRole('button', { name: 'Anular' }))
+    const dialogo = (await screen.findAllByRole('dialog')).at(-1)!
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Anular en ARCA' }))
+    expect(await within(dialogo).findByRole('alert'))
+      .toHaveTextContent('Sólo se anulan desde acá las cartas de porte que emitió este sistema.')
+    expect(screen.queryByText('CTG 10123456781 anulada en ARCA.')).toBeNull()
+  })
+
+  it('«Compartir por WhatsApp» está en la ficha de una carta con PDF y arma wa.me con el enlace firmado', async () => {
+    const ventana = { opener: {}, location: { href: '' }, close: vi.fn() }
+    vi.spyOn(window, 'open').mockReturnValue(ventana as unknown as Window)
+    get.mockImplementation((ruta?: string) => {
+      if (ruta === '/api/cartas-porte/1/enlace') {
+        return Promise.resolve({ url: 'https://app.test/api/publico/cpe/1/1792000000/f.pdf', vence: '2026-10-15T12:00:00+00:00' })
+      }
+      return Promise.resolve([carta(1, { emitida: true, tiene_pdf: true, origen: parte(null, 'Campo Los Álamos'),
+        destino: parte('30555555558', 'Molino Sur') })])
+    })
+    abrir()
+    fireEvent.click(await screen.findByText('10123456781'))
+    const detalle = await screen.findByRole('dialog')
+    fireEvent.click(within(detalle).getByRole('button', { name: 'Compartir por WhatsApp' }))
+
+    const texto = 'Carta de porte 00001-00072411 · CTG 10123456781 · Campo Los Álamos → Molino Sur · 29.500 kg · 320 km. ' +
+      'PDF: https://app.test/api/publico/cpe/1/1792000000/f.pdf'
+    await waitFor(() => expect(ventana.location.href).toBe(`https://wa.me/?text=${encodeURIComponent(texto)}`))
+    vi.restoreAllMocks()
+  })
+
+  it('sin PDF no hay nada que compartir', async () => {
+    const detalle = await abrirDetalle({ tiene_pdf: false })
+    expect(within(detalle).queryByRole('button', { name: 'Compartir por WhatsApp' })).toBeNull()
+    expect(within(detalle).queryByRole('button', { name: 'Copiar enlace' })).toBeNull()
   })
 })
