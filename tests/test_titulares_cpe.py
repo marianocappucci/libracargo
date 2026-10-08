@@ -91,11 +91,26 @@ def test_los_cuatro_estados_salen_del_ticket_y_no_de_lo_que_se_cargo(cliente, ar
     por_cuit = {t["cuit"]: t for t in r["titulares"]}
     assert por_cuit[A]["delegacion"] == "delegado"
     assert por_cuit[B]["delegacion"] == "pendiente", "cargado, pero ARCA todavía no lo trae"
-    assert por_cuit[C]["delegacion"] == "no_aplica", "emite él: no hay delegación que mirar"
+    assert por_cuit[C]["delegacion"] == "pendiente", "emite él, y para consultarle sus CPE también hace falta delegar"
     # El que ARCA trae y no está cargado se ofrece para darlo de alta, con la entidad que ya tiene ese CUIT.
     assert [(s["cuit"], s["tercero"]["razon_social"]) for s in r["sin_cargar"]] == [(X, "Cliente Con Delegación")]
     assert (r["ambiente"], r["verificado"], r["motivo"]) == ("produccion", True, None)
     assert r["cuit_para_catalogos"] == A
+
+
+def test_el_que_emite_el_mismo_tambien_se_lee_de_arca_porque_la_delegacion_sirve_para_consultar(cliente, arca):
+    """ADR-044, corrección 2026-10-08: consultar una CPE por CTG como `cuitRepresentada` pide la misma delegación de
+    `wscpe` que emitirla. «Quién emite» no la vuelve «no aplica»: sólo decide si se le ofrece emitir."""
+    arca["relaciones"] = (A,)
+    _alta(cliente, A, "Emite y consulta SA", emite="titular")
+    _alta(cliente, B, "Emite y no delegó SA", emite="titular")
+
+    por_cuit = {t["cuit"]: t for t in _listado(cliente)["titulares"]}
+
+    assert por_cuit[A]["delegacion"] == "delegado", "emite él y está en el ticket: LibraCargo puede consultarle"
+    assert por_cuit[B]["delegacion"] == "pendiente", "emite él y no está en el ticket: falta que delegue para consultar"
+    arca["ambientes"] = set()
+    assert {t["delegacion"] for t in _listado(cliente)["titulares"]} == {"sin_verificar"}
 
 
 def test_cuando_arca_suma_la_relacion_el_pendiente_pasa_a_delegado(cliente, arca):
@@ -366,7 +381,7 @@ def test_un_cuit_que_solo_esta_en_el_ticket_sigue_pudiendo_emitir(cliente, arca,
 
 # ── La línea de la ficha del cliente ───────────────────────────────────────
 
-def test_la_ficha_del_cliente_dice_su_estado_y_solo_consulta_a_arca_si_emitimos_nosotros(cliente, arca, monkeypatch):
+def test_la_ficha_del_cliente_dice_su_estado_y_solo_consulta_a_arca_si_es_titular(cliente, arca):
     ent = cliente.post("/api/terceros", json={"razon_social": "Agro Ficha SA", "es_cliente": True,
                                               "cuit": f"{A[:2]}-{A[2:10]}-{A[10]}"}).json()
     otro = cliente.post("/api/terceros", json={"razon_social": "Agro Solo SA", "es_cliente": True,
@@ -383,15 +398,12 @@ def test_la_ficha_del_cliente_dice_su_estado_y_solo_consulta_a_arca_si_emitimos_
     arca["relaciones"] = (A,)
     assert cliente.get(f"{RUTA}/de-tercero/{ent['id']}").json()["delegacion"] == "delegado"
 
-    # El que emite solo no cuesta una consulta a ARCA.
+    # El que emite él también se lee de ARCA: la delegación sirve para consultarle las CPE por CTG.
     _alta(cliente, C, "Agro Solo SA", emite="titular")
-
-    async def no_deberia(empresa, ambiente):
-        raise AssertionError("consultó a ARCA por un titular que emite él")
-
-    monkeypatch.setattr(arca_wscpe, "autenticar", no_deberia)
     f = cliente.get(f"{RUTA}/de-tercero/{otro['id']}").json()
-    assert (f["emite"], f["delegacion"]) == ("titular", "no_aplica")
+    assert (f["emite"], f["delegacion"]) == ("titular", "pendiente")
+    arca["relaciones"] = (A, C)
+    assert cliente.get(f"{RUTA}/de-tercero/{otro['id']}").json()["delegacion"] == "delegado"
     assert cliente.get(f"{RUTA}/de-tercero/9999").status_code == 404
 
 

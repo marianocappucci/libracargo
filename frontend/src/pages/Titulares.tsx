@@ -6,8 +6,9 @@
  *
  *  🔑 **La delegación se lee de ARCA, no se tilda.** Cada titular dice «Delegado ✓» si está entre las relaciones del ticket
  *  de `wscpe`, «Pendiente» si está cargado y ARCA todavía no lo trae (lo suma con el próximo ticket, hasta 12 horas),
- *  «Sin verificar» si no hay certificado o ARCA no contestó —con el motivo a la vista, sin romper la pantalla— y «Emite él»
- *  si lo hace por su cuenta. Un CUIT que ARCA trae y no está cargado aparece aparte, como «Delegado sin cargar», con
+ *  «Sin verificar» si no hay certificado o ARCA no contestó —con el motivo a la vista, sin romper la pantalla—. Vale
+ *  también para el que «Emite él»: la delegación de `wscpe` habilita consultar sus cartas por CTG además de emitirlas, y
+ *  quién emite sólo decide si se le ofrece emitir. Un CUIT que ARCA trae y no está cargado aparece aparte, como «Delegado sin cargar», con
  *  «Agregar».
  *
  *  Ver es de cualquier operador; cargar, editar y borrar —y la plantilla— son de un administrador.

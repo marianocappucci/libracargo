@@ -1,9 +1,9 @@
 /** En la ficha de un cliente (Entidades → Clientes): si es titular de cartas de porte, una línea que lo dice y lleva a él
- *  (ADR-044): «Carta de porte: delegó a nosotros ✓ / emite él / pendiente».
+ *  (ADR-044): «Carta de porte: delegó a nosotros ✓ / emite él · consulta habilitada ✓ / pendiente».
  *
  *  Es un agregado y no el contenido de la ficha: si el pedido falla, o el cliente no es titular, no se dibuja nada. El
- *  estado de la delegación lo lee el servidor de ARCA (ticket cacheado); para un titular que emite él no hace falta ninguna
- *  consulta.
+ *  estado de la delegación lo lee el servidor de ARCA (ticket cacheado); vale para todo titular, emita quien
+ *  emita: la delegación sirve para consultar y para emitir.
  */
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'

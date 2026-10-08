@@ -416,7 +416,8 @@ describe('Entidades · la línea de Carta de porte en la ficha del cliente (ADR-
   it.each([
     [{ delegacion: 'delegado' }, 'Carta de porte: delegó a nosotros ✓'],
     [{ delegacion: 'pendiente' }, 'Carta de porte: pendiente'],
-    [{ emite: 'titular', delegacion: 'no_aplica' }, 'Carta de porte: emite él'],
+    [{ emite: 'titular', delegacion: 'delegado' }, 'Carta de porte: emite él · consulta habilitada ✓'],
+    [{ emite: 'titular', delegacion: 'pendiente' }, 'Carta de porte: emite él · falta que delegue'],
   ])('🔑 un cliente titular dice cómo está (%o) y lleva a su titular', async (extra, texto) => {
     conTitular(titularDe(extra))
     abrir('/entidades?pestana=clientes&ver=1')

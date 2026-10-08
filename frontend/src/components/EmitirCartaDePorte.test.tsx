@@ -179,7 +179,7 @@ describe('Emitir carta de porte · paso 1, a nombre de quién se ofrece (ADR-044
     ...TITULARES,
     titulares: [
       titular(),
-      titular({ id: 2, cuit: '30111111112', razon_social: 'Emite Solo SA', emite: 'titular', delegacion: 'no_aplica' }),
+      titular({ id: 2, cuit: '30111111112', razon_social: 'Emite Solo SA', emite: 'titular', delegacion: 'delegado' }),
       titular({ id: 3, cuit: '30333333334', razon_social: 'Pendiente SA', delegacion: 'pendiente' }),
       titular({ id: 4, cuit: '30666666667', razon_social: 'De Baja SA', activo: false }),
     ],
@@ -225,7 +225,7 @@ describe('Emitir carta de porte · paso 1, a nombre de quién se ofrece (ADR-044
   })
 
   it('si no queda ninguno para ofrecer lo dice y manda a la pestaña Titulares', async () => {
-    responder({ titulares: { ...LISTA, titulares: [titular({ emite: 'titular', delegacion: 'no_aplica' })], sin_cargar: [] } })
+    responder({ titulares: { ...LISTA, titulares: [titular({ emite: 'titular', delegacion: 'delegado' })], sin_cargar: [] } })
     abrir()
     expect(await screen.findByText(/Ningún titular activo le delegó la emisión/)).toBeInTheDocument()
     expect(screen.getByText(/pestaña\s+Titulares/)).toBeInTheDocument()

@@ -144,9 +144,10 @@ export type Enlace = { url: string; vence: string }
 export type QuienEmite = 'nosotros' | 'titular'
 
 /** Lo que ARCA dice de la delegación de un titular, leído del ticket de `wscpe` y nunca tildado a mano:
- *  `delegado` (está en el ticket), `pendiente` (cargado y ARCA todavía no lo trae), `sin_verificar` (no hay certificado
- *  o ARCA no contestó) y `no_aplica` (emite él: no hay delegación que mirar). */
-export type Delegacion = 'delegado' | 'pendiente' | 'sin_verificar' | 'no_aplica'
+ *  `delegado` (está en el ticket), `pendiente` (cargado y ARCA todavía no lo trae) y `sin_verificar` (no hay certificado
+ *  o ARCA no contestó). 🔑 Vale para todos los titulares, emita quien emita: la delegación de `wscpe` habilita consultar
+ *  una carta por CTG y emitirla; quién emite sólo decide si se le ofrece emitir (ADR-044, corrección 2026-10-08). */
+export type Delegacion = 'delegado' | 'pendiente' | 'sin_verificar'
 
 export type EntidadVinculada = { id: number; razon_social: string }
 
@@ -408,12 +409,16 @@ export const enlaceDeWhatsApp = (texto: string) => `https://wa.me/?text=${encode
 
 // ── Titulares: cómo se leen ───────────────────────────────────────────────
 
-/** El texto de la pastilla de cada estado de delegación. */
+/** El texto de la pastilla de cada estado de delegación. Para el que emite él aclara para qué sirve: consultar. */
 export function etiquetaDeDelegacion(d: Delegacion, emite: QuienEmite = 'nosotros'): string {
+  if (emite === 'titular') {
+    if (d === 'delegado') return 'Emite él · consulta habilitada ✓'
+    if (d === 'pendiente') return 'Emite él · falta delegar (para consultar)'
+    return 'Emite él · sin verificar'
+  }
   if (d === 'delegado') return 'Delegado ✓'
   if (d === 'pendiente') return 'Pendiente'
-  if (d === 'sin_verificar') return 'Sin verificar'
-  return emite === 'titular' ? 'Emite él' : '—'
+  return 'Sin verificar'
 }
 
 export function tonoDeDelegacion(d: Delegacion): 'neutro' | 'curso' | 'atencion' | 'ok' | 'negativo' {
@@ -424,9 +429,12 @@ export function tonoDeDelegacion(d: Delegacion): 'neutro' | 'curso' | 'atencion'
 
 export const ETIQUETA_DE_QUIEN_EMITE: Record<QuienEmite, string> = { nosotros: 'Nosotros', titular: 'El titular' }
 
-/** La línea de la ficha del cliente: «Carta de porte: delegó a nosotros ✓ / emite él / pendiente». */
+/** La línea de la ficha del cliente: «Carta de porte: delegó a nosotros ✓ / emite él · consulta habilitada ✓ / pendiente». */
 export function lineaDeCartaDePorte(t: Pick<Titular, 'emite' | 'delegacion' | 'activo'>): string {
-  const base = t.emite === 'titular' ? 'emite él'
+  const base = t.emite === 'titular'
+    ? (t.delegacion === 'delegado' ? 'emite él · consulta habilitada ✓'
+      : t.delegacion === 'pendiente' ? 'emite él · falta que delegue (para consultar sus cartas por CTG)'
+        : 'emite él (sin verificar en ARCA)')
     : t.delegacion === 'delegado' ? 'delegó a nosotros ✓'
       : t.delegacion === 'pendiente' ? 'pendiente (ARCA todavía no informa su delegación)'
         : 'emitimos nosotros (sin verificar en ARCA)'
@@ -439,12 +447,15 @@ export function lineaDeCartaDePorte(t: Pick<Titular, 'emite' | 'delegacion' | 'a
  *  está escrito a mano: el CUIT del representante y el alias (el computador fiscal) salen del .crt. */
 export function textoDeInstrucciones(
   i: Pick<InstruccionesDeDelegacion, 'alias' | 'cuit_representante' | 'ambiente'>, titular?: string,
+  soloConsulta = false,
 ): string {
   const quien = titular ? `en representación de ${titular}` : 'en representación del titular'
   const alias = i.alias ?? ''
   const aviso = alias.endsWith('homo') ? '' : ' (no el que termina en «homo»)'
   return [
-    `Para que podamos emitir tus cartas de porte, entrá a ARCA con tu clave fiscal y delegá el servicio:`,
+    soloConsulta
+      ? `Para que podamos consultar tus cartas de porte por CTG, entrá a ARCA con tu clave fiscal y delegá el servicio:`
+      : `Para que podamos emitir tus cartas de porte, entrá a ARCA con tu clave fiscal y delegá el servicio:`,
     `Administrador de Relaciones de Clave Fiscal, actuando ${quien} → Nueva Relación → Servicio: Buscar → ARCA → `
     + `WebServices → wscpe (Carta de Porte Electrónica) → Representante: Buscar → CUIT ${formatearCuit(i.cuit_representante)} `
     + `→ en Computador Fiscal elegir ${alias}${aviso} → Confirmar dos veces.`,
