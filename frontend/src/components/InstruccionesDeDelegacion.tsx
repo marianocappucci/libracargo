@@ -13,9 +13,11 @@ import { cartasPorte, enlaceDeWhatsApp, formatearCuit, textoDeInstrucciones } fr
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { Button } from '@/components/ui/button'
 
-export function InstruccionesDeDelegacion({ titular }: {
+export function InstruccionesDeDelegacion({ titular, soloConsulta = false }: {
   /** Si se pasa, el texto dice «en representación de …»; si no, «del titular». */
   titular?: string
+  /** Es de un titular que emite él: la delegación es para poder consultar sus cartas por CTG, no para emitirlas. */
+  soloConsulta?: boolean
 }) {
   const [datos, setDatos] = useState<Instrucciones | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -29,7 +31,7 @@ export function InstruccionesDeDelegacion({ titular }: {
     return () => { vigente = false }
   }, [])
 
-  const texto = datos?.disponible ? textoDeInstrucciones(datos, titular) : null
+  const texto = datos?.disponible ? textoDeInstrucciones(datos, titular, soloConsulta) : null
 
   async function copiar() {
     if (!texto) return
@@ -53,9 +55,15 @@ export function InstruccionesDeDelegacion({ titular }: {
   return (
     <section aria-label="Instrucciones de delegación" className="grid gap-2 rounded-md border p-4">
       <div>
-        <h2 className="text-sm font-semibold">Cómo delegarnos la emisión</h2>
+        <h2 className="text-sm font-semibold">
+          {soloConsulta ? 'Cómo delegarnos la consulta' : 'Cómo delegarnos la emisión'}
+        </h2>
         <p className="text-muted-foreground text-xs">
-          Para mandárselas al cliente que quiere que emitamos sus cartas de porte. Él las hace con su clave fiscal.
+          {soloConsulta
+            ? 'Para mandárselas al cliente que emite él sus cartas de porte y quiere que podamos consultarlas por CTG. '
+              + 'Él las hace con su clave fiscal.'
+            : 'Para mandárselas al cliente que quiere que emitamos sus cartas de porte. Él las hace con su clave fiscal.'}
+          {' '}La delegación de <span className="font-mono">wscpe</span> sirve para las dos cosas.
         </p>
       </div>
       {error && <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{error}</p>}

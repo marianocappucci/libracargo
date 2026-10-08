@@ -3,6 +3,13 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Titulares: la delegación en ARCA se mira también en los que emiten ellos
+
+- **Corrección de ADR-044**: un titular que «emite él» ya no figura como «no aplica». Para **consultar** sus cartas de porte por CTG hace falta que haya delegado `wscpe` a nuestro certificado, igual que para emitirlas (es el caso de Suitrans S.A.). La delegación habilita consultar y emitir; «quién emite» decide sólo si se le ofrece emitir.
+- **Pantallas** (Titulares, ficha del titular y ficha del cliente): «Emite él · consulta habilitada ✓», «Emite él · falta delegar (para consultar)» o «Emite él · sin verificar». A un «emite él» pendiente se le muestran las instrucciones de delegación, con el texto para poder consultar sus cartas por CTG.
+- **API**: `delegacion` de `/titulares` y `/titulares/de-tercero/{id}` ya no devuelve `no_aplica`; la ficha del cliente consulta el ticket de ARCA (cacheado) para todo titular.
+- **Sin cambios en la emisión**: «Emitir carta de porte» sigue ofreciendo sólo a los que emitimos nosotros, y el servidor sigue frenando (409) a uno cargado como «El titular».
+
 ## [Unreleased] — Titulares de Carta de Porte: a nombre de quién se emite y quién emite
 
 - **Pestaña «Titulares» en «Cartas de porte»** (ADR-044): se cargan los clientes que nos delegaron la emisión en ARCA y los que emiten ellos. «Integración AFIP» queda sólo con certificados, ambiente y el interruptor de la emisión real.

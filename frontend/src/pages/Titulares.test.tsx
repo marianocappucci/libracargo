@@ -49,7 +49,8 @@ const LISTADO = {
   titulares: [
     titular(1, A, 'Agro Delegado SA', { tercero: { id: 7, razon_social: 'Agro Delegado SA' }, tiene_plantilla: true }),
     titular(2, B, 'Agro Pendiente SA', { delegacion: 'pendiente' }),
-    titular(3, C, 'Agro Solo SA', { emite: 'titular', delegacion: 'no_aplica' }),
+    titular(3, C, 'Agro Solo SA', { emite: 'titular', delegacion: 'pendiente' }),
+    titular(5, '30555555556', 'Agro Solo Consulta SA', { emite: 'titular', delegacion: 'delegado' }),
   ],
   sin_cargar: [{ cuit: X, tercero: { id: 9, razon_social: 'Campo Nuevo SA' } }],
 }
@@ -129,13 +130,14 @@ describe('Titulares · la pestaña', () => {
 })
 
 describe('Titulares · la delegación se lee de ARCA', () => {
-  it('🔑 muestra cada estado que informa el servidor: Delegado ✓, Pendiente y Emite él', async () => {
+  it('🔑 muestra cada estado que informa el servidor, también para el que emite él', async () => {
     abrir()
     const tabla = await screen.findByRole('table')
     const fila = (nombre: string) => within(tabla).getByText(nombre).closest('tr') as HTMLElement
     expect(within(fila('Agro Delegado SA')).getByText('Delegado ✓')).toBeInTheDocument()
     expect(within(fila('Agro Pendiente SA')).getByText('Pendiente')).toBeInTheDocument()
-    expect(within(fila('Agro Solo SA')).getByText('Emite él')).toBeInTheDocument()
+    expect(within(fila('Agro Solo SA')).getByText('Emite él · falta delegar (para consultar)')).toBeInTheDocument()
+    expect(within(fila('Agro Solo Consulta SA')).getByText('Emite él · consulta habilitada ✓')).toBeInTheDocument()
     expect(within(fila('Agro Delegado SA')).getByText('30-11111111-2')).toBeInTheDocument()
     // Quién emite, y el vínculo con el cliente de Entidades.
     expect(within(fila('Agro Delegado SA')).getByText('Nosotros')).toBeInTheDocument()
@@ -217,6 +219,25 @@ describe('Titulares · la ficha', () => {
     const dialogo = await screen.findByRole('dialog')
     const texto = await within(dialogo).findByLabelText('Texto de las instrucciones')
     expect(texto).toHaveTextContent('en representación de Agro Pendiente SA')
+  })
+
+  it('un titular que emite él y no delegó lleva las instrucciones, para poder consultar sus cartas por CTG', async () => {
+    abrir()
+    fireEvent.click(await screen.findByText('Agro Solo SA'))
+    const dialogo = await screen.findByRole('dialog')
+    const texto = await within(dialogo).findByLabelText('Texto de las instrucciones')
+    expect(texto).toHaveTextContent('podamos consultar tus cartas de porte por CTG')
+    expect(texto).toHaveTextContent('en representación de Agro Solo SA')
+    expect(within(dialogo).getByText('Cómo delegarnos la consulta')).toBeInTheDocument()
+    expect(within(dialogo).getByText(/para consultar sus cartas por CTG tiene que delegarnos el servicio/)).toBeInTheDocument()
+  })
+
+  it('un titular que emite él y ya delegó no lleva instrucciones: dice que la consulta está habilitada', async () => {
+    abrir()
+    fireEvent.click(await screen.findByText('Agro Solo Consulta SA'))
+    const dialogo = await screen.findByRole('dialog')
+    expect(within(dialogo).getByText(/podemos consultar sus cartas por CTG/)).toBeInTheDocument()
+    expect(within(dialogo).queryByLabelText('Texto de las instrucciones')).toBeNull()
   })
 
   it('un titular que emite él no lleva plantilla: no emitimos a su nombre', async () => {
