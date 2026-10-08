@@ -16,7 +16,8 @@ import type { ColumnDef } from 'libra-ui/data-table'
 import { ApiError } from 'libra-ui/api-client'
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
 import { Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { Maestro, Recurso } from '@/api/maestros'
 import { clienteDe } from '@/api/maestros'
@@ -40,6 +41,23 @@ export type Campo = {
   /** Sólo para `localidad`: de qué campo del formulario sale la provincia con
    *  la que se filtra el catálogo. */
   provinciaEn?: string
+  /** Sólo para `opciones`: el valor es un número (un id) y no un texto; la opción de valor `''` es `null`. */
+  numerico?: boolean
+  /** Los campos seguidos con el mismo `grupo` se dibujan juntos, dentro de un recuadro con este título (los tres
+   *  roles de una entidad: una misma persona o empresa puede tener más de uno). */
+  grupo?: string
+}
+
+/** Lo que recibe quien quiere dibujar el error de guardado a su manera (el CUIT repetido de Entidades). */
+export type ContextoDeConflicto<T extends Maestro> = {
+  /** Qué se estaba editando, o `null` si era un alta. */
+  editando: T | null
+  /** Cierra el formulario. */
+  cerrar: () => void
+  /** Vuelve a pedir el listado. */
+  recargar: () => void
+  /** Marca una fila en la tabla, para que se vea dónde quedó lo que se acaba de hacer. */
+  destacar: (id: number) => void
 }
 
 type Props<T extends Maestro> = {
@@ -53,6 +71,20 @@ type Props<T extends Maestro> = {
   buscarEn: (fila: T) => (string | number | null | undefined)[]
   /** Valores iniciales de un alta. */
   defaults?: Partial<T>
+  /** `false` esconde el título: la pantalla que contiene al maestro (Entidades) ya tiene el suyo. Queda el botón «Nuevo». */
+  encabezado?: boolean
+  /** El nombre de una fila en singular, para el título del formulario («Editar fletero»). Sin él, el de la tabla. */
+  singular?: string
+  /** Cómo se pide el listado. Sin esto es `GET /api/<recurso>`. */
+  cargar?: () => Promise<T[]>
+  /** Abre el formulario de esta fila en cuanto llega el listado (`?ver=` en la URL). */
+  abrirId?: number | null
+  /** Se llama al cerrar el formulario, para que quien lo abrió por la URL la limpie. */
+  alCerrarFicha?: () => void
+  /** Se llama al abrirse el formulario de una fila existente, con ella: se dibuja bajo los campos (la ficha del fletero). */
+  fichaExtra?: (fila: T) => ReactNode
+  /** Si devuelve algo para ese error de guardado, se dibuja en vez del texto pelado. */
+  conflicto?: (error: unknown, ctx: ContextoDeConflicto<T>) => ReactNode
 }
 
 export function mensajeDeError(e: unknown): string {
@@ -61,6 +93,12 @@ export function mensajeDeError(e: unknown): string {
     // lista de errores en los 422 de Pydantic. Las dos formas se muestran.
     const d = (e as unknown as { detail?: unknown }).detail
     if (typeof d === 'string') return d
+    // Un `detail` objeto (el 409 del CUIT repetido) trae su texto en `mensaje`. `libra-ui` ya lo aplana a eso;
+    // esto cubre el error que llega con el objeto entero.
+    if (d && typeof d === 'object' && !Array.isArray(d)
+        && typeof (d as { mensaje?: unknown }).mensaje === 'string') {
+      return (d as { mensaje: string }).mensaje
+    }
     if (Array.isArray(d)) {
       return d.map((x) => (x as { msg?: string })?.msg ?? String(x)).join(' · ')
     }
@@ -108,7 +146,10 @@ function CampoForm({ campo, valor, borrador, alCambiar }: {
       <div className="grid gap-1">
         <Label htmlFor={id}>{campo.etiqueta}</Label>
         <select id={id} className="h-9 rounded-md border px-3 text-sm"
-                value={String(valor ?? '')} onChange={(e) => alCambiar(e.target.value)}>
+                value={String(valor ?? '')}
+                onChange={(e) => alCambiar(
+                  campo.numerico ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value,
+                )}>
           {campo.opciones?.map((o) => (
             <option key={o.valor} value={o.valor}>{o.etiqueta}</option>
           ))}
@@ -145,8 +186,21 @@ function CampoForm({ campo, valor, borrador, alCambiar }: {
   )
 }
 
+/** Los campos en el orden del formulario, con los de un mismo `grupo` seguidos juntos en un solo bloque. */
+function agrupar(campos: Campo[]): { grupo?: string; campos: Campo[] }[] {
+  const bloques: { grupo?: string; campos: Campo[] }[] = []
+  for (const c of campos) {
+    const ultimo = bloques[bloques.length - 1]
+    if (c.grupo && ultimo?.grupo === c.grupo) ultimo.campos.push(c)
+    else bloques.push({ grupo: c.grupo, campos: [c] })
+  }
+  return bloques
+}
+
 export function AbmMaestro<T extends Maestro>({
   recurso, titulo, columnas, campos, buscarEn, defaults = {},
+  encabezado = true, singular, cargar, abrirId = null, alCerrarFicha,
+  fichaExtra, conflicto,
 }: Props<T>) {
   const [filas, setFilas] = useState<T[]>([])
   const [cargando, setCargando] = useState(true)
@@ -154,10 +208,18 @@ export function AbmMaestro<T extends Maestro>({
   const [editando, setEditando] = useState<T | null>(null)
   const [borrador, setBorrador] = useState<Record<string, unknown>>({})
   const [error, setError] = useState<string | null>(null)
+  // El error tal cual llegó, para que `conflicto` pueda leer lo que trae adentro (el texto ya está en `error`).
+  const [errorCrudo, setErrorCrudo] = useState<unknown>(null)
+  const [destacada, setDestacada] = useState<number | null>(null)
+  // `cargar` es casi siempre una función nueva en cada render del padre: va por ref para no pedir el listado de nuevo.
+  const cargarRef = useRef(cargar)
+  cargarRef.current = cargar
+  const yaAbierta = useRef<number | null>(null)
 
   const recargar = useCallback(() => {
     setCargando(true)
-    clienteDe<T>(recurso).listar()
+    const pedido = cargarRef.current ? cargarRef.current() : clienteDe<T>(recurso).listar()
+    pedido
       .then(setFilas)
       .catch((e) => setError(mensajeDeError(e)))
       .finally(() => setCargando(false))
@@ -165,26 +227,51 @@ export function AbmMaestro<T extends Maestro>({
 
   useEffect(recargar, [recargar])
 
+  // La fila marcada se apaga sola: es para ver dónde quedó, no un estado.
+  useEffect(() => {
+    if (destacada === null) return
+    const t = setTimeout(() => setDestacada(null), 6000)
+    return () => clearTimeout(t)
+  }, [destacada])
+
   function abrir(fila: T | null) {
     setEditando(fila)
     setBorrador(fila ? { ...fila } : { activo: true, ...defaults })
     setError(null)
+    setErrorCrudo(null)
     setAbierto(true)
+  }
+
+  // `?ver=` de la URL: abre la ficha de esa fila una sola vez por id, cuando el listado ya la trae.
+  useEffect(() => {
+    if (abrirId === null) { yaAbierta.current = null; return }
+    if (yaAbierta.current === abrirId) return
+    const fila = filas.find((f) => f.id === abrirId)
+    if (!fila) return
+    yaAbierta.current = abrirId
+    abrir(fila)
+  }, [abrirId, filas])
+
+  function alCambiarApertura(valor: boolean) {
+    setAbierto(valor)
+    if (!valor) alCerrarFicha?.()
   }
 
   async function guardar() {
     setError(null)
+    setErrorCrudo(null)
     const cliente = clienteDe<T>(recurso)
     try {
       if (editando) await cliente.editar(editando.id, borrador as Partial<T>)
       else await cliente.crear(borrador as Partial<T>)
-      setAbierto(false)
+      alCambiarApertura(false)
       recargar()
     } catch (e) {
       // El backend distingue 409 (choca con una restricción) de 422 (el cuerpo
       // no vale). Se muestra su mensaje tal cual: reescribirlo acá haría que la
       // pantalla diga algo distinto de lo que decidió la base.
       setError(mensajeDeError(e))
+      setErrorCrudo(e)
     }
   }
 
@@ -234,9 +321,10 @@ export function AbmMaestro<T extends Maestro>({
   ] as ColumnDef<T, unknown>[]
 
   return (
-    <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">{titulo}</h1>
+    // Con título propio es una pantalla; sin él va metido en otra (una pestaña de Entidades), que ya pone el margen.
+    <div className={encabezado ? 'p-6' : undefined}>
+      <div className={`mb-4 flex items-center ${encabezado ? 'justify-between' : 'justify-end'}`}>
+        {encabezado && <h1 className="text-2xl font-semibold">{titulo}</h1>}
         <Button onClick={() => abrir(null)}>
           <Plus className="size-4" /> Nuevo
         </Button>
@@ -258,27 +346,46 @@ export function AbmMaestro<T extends Maestro>({
         columns={columnasCompletas}
         data={filas}
         onRowClick={abrir}
+        getRowClassName={(f) => (f.id === destacada ? 'bg-primary/10' : undefined)}
         emptyMessage={cargando ? 'Cargando…' : 'Todavía no hay nada cargado.'}
         search={{ campos: buscarEn, placeholder: `Buscar en ${titulo.toLowerCase()}…` }}
       />
 
-      <Dialog open={abierto} onOpenChange={setAbierto}>
+      <Dialog open={abierto} onOpenChange={alCambiarApertura}>
         <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editando ? `Editar ${titulo}` : `Nuevo en ${titulo}`}</DialogTitle>
+            <DialogTitle>
+              {singular
+                ? (editando ? `Editar ${singular}` : `Nuevo ${singular}`)
+                : (editando ? `Editar ${titulo}` : `Nuevo en ${titulo}`)}
+            </DialogTitle>
           </DialogHeader>
           <div className="grid gap-3">
-            {campos.map((c) => (
-              <CampoForm key={c.nombre} campo={c} valor={borrador[c.nombre]}
-                         borrador={borrador as Record<string, unknown>}
-                         alCambiar={(v) => setBorrador((b) => ({ ...b, [c.nombre]: v }))} />
-            ))}
+            {agrupar(campos).map((bloque) => {
+              const campoDe = (c: Campo) => (
+                <CampoForm key={c.nombre} campo={c} valor={borrador[c.nombre]}
+                           borrador={borrador as Record<string, unknown>}
+                           alCambiar={(v) => setBorrador((b) => ({ ...b, [c.nombre]: v }))} />
+              )
+              if (!bloque.grupo) return campoDe(bloque.campos[0])
+              return (
+                <fieldset key={bloque.grupo} className="grid gap-2 rounded-md border p-3">
+                  <legend className="px-1 text-sm font-medium">{bloque.grupo}</legend>
+                  {bloque.campos.map(campoDe)}
+                </fieldset>
+              )
+            })}
           </div>
+          {editando && fichaExtra?.(editando)}
           {error && (
-            <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{error}</p>
+            conflicto?.(errorCrudo, {
+              editando, recargar,
+              cerrar: () => alCambiarApertura(false),
+              destacar: setDestacada,
+            }) ?? <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{error}</p>
           )}
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setAbierto(false)}>Cancelar</Button>
+            <Button variant="ghost" onClick={() => alCambiarApertura(false)}>Cancelar</Button>
             <Button onClick={guardar}>Guardar</Button>
           </DialogFooter>
         </DialogContent>

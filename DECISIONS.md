@@ -993,3 +993,21 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 - El PDF real de abril es fixture de los tests (es público). Un test con otra numeración comprueba que la deducción no depende de la de abril.
 - Si una edición futura cambia la **forma** de la tabla (otras columnas, otro formato de número), la verificación la rechaza y se carga por CSV hasta ajustar la lectura.
 - Va junto con `cartas_porte.fecha_inicio_estado` (migración `0024`): el humano vio una CPE «Anulada» cuyo PDF decía otra cosa. El PDF es del día de la emisión y la anulación fue después; la pantalla ahora dice «desde cuándo».
+
+## ADR-040 — «Entidades» en el menú principal: una persona o empresa es una sola, con roles; fletero y chofer, separados
+
+**Contexto.** El humano (2026-10-08): «de Configuración sacamos Terceros y Choferes y ponemos un ítem en el menú principal que diga Entidades, y dentro Clientes, Fleteros, Choferes y Proveedores». También pidió, a nivel de datos, un modelo común de personas y empresas con roles, para que una misma entidad pueda ser fletero y proveedor sin duplicar datos, y fletero (transportista, propietario o contratado) y chofer (quien conduce) separados. **El modelo ya era así**: `terceros` tiene una fila por entidad, con `es_cliente`, `es_fletero` y `es_proveedor` (al menos uno, ADR anteriores), y `choferes` es aparte, con `fletero_id` y su CUIT (ADR-037). Lo que faltaba era la pantalla y una regla. Medido en Suitrans:
+- 276 terceros, **ninguno con más de un rol**;
+- **un CUIT cargado dos veces**, una como cliente y otra como fletero;
+- **68 con un CUIT de relleno** («1») que vino del legado.
+
+**Decisión.**
+1. **Un CUIT, una entidad.** Al dar de alta o editar, un CUIT de 11 dígitos que ya tiene **otra** entidad da **409**, con la entidad existente y sus roles (`detail.existente`). Así la pantalla ofrece **sumarle el rol** en lugar de duplicarla. Los CUIT que no tienen 11 dígitos, como el relleno del legado, no se comparan. Es una regla de la API y no una restricción de la base, porque el duplicado que ya existe la violaría.
+2. **`POST /api/terceros/{id}/roles/{rol}`** le suma un rol a una entidad y la reactiva si estaba de baja, con auditoría.
+3. **`?fletero_id=`** en `/api/choferes` y `/api/vehiculos`, para la ficha del fletero. El constructor de maestros gana dos costuras, `filtros` y `validar`, y los demás maestros no cambian. La búsqueda de choferes incluye el CUIT.
+4. **Pantalla «Entidades»** en el menú principal, con pestañas Clientes, Fleteros, Choferes y Proveedores. Terceros y Choferes salen de Configuración, y los enlaces viejos redirigen.
+
+**Consecuencias.**
+- **El duplicado que ya existe no se une solo**: los dos registros tienen órdenes y cuenta corriente de cada lado. Unificar entidades es una operación aparte, con su propio diseño.
+- Una fixture de los tests usaba el mismo CUIT para dos fleteros distintos; ahora tiene uno propio.
+- Vehículos queda en Configuración y se ve desde la ficha del fletero.

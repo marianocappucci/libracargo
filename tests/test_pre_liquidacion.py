@@ -69,7 +69,7 @@ def escenario(cliente, monkeypatch):
         "mono": tercero("Juan Pérez", "20-12345678-6", "monotributo", es_fletero=True),
         "ri": tercero("Transportes del Oeste", "30-12345678-1", "responsable_inscripto",
                       es_fletero=True),
-        "exento": tercero("Cooperativa del Sur", "30-12345678-1", "exento", es_fletero=True),
+        "exento": tercero("Cooperativa del Sur", "30-87654321-0", "exento", es_fletero=True),
         "suipacha": crear(cliente, "/api/localidades", {"nombre": "Suipacha"})["id"],
         "rosario": crear(cliente, "/api/localidades", {"nombre": "Rosario"})["id"],
     }

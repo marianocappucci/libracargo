@@ -34,6 +34,33 @@ export const irA = {
   /** La pantalla de facturar, con el cliente ya elegido si se sabe cual. */
   facturarPendientes: (clienteId?: number) =>
     clienteId ? `/comprobantes/facturar?cliente=${clienteId}` : '/comprobantes/facturar',
+  /** «Entidades» (ADR-040), en la pestaña que se pida y, con `ver`, con la ficha de esa fila abierta. Sin nada es la
+   *  ruta pelada, que cae en Clientes. */
+  entidades: (pestana?: PestanaDeEntidades, ver?: number) => {
+    const params = new URLSearchParams()
+    if (pestana) params.set('pestana', pestana)
+    if (ver !== undefined) params.set('ver', String(ver))
+    const query = params.toString()
+    return query ? `/entidades?${query}` : '/entidades'
+  },
+}
+
+/** Las cuatro pestañas de la entrada «Entidades» del menú (ADR-040). Tres son roles de una misma entidad —una
+ *  persona o empresa puede ser a la vez cliente, fletero y proveedor— y la cuarta, Choferes, es otra tabla: la
+ *  persona que conduce. La pestaña va en el query (`?pestana=`), como la sección de Comprobantes. */
+export const PESTANAS_DE_ENTIDADES = ['clientes', 'fleteros', 'choferes', 'proveedores'] as const
+export type PestanaDeEntidades = (typeof PESTANAS_DE_ENTIDADES)[number]
+
+/** La pestaña que pide un query; cualquier cosa que no sea una conocida cae en Clientes. */
+export function pestanaDeEntidades(valor: string | null): PestanaDeEntidades {
+  return PESTANAS_DE_ENTIDADES.find((p) => p === valor) ?? 'clientes'
+}
+
+/** Las secciones de Configuración que se mudaron a Entidades, y a qué pestaña. Un enlace viejo
+ *  (`/configuracion?seccion=terceros`) se redirige con esto. */
+export const SECCIONES_MUDADAS_A_ENTIDADES: Readonly<Record<string, PestanaDeEntidades>> = {
+  terceros: 'clientes',
+  choferes: 'choferes',
 }
 
 /** Las dos secciones de la entrada «Comprobantes» del menú. La sección va en el query (`?seccion=`), como la de
@@ -95,6 +122,10 @@ export function destinoDelLog(entidad: string, entidadId: number | null): string
     if (entidad === 'gasto_de_proveedor') return irA.gasto(entidadId)
   }
   if (entidad === 'configuracion') return '/configuracion'
+  // Terceros y choferes ya no son pantallas sueltas ni secciones de Configuración: viven en «Entidades». Un tercero no dice
+  // en el log de qué rol era, así que se lo lleva a la entrada y no a una pestaña.
+  if (entidad === 'terceros') return irA.entidades()
+  if (entidad === 'choferes') return irA.entidades('choferes')
   // Los maestros no tienen enlace profundo a una fila: la pantalla es un ABM
   // con buscador, y abrir el formulario de edición de algo que quizás ya se
   // borró seria peor que dejar al usuario en la lista.
