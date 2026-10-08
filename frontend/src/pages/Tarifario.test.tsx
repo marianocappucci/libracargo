@@ -1,10 +1,10 @@
 /** Configuración → «Tarifario de referencia» (ADR-038).
  *
  * Lo que se prueba es lo que la pantalla decide: cómo se lee cada edición, la búsqueda por km, que cargar sea sólo del
- * administrador, que una vigencia repetida se avise, que el 422 del servidor (que nombra la línea del CSV) se muestre
- * tal cual, y que la pestaña esté en Configuración.
+ * administrador, la vista previa del PDF (ADR-039) con sus campos precargados, que una vigencia repetida se avise, que el
+ * 422 del servidor se muestre tal cual y bloquee, y que la pestaña esté en Configuración.
  */
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -118,73 +118,223 @@ describe('Tarifario · ediciones', () => {
 })
 
 describe('Tarifario · cargar una edición', () => {
+  const pdf = () => new File(['%PDF-1.4'], 'tarifario.pdf', { type: 'application/pdf' })
   const csv = () => new File(['80;23.205,57\n'], 'tarifario.csv', { type: 'text/csv' })
 
-  function completar(vigencia = '2026-10-01') {
-    const dialogo = screen.getByRole('form', { name: 'Cargar una edición' })
-    fireEvent.change(within(dialogo).getByLabelText('Archivo CSV'), { target: { files: [csv()] } })
-    fireEvent.change(within(dialogo).getByLabelText('Vigencia'), { target: { value: vigencia } })
-    fireEvent.change(within(dialogo).getByLabelText('Nombre'), { target: { value: 'Tarifario octubre 2026' } })
-    return dialogo
+  /** Lo que lee el servidor de un PDF como lo descarga la página del sector. */
+  const LEIDO = {
+    vigencia: '2026-10-01', nombre: 'Tarifa de referencia octubre 2026', valor_estadia: '214146.67',
+    filas: 1100, km_desde: 1, km_hasta: 1100, reemplaza: false,
+    muestra: [{ km: 1, tarifa: '9636.69' }, { km: 80, tarifa: '23205.57' }, { km: 1000, tarifa: '110000.00' }],
   }
 
-  it('lleva el texto de ayuda del formato y de qué pasa con una vigencia repetida', async () => {
+  /** Responde a `/previsualizar` con lo leído y deja el POST de cargar para cada test. */
+  function previsualizarCon(leido: unknown) {
+    postForm.mockImplementation((ruta: string) =>
+      ruta === '/api/tarifario/previsualizar' ? Promise.resolve(leido) : Promise.resolve(edicion(2)))
+  }
+
+  async function elegir(archivo: File) {
+    const formulario = await screen.findByRole('form', { name: 'Cargar una edición' })
+    // `act` asíncrono: deja que termine la lectura del archivo (la respuesta de /previsualizar) antes de seguir.
+    await act(async () => {
+      fireEvent.change(within(formulario).getByLabelText('PDF del tarifario (o CSV)'), { target: { files: [archivo] } })
+    })
+    return formulario
+  }
+
+  const cargas = () => postForm.mock.calls.filter((c) => c[0] === '/api/tarifario') as [string, FormData][]
+
+  it('lleva el texto de ayuda: se sube el PDF tal como se descarga, y también se acepta un CSV', async () => {
     montar()
     const formulario = await screen.findByRole('form', { name: 'Cargar una edición' })
     expect(formulario).toHaveTextContent(
-      'CSV con dos columnas: km y tarifa por tonelada (por ejemplo 80;23.205,57). Si ya hay una edición con esa vigencia, se reemplaza.')
+      'Subí el PDF tal como lo descargás de la página. El sistema lee la tabla de km y tarifas, la vigencia y el valor de estadía. También se acepta un CSV km;tarifa.')
+    const entrada = within(formulario).getByLabelText('PDF del tarifario (o CSV)')
+    expect(entrada).toHaveAttribute('accept', '.pdf,.csv,application/pdf,text/csv')
   })
 
-  it('no se puede cargar sin archivo, vigencia y nombre', async () => {
+  it('sin archivo no hay vista previa ni campos, y no se puede cargar', async () => {
     montar()
     const formulario = await screen.findByRole('form', { name: 'Cargar una edición' })
-    expect(within(formulario).getByRole('button', { name: /Cargar/ })).toBeDisabled()
-    completar()
-    expect(within(formulario).getByRole('button', { name: /Cargar/ })).toBeEnabled()
+    expect(within(formulario).getByRole('button', { name: /Cargar tarifario/ })).toBeDisabled()
+    expect(within(formulario).queryByLabelText('Vigencia')).toBeNull()
+    expect(within(formulario).queryByRole('region', { name: 'Vista previa' })).toBeNull()
   })
 
-  it('manda el CSV por multipart, avisa cuántas filas quedaron y recarga las ediciones', async () => {
+  it('al elegir el PDF lo manda a previsualizar y muestra vigencia, nombre, estadía, filas y la muestra de km', async () => {
     montar()
     await screen.findByRole('table')
-    postForm.mockResolvedValue(edicion(2, { vigencia: '2026-10-01', nombre: 'Tarifario octubre 2026', filas: 1100, km_hasta: 1100 }))
-    const formulario = completar()
-    fireEvent.change(within(formulario).getByLabelText('Valor de estadía (opcional)'), { target: { value: '250.000,50' } })
-    fireEvent.click(within(formulario).getByRole('button', { name: /Cargar/ }))
+    previsualizarCon(LEIDO)
+    const formulario = await elegir(pdf())
 
-    expect(await within(formulario).findByRole('status'))
-      .toHaveTextContent('Se cargó «Tarifario octubre 2026», vigencia 01-10-2026: 1.100 filas (km 1–1.100).')
+    const vista = await within(formulario).findByRole('region', { name: 'Vista previa' })
+    expect(vista).toHaveTextContent('01-10-2026')
+    expect(vista).toHaveTextContent('Tarifa de referencia octubre 2026')
+    expect(vista).toHaveTextContent('$ 214.146,67')
+    expect(vista).toHaveTextContent('1.100 filas, km 1 a 1100')
+    const muestra = within(vista).getByRole('table', { name: 'Muestra de la tabla leída' })
+    expect(within(muestra).getByText('$ 23.205,57')).toBeInTheDocument()
+    expect(within(muestra).getAllByRole('row')).toHaveLength(1 + LEIDO.muestra.length)
     const [ruta, cuerpo] = postForm.mock.calls[0] as [string, FormData]
-    expect(ruta).toBe('/api/tarifario')
-    expect(cuerpo.get('vigencia')).toBe('2026-10-01')
-    expect(cuerpo.get('nombre')).toBe('Tarifario octubre 2026')
-    expect(cuerpo.get('valor_estadia')).toBe('250.000,50')
-    expect((cuerpo.get('archivo') as File).name).toBe('tarifario.csv')
+    expect(ruta).toBe('/api/tarifario/previsualizar')
+    expect((cuerpo.get('archivo') as File).name).toBe('tarifario.pdf')
+    // Previsualizar no guarda: todavía no se mandó la carga.
+    expect(cargas()).toHaveLength(0)
+    expect(within(formulario).queryByRole('note')).toBeNull()
+  })
+
+  it('los campos quedan precargados con lo leído y se pueden editar', async () => {
+    montar()
+    await screen.findByRole('table')
+    previsualizarCon(LEIDO)
+    const formulario = await elegir(pdf())
+
+    const vigencia = await within(formulario).findByLabelText('Vigencia')
+    expect(vigencia).toHaveValue('2026-10-01')
+    expect(within(formulario).getByLabelText('Nombre')).toHaveValue('Tarifa de referencia octubre 2026')
+    expect(within(formulario).getByLabelText('Valor de estadía (opcional)')).toHaveValue('214.146,67')
+    // El archivo trae la vigencia: no es obligatoria de tipear, y se puede cargar ya.
+    expect(within(formulario).getByRole('button', { name: /Cargar tarifario/ })).toBeEnabled()
+
+    fireEvent.change(within(formulario).getByLabelText('Nombre'), { target: { value: 'Octubre, corregido' } })
+    fireEvent.change(vigencia, { target: { value: '2026-10-05' } })
+    fireEvent.change(within(formulario).getByLabelText('Valor de estadía (opcional)'), { target: { value: '250.000,50' } })
+    expect(within(formulario).getByLabelText('Nombre')).toHaveValue('Octubre, corregido')
+    expect(vigencia).toHaveValue('2026-10-05')
+    expect(within(formulario).getByLabelText('Valor de estadía (opcional)')).toHaveValue('250.000,50')
+  })
+
+  it('cargar el PDF sin tocar nada manda sólo el archivo, avisa cuántas filas quedaron y recarga las ediciones', async () => {
+    montar()
+    await screen.findByRole('table')
+    previsualizarCon(LEIDO)
+    const formulario = await elegir(pdf())
+    await within(formulario).findByRole('region', { name: 'Vista previa' })
+    postForm.mockImplementation((ruta: string) => Promise.resolve(
+      ruta === '/api/tarifario'
+        ? edicion(2, { vigencia: '2026-10-01', nombre: 'Tarifa de referencia octubre 2026', filas: 1100, km_hasta: 1100 })
+        : LEIDO))
+    fireEvent.click(within(formulario).getByRole('button', { name: 'Cargar tarifario' }))
+
+    expect(await within(formulario).findByText(/Se cargó/))
+      .toHaveTextContent('Se cargó «Tarifa de referencia octubre 2026», vigencia 01-10-2026: 1.100 filas (km 1–1.100).')
+    const [cuerpo] = cargas().map((c) => c[1])
+    expect((cuerpo.get('archivo') as File).name).toBe('tarifario.pdf')
+    // Lo leído del PDF lo vuelve a leer el servidor: no hace falta repetirlo.
+    expect(cuerpo.has('vigencia')).toBe(false)
+    expect(cuerpo.has('nombre')).toBe(false)
+    expect(cuerpo.has('valor_estadia')).toBe(false)
     // El formulario queda limpio, listo para otra edición.
-    expect(within(formulario).getByLabelText('Nombre')).toHaveValue('')
-    // Y el listado se volvió a pedir.
+    expect(within(formulario).queryByLabelText('Nombre')).toBeNull()
     await waitFor(() => expect(get.mock.calls.filter((c) => c[0] === '/api/tarifario')).toHaveLength(2))
   })
 
-  it('🔴 el 422 del servidor, que nombra la línea del CSV, se muestra tal cual', async () => {
+  it('lo que el usuario cambió viaja y manda sobre lo leído', async () => {
     montar()
     await screen.findByRole('table')
-    postForm.mockRejectedValue(await error(422, 'línea 4: «abc;12» no es un km y una tarifa'))
-    const formulario = completar()
-    fireEvent.click(within(formulario).getByRole('button', { name: /Cargar/ }))
-    expect(await within(formulario).findByRole('alert')).toHaveTextContent('línea 4: «abc;12» no es un km y una tarifa')
-    // No quedó un «se cargó» a medias, y lo tipeado sigue ahí para corregir el archivo y reintentar.
-    expect(within(formulario).queryByRole('status')).toBeNull()
-    expect(within(formulario).getByLabelText('Nombre')).toHaveValue('Tarifario octubre 2026')
+    previsualizarCon(LEIDO)
+    const formulario = await elegir(pdf())
+    await within(formulario).findByRole('region', { name: 'Vista previa' })
+    fireEvent.change(within(formulario).getByLabelText('Nombre'), { target: { value: 'Octubre, corregido' } })
+    fireEvent.change(within(formulario).getByLabelText('Vigencia'), { target: { value: '2026-10-05' } })
+    fireEvent.change(within(formulario).getByLabelText('Valor de estadía (opcional)'), { target: { value: '250.000,50' } })
+    fireEvent.click(within(formulario).getByRole('button', { name: 'Cargar tarifario' }))
+
+    await waitFor(() => expect(cargas()).toHaveLength(1))
+    const cuerpo = cargas()[0][1]
+    expect(cuerpo.get('vigencia')).toBe('2026-10-05')
+    expect(cuerpo.get('nombre')).toBe('Octubre, corregido')
+    expect(cuerpo.get('valor_estadia')).toBe('250.000,50')
   })
 
-  it('una vigencia que ya existe avisa que se reemplaza entera, antes de mandar', async () => {
+  it('🔴 si previsualizar da 422, se muestra el motivo, no hay vista previa y no se puede confirmar', async () => {
     montar()
     await screen.findByRole('table')
-    const formulario = completar('2026-04-10')
-    expect(within(formulario).getByRole('note'))
-      .toHaveTextContent('Ya hay una edición con la vigencia 10-04-2026: se va a reemplazar entera.')
+    postForm.mockRejectedValue(
+      await error(422, 'las tarifas del PDF no crecen con los km: no se pudo leer con seguridad'))
+    const formulario = await elegir(pdf())
+
+    expect(await within(formulario).findByRole('alert'))
+      .toHaveTextContent('las tarifas del PDF no crecen con los km: no se pudo leer con seguridad')
+    expect(within(formulario).queryByRole('region', { name: 'Vista previa' })).toBeNull()
+    expect(within(formulario).getByRole('button', { name: 'Cargar tarifario' })).toBeDisabled()
+    fireEvent.submit(formulario)
+    expect(cargas()).toHaveLength(0)
+  })
+
+  it('un CSV no trae vigencia: la vista previa dice «no dice: indicala» y hay que tipearla para poder cargar', async () => {
+    montar()
+    await screen.findByRole('table')
+    previsualizarCon({
+      vigencia: null, nombre: null, valor_estadia: null, filas: 1, km_desde: 80, km_hasta: 80, reemplaza: false,
+      muestra: [{ km: 80, tarifa: '23205.57' }],
+    })
+    const formulario = await elegir(csv())
+
+    const vista = await within(formulario).findByRole('region', { name: 'Vista previa' })
+    expect(vista).toHaveTextContent('no dice: indicala')
+    expect(vista).toHaveTextContent('1 filas, km 80 a 80')
+    const vigencia = within(formulario).getByLabelText('Vigencia')
+    expect(vigencia).toHaveValue('')
+    expect(vigencia).toBeRequired()
+    expect(within(formulario).getByRole('button', { name: 'Cargar tarifario' })).toBeDisabled()
+
+    fireEvent.change(vigencia, { target: { value: '2026-10-01' } })
+    expect(within(formulario).getByRole('button', { name: 'Cargar tarifario' })).toBeEnabled()
+    fireEvent.click(within(formulario).getByRole('button', { name: 'Cargar tarifario' }))
+    await waitFor(() => expect(cargas()).toHaveLength(1))
+    const cuerpo = cargas()[0][1]
+    expect((cuerpo.get('archivo') as File).name).toBe('tarifario.csv')
+    expect(cuerpo.get('vigencia')).toBe('2026-10-01')
+    expect(cuerpo.has('nombre')).toBe(false)
+    expect(cuerpo.has('valor_estadia')).toBe(false)
+  })
+
+  it('🔴 el 422 de cargar (la vigencia que falta, una línea del CSV) se muestra tal cual y lo tipeado queda', async () => {
+    montar()
+    await screen.findByRole('table')
+    previsualizarCon(LEIDO)
+    const formulario = await elegir(pdf())
+    await within(formulario).findByRole('region', { name: 'Vista previa' })
+    postForm.mockRejectedValue(await error(422, 'indicá la vigencia: el archivo no la dice'))
+    fireEvent.change(within(formulario).getByLabelText('Nombre'), { target: { value: 'Octubre, corregido' } })
+    fireEvent.click(within(formulario).getByRole('button', { name: 'Cargar tarifario' }))
+
+    expect(await within(formulario).findByRole('alert')).toHaveTextContent('indicá la vigencia: el archivo no la dice')
+    expect(within(formulario).queryByText(/Se cargó/)).toBeNull()
+    expect(within(formulario).getByLabelText('Nombre')).toHaveValue('Octubre, corregido')
+  })
+
+  it('si la vista previa dice que reemplaza, lo avisa; y si se cambia la vigencia, avisa según las ediciones cargadas', async () => {
+    montar()
+    await screen.findByRole('table')
+    previsualizarCon({ ...LEIDO, vigencia: '2026-04-10', reemplaza: true })
+    const formulario = await elegir(pdf())
+    expect(await within(formulario).findByRole('note'))
+      .toHaveTextContent('Ya hay una edición con esa vigencia: se va a reemplazar entera.')
+    // Otra vigencia sin edición: ya no reemplaza.
     fireEvent.change(within(formulario).getByLabelText('Vigencia'), { target: { value: '2026-10-01' } })
     expect(within(formulario).queryByRole('note')).toBeNull()
+    // Y una que sí está cargada (la del 10-04-2026 del listado) vuelve a avisar.
+    fireEvent.change(within(formulario).getByLabelText('Vigencia'), { target: { value: '2026-04-10' } })
+    expect(within(formulario).getByRole('note')).toBeInTheDocument()
+  })
+
+  it('si se elige otro archivo mientras se lee el anterior, vale el último', async () => {
+    montar()
+    await screen.findByRole('table')
+    let soltarPrimero: (v: unknown) => void = () => {}
+    postForm.mockImplementationOnce(() => new Promise((r) => { soltarPrimero = r }))
+    const formulario = await elegir(pdf())
+    expect(await within(formulario).findByText('Leyendo el archivo…')).toBeInTheDocument()
+    postForm.mockResolvedValueOnce({ ...LEIDO, nombre: 'El segundo' })
+    await act(async () => {
+      fireEvent.change(within(formulario).getByLabelText('PDF del tarifario (o CSV)'), { target: { files: [csv()] } })
+    })
+    expect(await within(formulario).findByLabelText('Nombre')).toHaveValue('El segundo')
+    await act(async () => { soltarPrimero({ ...LEIDO, nombre: 'El primero' }) })
+    expect(within(formulario).getByLabelText('Nombre')).toHaveValue('El segundo')
   })
 
   it('🔑 el personal que no es administrador ve el tarifario pero no el formulario de carga', async () => {

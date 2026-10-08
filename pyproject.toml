@@ -12,6 +12,8 @@ dependencies = [
     "pydantic>=2.9",
     # La subida del logo del membrete: FastAPI necesita esto para UploadFile.
     "python-multipart>=0.0.9",
+    # Leer el PDF del tarifario de referencia (ADR-039): texto y posiciones; los dígitos vienen con otra tipografía.
+    "pdfplumber>=0.11",
     # El auth de toda la familia. Se declara con `git+https` a proposito: asi
     # anda en dev local sin identidad SSH propia. El build de la imagen
     # reescribe la URL a `git+ssh` con la deploy key de solo lectura del motor

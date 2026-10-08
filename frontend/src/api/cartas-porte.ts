@@ -17,6 +17,9 @@ export type CartaPorte = {
   /** El código de ARCA (`AC`, `CN`…) y cómo se lee (`Activa`, `Confirmada`…). */
   estado: string
   estado_descripcion: string
+  /** Desde cuándo está en ese estado (ISO con zona), o `null` si no se sabe. El PDF que guardó ARCA es el de la
+   *  emisión: una carta «Anulada» después sigue teniendo ese PDF, y la pantalla tiene que decir desde cuándo es anulada. */
+  fecha_inicio_estado: string | null
   fecha_emision: string | null
   fecha_vencimiento: string | null
   fecha_partida: string | null
