@@ -347,3 +347,15 @@ def test_consultar_no_frena_el_loop(cliente, arca, monkeypatch):
     assert respuesta.status_code == 200, respuesta.text
     assert health.status_code == 200
     assert fin < desperto["en"], "/health esperó a que terminara la consulta: la ruta bloqueó el loop"
+
+
+def test_se_guarda_desde_cuando_esta_en_su_estado(cliente, arca):
+    """Pedido del humano: una CPE «Anulada» cuyo PDF decía otra cosa. El PDF es del día de la emisión."""
+    anulada = replace(cpe(1, estado="AN"), fecha_inicio_estado=datetime(2026, 9, 22, 9, 13, tzinfo=AR))
+    arca["cpes"][1] = anulada
+    previa = cliente.post("/api/cartas-porte/consultar", json={"ctg": 1, "cuit_representada": TRANSPORTISTA}).json()
+    assert previa["fecha_inicio_estado"].startswith("2026-09-22T09:13")
+    id_ = _traer(cliente, 1).json()[0]["id"]
+    v = cliente.get(f"/api/cartas-porte/{id_}").json()
+    assert v["estado_descripcion"] == "Anulada"
+    assert datetime.fromisoformat(v["fecha_inicio_estado"]) == datetime(2026, 9, 22, 9, 13, tzinfo=AR)

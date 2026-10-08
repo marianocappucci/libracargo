@@ -54,6 +54,8 @@ class CartaPorteOut(BaseModel):
     fecha_emision: datetime | None
     fecha_vencimiento: datetime | None
     fecha_partida: datetime | None
+    #: Desde cuándo está en ese estado (para «Anulada desde…»).
+    fecha_inicio_estado: datetime | None = None
     cuit_representada: str
     ambiente: str
     transportista: Parte

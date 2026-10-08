@@ -6,6 +6,9 @@ El de verdad (10 de abril de 2026) tiene una tarifa por km; en la CPE de Pereiro
 
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
+
 from fastapi.testclient import TestClient
 
 CSV = b"km;tarifa\n1;9.636,69\n10;9.636,69\n11;9.864,21\n80;23.205,57\n100;27.192,78\n"
@@ -104,3 +107,77 @@ def test_un_operador_consulta_pero_no_carga(cliente):
     staff.post("/auth/login", json={"username": "marta", "password": "una-clave"})
     assert staff.get("/api/tarifario/referencia", params={"km": 80, "fecha": "2026-09-10"}).status_code == 200
     assert _cargar(staff).status_code == 403
+
+
+# ── El PDF que publica el sector (ADR-039) ─────────────────────────────────
+
+from pathlib import Path  # noqa: E402
+
+import pytest  # noqa: E402
+
+from app.servicios import tarifario as servicio  # noqa: E402
+
+PDF = (Path(__file__).parent / "fixtures" / "tarifa-referencia-2026-04-10.pdf").read_bytes()
+
+
+def test_leer_el_pdf_real_de_abril():
+    """Los números vienen con otra tipografía (`(cid:N)`); se deducen y se verifican."""
+    leido = servicio.leer_pdf(PDF)
+    assert (min(leido.filas), leido.filas[1], leido.filas[11], leido.filas[80], leido.filas[1000]) == (
+        1, Decimal("9636.69"), Decimal("9864.21"), Decimal("23205.57"), Decimal("108021.12"))
+    assert all(k in leido.filas for k in range(1, 1001)), "de 1 a 1.000 km, completo"
+    assert (leido.vigencia, leido.valor_estadia) == (date(2026, 4, 10), Decimal("214146.67"))
+    assert leido.nombre == "Tarifa de referencia de cereales y oleaginosas, 10 de abril de 2026"
+
+
+def test_otra_numeracion_de_la_tipografia_se_deduce_igual():
+    """Otra edición puede numerar los glifos distinto: no se deja fijo lo de abril."""
+    digitos = {str(i): 300 + 7 * i for i in range(10)}
+    simbolos = {**digitos, ".": 900, ",": 901}
+
+    def cifrar(texto):
+        return "".join(f"(cid:{simbolos[c]})" if c in simbolos else c for c in texto)
+
+    filas = " ".join(f"{k} {Decimal(9000 + 37 * k):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                     for k in range(1, 151))
+    mapa = servicio._deducir_cids(servicio._palabras_cid(cifrar(filas)))
+    assert [mapa[digitos[str(i)]] for i in range(10)] == [str(i) for i in range(10)]
+    assert (mapa[900], mapa[901]) == (".", ",")
+
+
+def test_un_pdf_que_no_se_puede_leer_con_seguridad_no_carga_nada():
+    with pytest.raises(servicio.TarifarioInvalido, match="no se pudo abrir"):
+        servicio.leer_pdf(b"%PDF-1.4 esto no es un pdf")
+    with pytest.raises(servicio.TarifarioInvalido, match="no crecen"):
+        servicio._verificar({k: Decimal(1000 - k) for k in range(1, 200)})
+    with pytest.raises(servicio.TarifarioInvalido, match="no parece"):
+        servicio._verificar({k: Decimal(k) for k in range(1, 20)})
+
+
+def test_cargar_el_pdf_sin_tipear_nada(cliente):
+    previa = cliente.post("/api/tarifario/previsualizar",
+                          files={"archivo": ("TARIFA.pdf", PDF, "application/pdf")})
+    assert previa.status_code == 200, previa.text
+    p = previa.json()
+    assert (p["vigencia"], p["valor_estadia"], p["km_desde"], p["reemplaza"]) == (
+        "2026-04-10", "214146.67", 1, False)
+    assert {"km": 80, "tarifa": "23205.57"} in p["muestra"]
+    assert cliente.get("/api/tarifario").json() == [], "la vista previa no guarda"
+
+    r = cliente.post("/api/tarifario", files={"archivo": ("TARIFA.pdf", PDF, "application/pdf")})
+    assert r.status_code == 201, r.text
+    assert (r.json()["vigencia"], r.json()["nombre"], r.json()["filas"]) == (
+        "2026-04-10", "Tarifa de referencia de cereales y oleaginosas, 10 de abril de 2026", p["filas"])
+    previa = cliente.post("/api/tarifario/previsualizar", files={"archivo": ("T.pdf", PDF, "application/pdf")})
+    assert previa.json()["reemplaza"] is True
+
+
+def test_lo_del_formulario_manda_sobre_lo_leido(cliente):
+    r = cliente.post("/api/tarifario", data={"vigencia": "2026-05-01", "nombre": "Mayo", "valor_estadia": "1,00"},
+                     files={"archivo": ("TARIFA.pdf", PDF, "application/pdf")})
+    assert (r.json()["vigencia"], r.json()["nombre"], r.json()["valor_estadia"]) == ("2026-05-01", "Mayo", "1.00")
+
+
+def test_un_csv_sin_vigencia_la_pide(cliente):
+    r = cliente.post("/api/tarifario", files={"archivo": ("t.csv", CSV, "text/csv")})
+    assert r.status_code == 422 and "vigencia" in r.json()["detail"]

@@ -47,6 +47,8 @@ class CartaPorte(Base, Auditable):
     fecha_emision: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     fecha_vencimiento: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     fecha_partida: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Desde cuándo está en `estado` (`fechaInicioEstado` de ARCA): «Anulada desde el 22-09-2026».
+    fecha_inicio_estado: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     #: Por quién se consultó: el CUIT que va en `cuitRepresentada`. Se elige al traerla y se reusa al actualizarla.
     cuit_representada: Mapped[str] = mapped_column(String(11), nullable=False)

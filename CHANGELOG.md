@@ -3,6 +3,14 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — El tarifario se carga desde el PDF; la carta de porte dice desde cuándo está en su estado
+
+- **Cargar el tarifario desde el PDF** que se descarga de la página (ADR-039). El sistema lee la tabla de km y tarifas, la vigencia y el valor de estadía, y muestra una **vista previa** antes de cargarlo, para comparar con el PDF. Los números del PDF vienen codificados en otra tipografía: el sistema los decodifica y verifica que la tabla tenga sentido (km consecutivos y tarifas que no bajan). Si no puede leerla con seguridad, no carga nada y lo avisa. El CSV sigue como alternativa.
+- **Cartas de porte: «Anulada desde el 22-09-2026 09:13».** Se muestra desde cuándo la carta está en su estado. El PDF de una carta es del día en que se emitió, y una anulación posterior no aparece en él.
+- **API**: `POST /api/tarifario/previsualizar`; `POST /api/tarifario` acepta PDF y la vigencia, el nombre y la estadía pasan a ser opcionales. `fecha_inicio_estado` en las cartas de porte.
+- **Migración `0024`**: una columna vacía en `cartas_porte`, que se completa al actualizar cada carta.
+- Dependencia nueva: `pdfplumber`.
+
 ## [Unreleased] — El tarifario de referencia, y km y tarifa por tonelada en la orden
 
 - **Tarifario de referencia** (ADR-038): la tabla de tarifas por tonelada para cada kilómetro, con su vigencia y el valor de estadía. Se carga desde un CSV `km;tarifa` en Configuración (sólo un administrador) y las ediciones anteriores se conservan.

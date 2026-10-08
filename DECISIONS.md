@@ -976,3 +976,20 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 **Consecuencias.**
 - La emisión de la Carta de Porte (fase 4) toma `km` y `tarifa_tonelada` de la orden. El esquema de ARCA admite hasta 99.999,99 $/t; una referencia de más de 1.000 km lo supera, y ahí la emisión avisa.
 - Del PDF de abril salen completos los km de 1 a 1.000. Más allá, sólo filas sueltas: lo que no está se informa como faltante.
+
+## ADR-039 — El tarifario se carga desde el PDF que publica el sector; los dígitos codificados se deducen y se verifican
+
+**Contexto.** ADR-038 cargaba el tarifario desde un CSV y dejaba el PDF afuera, porque sus números vienen con una tipografía sin tabla de caracteres. El humano corrigió (2026-10-08): «el transportista carga el PDF que descarga de la página, porque no está en CSV; el sistema lo convierte». Medido con `pdfplumber` sobre la edición del 10 de abril de 2026: los números salen como `(cid:N)`, con 488-497 para 0-9, 558 para el punto de miles y 559 para la coma. El título, la fecha («10 ABRIL 2026») y el «Valor de estadía: $214.146,67» salen como texto común. La tabla trae completos los km 1 a 1.000; más allá, el PDF publica sólo algunas filas.
+
+**Decisión.**
+1. **`POST /api/tarifario` acepta el PDF**, reconocido por `%PDF`, además del CSV. Del PDF salen las filas, la **vigencia** (día, mes en letras y año), el **valor de estadía** y el nombre. Lo que venga en el formulario manda sobre lo leído. Un CSV sin vigencia la pide.
+2. **La codificación no se deja fija**, porque otra edición puede numerar los glifos distinto. Se deduce de la forma de las tarifas (`d.ddd,dd`): la **coma** es el símbolo que va 3 lugares antes del final de cada tarifa, el **punto de miles** el que va 7, y los **diez restantes, en orden**, son 0-9.
+3. **Se verifica antes de cargar:** al menos 100 filas, los km arrancan en 1 y son consecutivos en un tramo de al menos 100, y las tarifas no bajan al subir los km. Si algo no cierra, **no se carga nada** y el error lo dice: un tarifario mal leído es peor que ninguno.
+4. **`POST /api/tarifario/previsualizar`** lee y muestra, **sin guardar**: vigencia, estadía, filas, rango de km, una muestra de km para comparar a ojo y si reemplaza una edición. La pantalla confirma después.
+5. Dependencia nueva: `pdfplumber`.
+
+**Consecuencias.**
+- La pantalla pide el PDF; el CSV queda como alternativa.
+- El PDF real de abril es fixture de los tests (es público). Un test con otra numeración comprueba que la deducción no depende de la de abril.
+- Si una edición futura cambia la **forma** de la tabla (otras columnas, otro formato de número), la verificación la rechaza y se carga por CSV hasta ajustar la lectura.
+- Va junto con `cartas_porte.fecha_inicio_estado` (migración `0024`): el humano vio una CPE «Anulada» cuyo PDF decía otra cosa. El PDF es del día de la emisión y la anulación fue después; la pantalla ahora dice «desde cuándo».

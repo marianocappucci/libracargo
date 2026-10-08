@@ -18,6 +18,22 @@ export type Tarifario = {
 
 export type FilaDeTarifa = { km: number; tarifa: string }
 
+/** Lo que el servidor leyó del archivo, antes de guardar (ADR-039). Lo que el archivo no dice viene `null`: un CSV no
+ *  trae vigencia, nombre ni valor de estadía, y un PDF raro puede no traer alguno. */
+export type VistaPreviaDeTarifario = {
+  /** `aaaa-mm-dd`. */
+  vigencia: string | null
+  nombre: string | null
+  valor_estadia: string | null
+  filas: number
+  km_desde: number | null
+  km_hasta: number | null
+  /** Unos pocos km con su tarifa, para comparar a ojo contra el PDF. */
+  muestra: FilaDeTarifa[]
+  /** Ya hay una edición con esa vigencia: cargar la reemplaza entera. */
+  reemplaza: boolean
+}
+
 /** La referencia para unos km. `tarifa` es `null` si el tarifario no tiene ese km: no se extrapola. */
 export type Referencia = {
   tarifario_id: number
@@ -61,12 +77,21 @@ export const tarifario = {
   /** `null` si ese cliente todavía no tiene un viaje con km y tarifa por tonelada (404). */
   sugerencia: (clienteId: number) =>
     opcional(api.get<Sugerencia>(`/api/tarifario/sugerencia?cliente_id=${clienteId}`)),
-  /** Sólo admin (403 a staff). 422 con el `detail` que dice la línea del CSV; si la vigencia ya existe, la reemplaza. */
-  cargar: (datos: { archivo: File; vigencia: string; nombre: string; valorEstadia?: string }) => {
+  /** Sólo admin. Lee el PDF (o el CSV) y dice lo que cargaría, **sin guardar nada**. 422 con el `detail` si no se pudo
+   *  leer con seguridad: se muestra tal cual. */
+  previsualizar: (archivo: File) => {
+    const cuerpo = new FormData()
+    cuerpo.append('archivo', archivo)
+    return api.postForm<VistaPreviaDeTarifario>('/api/tarifario/previsualizar', cuerpo)
+  },
+  /** Sólo admin (403 a staff). El archivo es el PDF tal como se descarga (o un CSV `km;tarifa`); `vigencia`, `nombre` y
+   *  `valorEstadia` son opcionales y, si vienen, mandan sobre lo leído del PDF. Un CSV sin vigencia da 422 («indicá la
+   *  vigencia»). 422 con el `detail`; si la vigencia ya existe, la reemplaza entera. */
+  cargar: (datos: { archivo: File; vigencia?: string; nombre?: string; valorEstadia?: string }) => {
     const cuerpo = new FormData()
     cuerpo.append('archivo', datos.archivo)
-    cuerpo.append('vigencia', datos.vigencia)
-    cuerpo.append('nombre', datos.nombre)
+    if (datos.vigencia?.trim()) cuerpo.append('vigencia', datos.vigencia.trim())
+    if (datos.nombre?.trim()) cuerpo.append('nombre', datos.nombre.trim())
     if (datos.valorEstadia?.trim()) cuerpo.append('valor_estadia', datos.valorEstadia.trim())
     return api.postForm<Tarifario>('/api/tarifario', cuerpo)
   },

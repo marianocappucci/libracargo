@@ -56,6 +56,7 @@ def _de_fila(sesion: Session, fila: CartaPorte, tiene_pdf: bool) -> CartaPorteOu
         id=fila.id, nro_ctg=fila.nro_ctg, numero=_numero(fila.sucursal, fila.nro_orden), estado=fila.estado,
         estado_descripcion=arca_wscpe.ESTADOS.get(fila.estado, fila.estado),
         fecha_emision=fila.fecha_emision, fecha_vencimiento=fila.fecha_vencimiento, fecha_partida=fila.fecha_partida,
+        fecha_inicio_estado=fila.fecha_inicio_estado,
         cuit_representada=fila.cuit_representada, ambiente=fila.ambiente, **partes,
         dominios=[d for d in (fila.dominios or "").split(",") if d],
         cod_grano=fila.cod_grano, cosecha=fila.cosecha,
@@ -80,7 +81,8 @@ def _de_arca(sesion: Session, cpe: arca_wscpe.CartaDePorte, cuit: str, amb: str)
     return CartaPorteOut(
         nro_ctg=cpe.nro_ctg, numero=cpe.numero, estado=cpe.estado, estado_descripcion=cpe.estado_descripcion,
         fecha_emision=cpe.fecha_emision, fecha_vencimiento=cpe.fecha_vencimiento,
-        fecha_partida=t.fecha_hora_partida, cuit_representada=cuit, ambiente=amb, **partes,
+        fecha_partida=t.fecha_hora_partida, fecha_inicio_estado=cpe.fecha_inicio_estado,
+        cuit_representada=cuit, ambiente=amb, **partes,
         dominios=list(t.dominios), cod_grano=c.cod_grano, cosecha=c.cosecha,
         peso_bruto=c.peso_bruto, peso_tara=c.peso_tara, peso_neto=c.peso_neto,
         peso_bruto_descarga=c.peso_bruto_descarga, peso_tara_descarga=c.peso_tara_descarga,

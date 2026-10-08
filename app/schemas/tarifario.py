@@ -42,3 +42,17 @@ class SugerenciaOut(BaseModel):
     km: int
     tarifa_tonelada: Decimal
     tarifa_referencia: Decimal
+
+
+class VistaPreviaOut(BaseModel):
+    """Lo que se cargaría del archivo, sin guardar (`POST /api/tarifario/previsualizar`)."""
+
+    vigencia: date | None
+    nombre: str | None
+    valor_estadia: Decimal | None
+    filas: int
+    km_desde: int
+    km_hasta: int
+    muestra: list[FilaOut]
+    #: Si ya hay una edición con esa vigencia (cargarla la reemplaza entera).
+    reemplaza: bool
