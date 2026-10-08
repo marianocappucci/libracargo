@@ -154,6 +154,20 @@ describe('Tarifario · cargar una edición', () => {
     expect(entrada).toHaveAttribute('accept', '.pdf,.csv,application/pdf,text/csv')
   })
 
+  it('🔑 el campo de archivo es el del kit: muestra el nombre elegido y la X lo quita, con su vista previa', async () => {
+    previsualizarCon(LEIDO)
+    montar()
+    const formulario = await elegir(new File(['%PDF-1.4'], 'tarifario.pdf', { type: 'application/pdf' }))
+    expect(await within(formulario).findByText('tarifario.pdf')).toBeInTheDocument()
+    expect(within(formulario).getByRole('button', { name: 'Cambiar archivo' })).toBeInTheDocument()
+    expect(within(formulario).getByLabelText('Vigencia', { exact: false })).toBeInTheDocument()
+
+    fireEvent.click(within(formulario).getByRole('button', { name: 'Quitar archivo' }))
+    expect(within(formulario).queryByText('tarifario.pdf')).toBeNull()
+    expect(within(formulario).queryByLabelText('Vigencia', { exact: false })).toBeNull()
+    expect(within(formulario).getByRole('button', { name: /Cargar tarifario/ })).toBeDisabled()
+  })
+
   it('sin archivo no hay vista previa ni campos, y no se puede cargar', async () => {
     montar()
     const formulario = await screen.findByRole('form', { name: 'Cargar una edición' })

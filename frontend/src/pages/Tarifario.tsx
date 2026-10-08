@@ -12,6 +12,7 @@
  *  entendió antes de guardar; el 422 (un PDF que no se pudo leer con seguridad, un CSV mal armado) se muestra tal cual
  *  lo dice el servidor.
  */
+import { CampoArchivo } from 'libra-ui/CampoArchivo'
 import { DataTable } from 'libra-ui/data-table'
 import { Eye, Upload } from 'lucide-react'
 import type { FormEvent } from 'react'
@@ -115,7 +116,6 @@ function CargarEdicion({ ediciones, alCargar }: { ediciones: Tarifario[]; alCarg
   const [error, setError] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
-  const entrada = useRef<HTMLInputElement>(null)
   // Si se elige otro archivo mientras el anterior se lee, la respuesta vieja no pisa a la nueva.
   const lectura = useRef(0)
 
@@ -173,7 +173,6 @@ function CargarEdicion({ ediciones, alCargar }: { ediciones: Tarifario[]; alCarg
       setAviso(`Se cargó «${t.nombre}», vigencia ${formatearFecha(t.vigencia)}: ${formatearKilos(t.filas)} filas (km ${rangoDeKm(t)}).`)
       setArchivo(null)
       limpiarVista()
-      if (entrada.current) entrada.current.value = ''
       alCargar(t)
     } catch (err) {
       // El 422 explica qué falla («línea 4: …», «indicá la vigencia…»): se muestra como viene, sin reescribirlo.
@@ -192,8 +191,8 @@ function CargarEdicion({ ediciones, alCargar }: { ediciones: Tarifario[]; alCarg
       </p>
       <div className="grid gap-1">
         <Label htmlFor="tarifario-archivo">PDF del tarifario (o CSV)</Label>
-        <Input id="tarifario-archivo" ref={entrada} type="file" accept=".pdf,.csv,application/pdf,text/csv"
-               onChange={(ev) => void elegir(ev.target.files?.[0] ?? null)} />
+        <CampoArchivo id="tarifario-archivo" archivo={archivo} accept=".pdf,.csv,application/pdf,text/csv"
+                      placeholder="PDF o CSV" onChange={(f) => void elegir(f)} />
       </div>
       {leyendo && <p role="status" className="text-muted-foreground text-sm">Leyendo el archivo…</p>}
       {error && <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{error}</p>}

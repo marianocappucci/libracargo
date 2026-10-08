@@ -23,6 +23,7 @@ import type { Maestro, Recurso } from '@/api/maestros'
 import { clienteDe } from '@/api/maestros'
 import { enmascararCuit } from '@/api/cartas-porte'
 import { BadgeEstado } from 'libra-ui/badge-estado'
+import { AccionesDelTitulo } from '@/components/AccionesDelTitulo'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -345,20 +346,29 @@ export function AbmMaestro<T extends Maestro>({
     },
   ] as ColumnDef<T, unknown>[]
 
+  const acciones = (
+    <>
+      {barra?.(contexto)}
+      {!sinNuevo && (
+        <Button onClick={() => abrir(null)}>
+          <Plus className="size-4" /> Nuevo
+        </Button>
+      )}
+    </>
+  )
+
   return (
     // Con título propio es una pantalla; sin él va metido en otra (una pestaña de Entidades), que ya pone el margen.
     <div className={encabezado ? 'p-6' : undefined}>
-      <div className={`mb-4 flex items-center ${encabezado ? 'justify-between' : 'justify-end'}`}>
-        {encabezado && <h1 className="text-2xl font-semibold">{titulo}</h1>}
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {barra?.(contexto)}
-          {!sinNuevo && (
-            <Button onClick={() => abrir(null)}>
-              <Plus className="size-4" /> Nuevo
-            </Button>
-          )}
+      {encabezado ? (
+        <div className="mb-4 flex items-center justify-between">
+          <h1 className="text-2xl font-semibold">{titulo}</h1>
+          <div className="flex flex-wrap items-center justify-end gap-2">{acciones}</div>
         </div>
-      </div>
+      ) : (
+        // Metido en otra pantalla (Entidades): los botones suben a la línea del título de ésta.
+        <AccionesDelTitulo>{acciones}</AccionesDelTitulo>
+      )}
 
       {/* Con el formulario abierto el error se lee adentro: el de la página queda detrás del modal y el 422 del
           servidor («el CUIT del chofer no es válido…») no lo vería nadie. */}

@@ -27,6 +27,7 @@ import { Elegir } from '@/components/Elegir'
 import { formatearImporte } from '@/components/esquema-orden'
 import { irA } from '@/navegacion'
 import { BadgeEstado } from 'libra-ui/badge-estado'
+import { AccionesDelTitulo } from '@/components/AccionesDelTitulo'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -183,21 +184,18 @@ export default function Gastos() {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="text-muted-foreground text-sm">
-            Lo que el proveedor entrega y se le descuenta al fletero.
-          </p>
-        </div>
-        {/* El listado se imprime desde reportes (`listado-gastos`), que exige
-            rango. Este boton ni siquiera escribia los filtros en el encabezado
-            de la hoja: dos papeles distintos salian identicos. */}
-        <div className="no-imprimir flex gap-2">
-          <Button onClick={() => abrir(null)}>
-            <Plus className="size-4" /> Nuevo comprobante
-          </Button>
-        </div>
-      </div>
+      <p className="text-muted-foreground mb-4 text-sm">
+        Lo que el proveedor entrega y se le descuenta al fletero.
+      </p>
+      {/* El listado se imprime desde reportes (`listado-gastos`), que exige
+          rango. Este boton ni siquiera escribia los filtros en el encabezado
+          de la hoja: dos papeles distintos salian identicos. Sube a la línea
+          del título de Comprobantes (`AccionesDelTitulo`). */}
+      <AccionesDelTitulo>
+        <Button onClick={() => abrir(null)}>
+          <Plus className="size-4" /> Nuevo comprobante
+        </Button>
+      </AccionesDelTitulo>
 
       <div className="no-imprimir mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <div className="grid gap-1">
