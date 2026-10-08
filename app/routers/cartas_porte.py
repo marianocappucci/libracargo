@@ -18,14 +18,17 @@ from app.schemas.cartas_porte import (
     CartaPorteOut,
     ConsultaIn,
     Parte,
+    PlantillaPut,
     RepresentadosOut,
     ResultadoTraer,
     ResumenActualizar,
+    TitularEdicion,
+    TitularIn,
     TraerIn,
     VincularIn,
 )
 from app.servicios import cartas_porte as servicio
-from app.servicios import emision_cpe
+from app.servicios import emision_cpe, titulares_cpe
 
 router = APIRouter(prefix="/api/cartas-porte", tags=["cartas-porte"],
                    dependencies=[Depends(require_staff)])
@@ -237,6 +240,71 @@ def catalogo_localidades(cuit_titular: str, provincia: int):
 @router.get("/catalogos/plantas")
 def catalogo_plantas(cuit_titular: str, cuit: str):
     return _o_http(emision_cpe.plantas, cuit_titular, cuit)
+
+
+# ── Titulares (ADR-044) ─────────────────────────────────────────────────────
+# 🔑 Antes de `/{id_}`: `/titulares` es de un solo segmento y chocaría con `GET /{id_}` (422 por el entero).
+# Ver es de staff; cargar, editar y borrar —y la plantilla— son de un administrador, como el resto de la emisión.
+
+
+@router.get("/titulares")
+def listar_titulares(sesion: Session = Depends(obtener_sesion)):
+    """Los titulares con el estado de su delegación según el ticket de ARCA, y los CUIT delegados sin cargar.
+
+    Si no se puede verificar (sin certificado, ARCA no contesta) igual contesta 200, con `verificado: false` y el
+    motivo.
+    """
+    return titulares_cpe.listar(sesion)
+
+
+@router.get("/titulares/instrucciones")
+def instrucciones_de_delegacion():
+    """El alias del computador fiscal y el CUIT del representante, del certificado cargado, para el titular."""
+    return titulares_cpe.instrucciones()
+
+
+@router.get("/titulares/de-tercero/{tercero_id}")
+def titular_de_tercero(tercero_id: int, sesion: Session = Depends(obtener_sesion)):
+    """El titular de esa entidad (para la ficha del cliente); `null` si no es titular."""
+    return _o_http(titulares_cpe.de_tercero, sesion, tercero_id)
+
+
+@router.post("/titulares", status_code=201, dependencies=[Depends(require_admin)])
+def crear_titular(datos: TitularIn, sesion: Session = Depends(obtener_sesion),
+                  actual: dict = Depends(get_current_user)):
+    return titulares_cpe.como_fila(sesion, _o_http(titulares_cpe.crear, sesion, actual, datos))
+
+
+@router.put("/titulares/{titular_id}", dependencies=[Depends(require_admin)])
+def editar_titular(titular_id: int, datos: TitularEdicion, sesion: Session = Depends(obtener_sesion),
+                   actual: dict = Depends(get_current_user)):
+    return titulares_cpe.como_fila(sesion, _o_http(titulares_cpe.editar, sesion, actual, titular_id, datos))
+
+
+@router.delete("/titulares/{titular_id}", status_code=204, dependencies=[Depends(require_admin)])
+def borrar_titular(titular_id: int, sesion: Session = Depends(obtener_sesion),
+                   actual: dict = Depends(get_current_user)):
+    _o_http(titulares_cpe.borrar, sesion, actual, titular_id)
+    return Response(status_code=204)
+
+
+@router.get("/titulares/{titular_id}/plantilla")
+def ver_plantilla(titular_id: int, sesion: Session = Depends(obtener_sesion)):
+    """Los datos habituales del titular que usa «Emitir carta de porte»: `{datos, existe, actualizada}`."""
+    return _o_http(titulares_cpe.plantilla, sesion, titular_id)
+
+
+@router.put("/titulares/{titular_id}/plantilla", dependencies=[Depends(require_admin)])
+def guardar_plantilla(titular_id: int, cuerpo: PlantillaPut, sesion: Session = Depends(obtener_sesion),
+                      actual: dict = Depends(get_current_user)):
+    return _o_http(titulares_cpe.guardar_plantilla, sesion, actual, titular_id, cuerpo.datos)
+
+
+@router.delete("/titulares/{titular_id}/plantilla", status_code=204, dependencies=[Depends(require_admin)])
+def borrar_plantilla(titular_id: int, sesion: Session = Depends(obtener_sesion),
+                     actual: dict = Depends(get_current_user)):
+    _o_http(titulares_cpe.borrar_plantilla, sesion, actual, titular_id)
+    return Response(status_code=204)
 
 
 @router.post("/{id_}/anular", response_model=CartaPorteOut, dependencies=[Depends(require_admin)])

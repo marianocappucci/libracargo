@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  MAX_CTGS, esEstadoFinal, formatearCuit, formatearDiaDelInstante, formatearInstante, formatearKilos, leerCtgs,
-  nombreOCuit, tonoDeEstado,
+  MAX_CTGS, esEstadoFinal, etiquetaDeDelegacion, formatearCuit, formatearDiaDelInstante, formatearInstante,
+  formatearKilos, leerCtgs, lineaDeCartaDePorte, nombreOCuit, textoDeInstrucciones, tonoDeDelegacion, tonoDeEstado,
 } from './cartas-porte'
 
 describe('formatearCuit', () => {
@@ -91,5 +91,47 @@ describe('estado', () => {
     expect(tonoDeEstado('CO')).toBe('atencion')
     expect(tonoDeEstado('AN')).toBe('negativo')
     expect(tonoDeEstado('XX')).toBe('neutro')
+  })
+})
+
+describe('titulares: cómo se leen (ADR-044)', () => {
+  it('cada estado de delegación tiene su texto y su tono', () => {
+    expect(etiquetaDeDelegacion('delegado')).toBe('Delegado ✓')
+    expect(etiquetaDeDelegacion('pendiente')).toBe('Pendiente')
+    expect(etiquetaDeDelegacion('sin_verificar')).toBe('Sin verificar')
+    expect(etiquetaDeDelegacion('no_aplica', 'titular')).toBe('Emite él')
+    expect(tonoDeDelegacion('delegado')).toBe('ok')
+    expect(tonoDeDelegacion('pendiente')).toBe('atencion')
+    expect(tonoDeDelegacion('sin_verificar')).toBe('neutro')
+  })
+
+  it('la línea de la ficha del cliente', () => {
+    expect(lineaDeCartaDePorte({ emite: 'nosotros', delegacion: 'delegado', activo: true })).toBe('delegó a nosotros ✓')
+    expect(lineaDeCartaDePorte({ emite: 'titular', delegacion: 'no_aplica', activo: true })).toBe('emite él')
+    expect(lineaDeCartaDePorte({ emite: 'nosotros', delegacion: 'pendiente', activo: true })).toMatch(/^pendiente/)
+    expect(lineaDeCartaDePorte({ emite: 'nosotros', delegacion: 'sin_verificar', activo: true }))
+      .toBe('emitimos nosotros (sin verificar en ARCA)')
+    expect(lineaDeCartaDePorte({ emite: 'titular', delegacion: 'no_aplica', activo: false })).toBe('emite él · dado de baja')
+  })
+})
+
+describe('textoDeInstrucciones', () => {
+  const cert = { alias: 'libracargowscpeprod', cuit_representante: '20111111112', ambiente: 'produccion' as const }
+
+  it('arma el paso a paso con el CUIT del representante y el alias, sin escribir ninguno a mano', () => {
+    const t = textoDeInstrucciones(cert)
+    expect(t).toContain('actuando en representación del titular')
+    expect(t).toContain('wscpe (Carta de Porte Electrónica)')
+    expect(t).toContain('Representante: Buscar → CUIT 20-11111111-2')
+    expect(t).toContain('en Computador Fiscal elegir libracargowscpeprod (no el que termina en «homo»)')
+    expect(t).toContain('Confirmar dos veces')
+    const otro = textoDeInstrucciones({ ...cert, alias: 'otroalias', cuit_representante: '27222222224' })
+    expect(otro).toContain('CUIT 27-22222222-4')
+    expect(otro).toContain('elegir otroalias')
+    expect(otro).not.toContain('libracargowscpeprod')
+  })
+
+  it('nombra al titular si se lo conoce', () => {
+    expect(textoDeInstrucciones(cert, 'Agro Norte SA')).toContain('actuando en representación de Agro Norte SA')
   })
 })

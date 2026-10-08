@@ -781,8 +781,15 @@ describe('Órdenes · emitir la carta de porte desde el detalle (ADR-043)', () =
       if (ruta === '/api/cartas-porte/emision/estado') {
         return Promise.resolve({ ambiente: 'produccion', habilitada: true, puede_emitir: true })
       }
-      if (ruta === '/api/cartas-porte/representados') {
-        return Promise.resolve({ ambiente: 'produccion', cuits: [{ cuit: '30222222223', nombre: 'Agropecuaria Los Talas' }] })
+      if (ruta === '/api/cartas-porte/titulares') {
+        return Promise.resolve({
+          ambiente: 'produccion', verificado: true, motivo: null, cuit_para_catalogos: '30222222223',
+          titulares: [{
+            id: 1, cuit: '30222222223', razon_social: 'Agropecuaria Los Talas', emite: 'nosotros', activo: true,
+            notas: null, delegacion: 'delegado', tercero: null, tiene_plantilla: false,
+          }],
+          sin_cargar: [],
+        })
       }
       return base(ruta)
     })

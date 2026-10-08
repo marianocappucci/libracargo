@@ -18,6 +18,7 @@ import type { Maestro, RolDeEntidad } from '@/api/maestros'
 import { formatearCuit } from '@/api/cartas-porte'
 import { AbmMaestro, mensajeDeError } from '@/components/AbmMaestro'
 import type { ContextoDeConflicto } from '@/components/AbmMaestro'
+import { LineaDeCartaDePorte } from '@/components/LineaDeCartaDePorte'
 import { Button } from '@/components/ui/button'
 import { irA, type PestanaDeEntidades } from '@/navegacion'
 
@@ -78,7 +79,9 @@ export function TercerosPorRol({ rol }: { rol: RolDeEntidad }) {
       defaults={{ condicion_iva: 'consumidor_final', [propio.columna]: true } as Partial<Maestro>}
       abrirId={abrirId}
       alCerrarFicha={alCerrarFicha}
-      fichaExtra={rol === 'fletero' ? (f) => <FichaDelFletero fleteroId={f.id} /> : undefined}
+      // Al fletero, sus choferes y vehículos; al cliente, si es titular de cartas de porte (ADR-044).
+      fichaExtra={rol === 'fletero' ? (f) => <FichaDelFletero fleteroId={f.id} />
+        : rol === 'cliente' ? (f) => <LineaDeCartaDePorte terceroId={f.id} /> : undefined}
       conflicto={(error, ctx) => {
         const repetido = cuitRepetido(error)
         return repetido ? (

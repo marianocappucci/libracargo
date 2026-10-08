@@ -3,6 +3,18 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Titulares de Carta de Porte: a nombre de quién se emite y quién emite
+
+- **Pestaña «Titulares» en «Cartas de porte»** (ADR-044): se cargan los clientes que nos delegaron la emisión en ARCA y los que emiten ellos. «Integración AFIP» queda sólo con certificados, ambiente y el interruptor de la emisión real.
+- **Por titular**: CUIT, razón social (vinculado al cliente de Entidades por CUIT, o el que se elija), quién emite («Nosotros» / «El titular»), notas y si está activo.
+- **La delegación se lee de ARCA, no se tilda**: «Delegado ✓» (está en el ticket de `wscpe`), «Pendiente» (cargado y ARCA todavía no lo trae; lo suma con el próximo ticket, hasta 12 h), «Delegado sin cargar» (con botón «Agregar») y «Sin verificar» si no hay certificado o ARCA no responde: la pantalla no se rompe y dice el motivo. Se usa el ticket que ya está guardado; nunca se pide uno nuevo de más.
+- **Datos habituales de cada titular** (la plantilla que «Emitir carta de porte» ya llenaba sola): ahora se ven y se corrigen en su ficha —origen o planta, RENSPA, grano, cosecha, destino, intervinientes—, con los mismos campos, catálogos y validaciones que el asistente. Todo es opcional.
+- **«Emitir carta de porte»** ofrece «A nombre de» sólo a los titulares que emitimos nosotros, activos y delegados. Un CUIT que ARCA trae y no está cargado también aparece, marcado «sin cargar en Titulares». El servidor frena (409) a uno cargado como «emite él» o dado de baja.
+- **En la ficha del cliente** (Entidades → Clientes): «Carta de porte: delegó a nosotros ✓ / emite él / pendiente», con enlace a su titular.
+- **Instrucciones de delegación** para mandarle al cliente (copiar o WhatsApp), armadas con el CUIT y el alias del certificado cargado.
+- **API**: `/api/cartas-porte/titulares` (listar con estado, crear, editar, borrar; escribir es de administradores), `/titulares/{id}/plantilla` (GET, PUT, DELETE), `/titulares/instrucciones` y `/titulares/de-tercero/{id}`. Auditoría: `titular_cpe` y `plantilla_cpe`.
+- **Migración `0028`**: `titulares_cpe`. Carga como «Nosotros» a quien ya tiene plantilla; no trae ningún CUIT en el código.
+
 ## [Unreleased] — Todo desplegable de datos se busca escribiendo; el título a la altura del nombre de la app; Vehículos en el menú
 
 - **Se busca por letras en todos los desplegables donde se elige información**: clientes, fleteros, choferes, vehículos, proveedores, terceros, localidades, usuarios, entidades del log, provincias del paraje, el fletero de un chofer o de un vehículo, los catálogos de la Carta de Porte (grano, provincia, localidad, planta) y el titular. Antes sólo buscaban los de 12 opciones o más; ahora no depende de cuántos datos tenga cada empresa.

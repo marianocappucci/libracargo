@@ -36,7 +36,15 @@ const ORDEN = {
   id: 12, estado: 'pendiente',
 } as unknown as import('@/api/ordenes').Orden
 
-const REPRESENTADOS = { ambiente: 'produccion', cuits: [{ cuit: TITULAR, nombre: 'Agropecuaria Los Talas' }] }
+/** El listado de titulares (ADR-044): el delegado y cargado es el único que el asistente ofrece sin marca. */
+const titular = (extra: Record<string, unknown> = {}) => ({
+  id: 1, cuit: TITULAR, razon_social: 'Agropecuaria Los Talas', emite: 'nosotros', activo: true, notas: null,
+  delegacion: 'delegado', tercero: null, tiene_plantilla: false, ...extra,
+})
+const TITULARES = {
+  ambiente: 'produccion', verificado: true, motivo: null, cuit_para_catalogos: TITULAR,
+  titulares: [titular()], sin_cargar: [],
+}
 const ESTADO_PRODUCCION = { ambiente: 'produccion', habilitada: true, puede_emitir: true }
 const ESTADO_HOMOLOGACION = { ambiente: 'homologacion', habilitada: false, puede_emitir: true }
 
@@ -62,17 +70,17 @@ const EMITIDA = {
 
 type Rutas = {
   estado?: unknown
-  representados?: unknown
+  titulares?: unknown
   propuesta?: unknown
   plantas?: unknown
 }
 
 function responder({
-  estado = ESTADO_PRODUCCION, representados = REPRESENTADOS, propuesta = PROPUESTA, plantas = [],
+  estado = ESTADO_PRODUCCION, titulares = TITULARES, propuesta = PROPUESTA, plantas = [],
 }: Rutas = {}) {
   get.mockImplementation((ruta: string) => {
     if (ruta === `${RUTA}/emision/estado`) return Promise.resolve(estado)
-    if (ruta === `${RUTA}/representados`) return Promise.resolve(representados)
+    if (ruta === `${RUTA}/titulares`) return Promise.resolve(titulares)
     if (ruta.startsWith(`${RUTA}/emision/propuesta`)) return Promise.resolve(propuesta)
     if (ruta.startsWith(`${RUTA}/catalogos/granos`)) {
       return Promise.resolve([{ codigo: 15, nombre: 'Soja' }, { codigo: 23, nombre: 'Maíz' }])
@@ -162,6 +170,65 @@ describe('Emitir carta de porte · paso 1, el titular', () => {
     abrir()
     expect(await screen.findByText(/No hay un certificado de «CTG y Carta de Porte» cargado/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled()
+  })
+})
+
+describe('Emitir carta de porte · paso 1, a nombre de quién se ofrece (ADR-044)', () => {
+  const SIN_CARGAR = '30444444445'
+  const LISTA = {
+    ...TITULARES,
+    titulares: [
+      titular(),
+      titular({ id: 2, cuit: '30111111112', razon_social: 'Emite Solo SA', emite: 'titular', delegacion: 'no_aplica' }),
+      titular({ id: 3, cuit: '30333333334', razon_social: 'Pendiente SA', delegacion: 'pendiente' }),
+      titular({ id: 4, cuit: '30666666667', razon_social: 'De Baja SA', activo: false }),
+    ],
+    sin_cargar: [{ cuit: SIN_CARGAR, tercero: { id: 9, razon_social: 'Campo Nuevo SA' } }],
+  }
+
+  it('🔑 ofrece sólo a los que emitimos nosotros, activos y delegados en ARCA; no a los que emiten solos, pendientes o de baja', async () => {
+    responder({ titulares: LISTA })
+    abrir()
+    const combo = await screen.findByLabelText('A nombre de')
+    await waitFor(() => expect(opcionesDe(combo)).toContain('Agropecuaria Los Talas'))
+    const opciones = opcionesDe(combo)
+    expect(opciones).not.toContain('Emite Solo SA')
+    expect(opciones).not.toContain('Pendiente SA')
+    expect(opciones).not.toContain('De Baja SA')
+  })
+
+  it('🔑 un CUIT que ARCA trae y no está cargado también se ofrece, marcado, para no romper lo que ya andaba', async () => {
+    responder({ titulares: LISTA })
+    abrir()
+    const combo = await screen.findByLabelText('A nombre de')
+    await waitFor(() => expect(opcionesDe(combo)).toContain('Campo Nuevo SA · sin cargar en Titulares'))
+    expect(screen.queryByText(/no está cargado en Cartas de porte/)).toBeNull()
+    await elegirEnBuscable(combo, 'Campo Nuevo SA · sin cargar en Titulares')
+    expect(screen.getByText(/no está cargado en Cartas de porte → Titulares/)).toBeInTheDocument()
+    // Y se puede seguir: la propuesta se pide con ese CUIT, igual que antes.
+    const siguiente = screen.getByRole('button', { name: 'Siguiente' })
+    await waitFor(() => expect(siguiente).toBeEnabled())
+    fireEvent.click(siguiente)
+    await screen.findByLabelText('Peso bruto (kg)')
+    expect(get).toHaveBeenCalledWith(`${RUTA}/emision/propuesta?orden_id=12&cuit_titular=${SIN_CARGAR}`)
+  })
+
+  it('si ARCA no se pudo consultar dice por qué y no ofrece a nadie (no se adivina una delegación)', async () => {
+    responder({ titulares: {
+      ...LISTA, verificado: false, motivo: 'ARCA no dio acceso al servicio de Carta de Porte: timeout',
+      titulares: [titular({ delegacion: 'sin_verificar' })], sin_cargar: [],
+    } })
+    abrir()
+    expect(await screen.findByText(/ARCA no dio acceso al servicio de Carta de Porte: timeout/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('A nombre de')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled()
+  })
+
+  it('si no queda ninguno para ofrecer lo dice y manda a la pestaña Titulares', async () => {
+    responder({ titulares: { ...LISTA, titulares: [titular({ emite: 'titular', delegacion: 'no_aplica' })], sin_cargar: [] } })
+    abrir()
+    expect(await screen.findByText(/Ningún titular activo le delegó la emisión/)).toBeInTheDocument()
+    expect(screen.getByText(/pestaña\s+Titulares/)).toBeInTheDocument()
   })
 })
 
@@ -278,7 +345,7 @@ describe('Emitir carta de porte · paso 3, revisar y confirmar', () => {
   })
 
   it('en homologación avisa que es de prueba y no pide el «Confirmo»', async () => {
-    responder({ estado: ESTADO_HOMOLOGACION, representados: { ...REPRESENTADOS, ambiente: 'homologacion' } })
+    responder({ estado: ESTADO_HOMOLOGACION, titulares: { ...TITULARES, ambiente: 'homologacion' } })
     abrir()
     await irARevisar()
     expect(screen.getByText('Homologación: es de prueba, no tiene efecto fiscal.')).toBeInTheDocument()
