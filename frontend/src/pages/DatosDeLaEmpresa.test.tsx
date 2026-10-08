@@ -6,7 +6,7 @@
  *  muestre con su etiqueta y que al guardar viaje el **valor del enum**.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const get = vi.fn()
 const put = vi.fn()
@@ -90,5 +90,26 @@ describe('la condición de IVA', () => {
 
     expect(screen.getByLabelText('Razón social').tagName).toBe('INPUT')
     expect(screen.getByLabelText('CUIT').tagName).toBe('INPUT')
+  })
+})
+
+describe('el logo', () => {
+  beforeEach(() => { get.mockReset(); put.mockReset() })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('se elige con el campo del kit, y al elegir el archivo se sube ya', async () => {
+    // `subirLogo` usa `fetch` directo (multipart): se lo reemplaza.
+    const fetchFalso = vi.fn().mockResolvedValue({ ok: true, json: async () => empresa({ tiene_logo: true }) })
+    vi.stubGlobal('fetch', fetchFalso)
+    await montar()
+    const campo = screen.getByLabelText('Subir logo') as HTMLInputElement
+    expect(campo).toHaveAttribute('accept', 'image/png,image/jpeg,image/webp')
+    expect(screen.getByRole('button', { name: 'Subir archivo' })).toBeInTheDocument()
+
+    fireEvent.change(campo, { target: { files: [new File(['x'], 'logo.png', { type: 'image/png' })] } })
+    await waitFor(() => expect(fetchFalso).toHaveBeenCalledTimes(1))
+    expect(fetchFalso.mock.calls[0][0]).toBe('/api/configuracion/logo')
+    expect(await screen.findByText('Logo actualizado.')).toBeInTheDocument()
+    expect(screen.getByAltText('Logo de la empresa')).toBeInTheDocument()
   })
 })

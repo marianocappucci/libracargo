@@ -45,18 +45,23 @@ function Alternar({ escribiendo, alAlternar }: {
   )
 }
 
-export function SelectProvincia({ id, etiqueta, valor, alCambiar }: {
+export function SelectProvincia({ id, etiqueta, valor, alCambiar, pais }: {
   id: string
   etiqueta: string
   valor: string
   alCambiar: (v: string) => void
+  /** Las divisiones de qué país se listan (ISO). Sin esto, las provincias de Argentina. */
+  pais?: string
 }) {
   const [opciones, setOpciones] = useState<Provincia[]>([])
   const [error, setError] = useState(false)
 
   useEffect(() => {
-    traerProvincias().then(setOpciones).catch(() => setError(true))
-  }, [])
+    let vigente = true
+    setError(false)
+    traerProvincias(pais).then((ps) => { if (vigente) setOpciones(ps) }).catch(() => { if (vigente) setError(true) })
+    return () => { vigente = false }
+  }, [pais])
 
   // Si el catálogo no cargó, el campo cae a texto en vez de quedar como un
   // desplegable vacío: no poder elegir no puede volverse no poder cargar.

@@ -1,7 +1,8 @@
-/** El selector de origen y destino de una orden (ADR-041).
+/** El selector de origen y destino de una orden (ADR-041, ADR-042).
  *
  *  Se escribe y aparecen, primero, las localidades que ya están en el maestro (las que usan las órdenes) y debajo, bajo
- *  «Del catálogo de Argentina», las del catálogo oficial que todavía no están, con su provincia. Elegir una del catálogo
+ *  «Del catálogo (Argentina y Mercosur)», las del catálogo que todavía no están, con su provincia. Las de afuera de
+ *  Argentina llevan además el país: «Nueva Palmira — Colonia (Uruguay)». Elegir una del catálogo
  *  la trae al maestro (`POST /desde-catalogo`) y queda seleccionada la que devuelve el servidor. Al final siempre está
  *  «Cargar «…» como paraje…»: la excepción, un lugar que no está en ningún catálogo.
  *
@@ -38,7 +39,7 @@ export function ElegirLocalidad({ id, etiqueta, valor, localidades, alElegir, al
       grupos.push({
         items: maestro.map((l) => ({
           clave: `maestro-${l.id}`,
-          etiqueta: conProvincia(l.nombre, l.provincia),
+          etiqueta: conProvincia(l.nombre, l.provincia, l.pais),
           // Una marca discreta: que se note que no es del catálogo, sin competir con el nombre.
           marca: !l.activo ? 'De baja' : l.es_paraje ? 'Paraje' : undefined,
           deshabilitado: !l.activo,
@@ -48,10 +49,10 @@ export function ElegirLocalidad({ id, etiqueta, valor, localidades, alElegir, al
     }
     if (catalogo.length) {
       grupos.push({
-        titulo: 'Del catálogo de Argentina',
+        titulo: 'Del catálogo (Argentina y Mercosur)',
         items: catalogo.map((c) => ({
           clave: `catalogo-${c.id}`,
-          etiqueta: conProvincia(c.nombre, c.provincia),
+          etiqueta: conProvincia(c.nombre, c.provincia, c.pais),
           alElegir: async () => {
             const l = await localidadesApi.desdeCatalogo(c.id)
             alIncorporar(l)
@@ -67,7 +68,7 @@ export function ElegirLocalidad({ id, etiqueta, valor, localidades, alElegir, al
     <>
       <BuscadorAsincrono
         id={id} etiqueta={etiqueta} className="w-full min-w-0"
-        valorVisible={actual ? conProvincia(actual.etiqueta, actual.provincia) : ''}
+        valorVisible={actual ? conProvincia(actual.etiqueta, actual.provincia, actual.pais) : ''}
         placeholder="Buscar localidad…"
         buscar={buscar}
         alFinal={(q) => ({
@@ -85,8 +86,8 @@ export function ElegirLocalidad({ id, etiqueta, valor, localidades, alElegir, al
         <DialogoParaje
           alCerrar={() => setParajeDe(null)}
           nombreInicial={parajeDe}
-          confirmar={async ({ nombre, provincia }) => {
-            const l = await localidadesApi.cargarParaje(nombre, provincia)
+          confirmar={async ({ nombre, provincia, pais }) => {
+            const l = await localidadesApi.cargarParaje(nombre, provincia, pais)
             alIncorporar(l)
             alElegir(String(l.id))
             setParajeDe(null)

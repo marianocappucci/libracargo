@@ -89,7 +89,9 @@ class Localidad(Base, Auditable):
     activa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     #: El código censal de la localidad en el catálogo de LibraCore (`geografia.localidad`), si está vinculada
     #: (ADR-041). Una localidad del catálogo está una sola vez en el maestro.
-    catalogo_id: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    catalogo_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    #: País (ISO de dos letras). Argentina salvo que venga del catálogo del Mercosur o sea un paraje de afuera.
+    pais: Mapped[str] = mapped_column(String(2), nullable=False, default="AR", server_default="AR")
     #: Un lugar real que no está en ningún catálogo (un paraje, una planta, un campo con nombre): la excepción
     #: que se carga a mano, con su provincia.
     es_paraje: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
@@ -98,7 +100,7 @@ class Localidad(Base, Auditable):
     # de Jujuy, que son dos lugares. La `0025` cambió la restricción vieja (`uq_localidades_nombre`).
     __table_args__ = (
         # `NULLS NOT DISTINCT`: sin eso, dos «Suipacha» sin provincia no chocarían (en SQL, NULL ≠ NULL).
-        UniqueConstraint("nombre", "provincia", name="uq_localidades_nombre_provincia",
+        UniqueConstraint("nombre", "provincia", "pais", name="uq_localidades_nombre_provincia",
                          postgresql_nulls_not_distinct=True),
         UniqueConstraint("catalogo_id", name="uq_localidades_catalogo"),
     )

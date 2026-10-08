@@ -43,6 +43,12 @@ describe('CamposGeo', () => {
     expect(control).toBeTruthy()
   })
 
+  it('con `pais` pide las divisiones de ese país (ADR-042); sin él, las de Argentina', async () => {
+    render(<SelectProvincia id="p" etiqueta="Provincia" valor="Colonia" pais="UY" alCambiar={vi.fn()} />)
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/geo/provincias?pais=UY'))
+    expect(get).not.toHaveBeenCalledWith('/api/geo/provincias')
+  })
+
   it('🔴 una localidad que NO está en el catálogo arranca como texto, con su valor', async () => {
     // Es el modo de falla que importa. `Cnel. Bogado` es una de las 41 filas
     // abreviadas del maestro real: si el campo arrancara como desplegable, no

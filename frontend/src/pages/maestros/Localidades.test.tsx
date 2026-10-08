@@ -1,4 +1,4 @@
-/** Configuración → Localidades (ADR-041): de dónde viene cada localidad y cómo se resuelve lo que falta.
+/** Configuración → Localidades (ADR-041, ADR-042): de dónde viene cada localidad y cómo se resuelve lo que falta.
  *
  *  Lo que se prueba es lo que la pantalla decide: la pastilla «Origen» de cada fila, el filtro de lo que falta vincular, qué
  *  acciones ofrece cada fila (y que unificar es sólo del administrador), a qué endpoint va cada una y que el 409 del servidor
@@ -36,7 +36,7 @@ const { Localidades } = await import('./Localidades')
 const { _olvidarCache } = await import('@/api/geo')
 
 const fila = (id: number, extra: Record<string, unknown> = {}) => ({
-  id, nombre: `Lugar ${id}`, provincia: 'Buenos Aires', es_paraje: false, activo: true, catalogo_id: null, ...extra,
+  id, nombre: `Lugar ${id}`, provincia: 'Buenos Aires', pais: 'AR', es_paraje: false, activo: true, catalogo_id: null, ...extra,
 })
 const FILAS = [
   fila(1, { nombre: 'Suipacha', catalogo_id: '06784020' }),
@@ -45,17 +45,28 @@ const FILAS = [
   fila(4, { nombre: 'Pto. San Martín', provincia: 'Santa Fe' }),
   fila(5, { nombre: 'Cnel. Bogado', provincia: null }),
   fila(6, { nombre: 'Lugar de baja', activo: false }),
+  fila(7, { nombre: 'Nueva Palmira', provincia: 'Colonia', pais: 'UY', catalogo_id: 'UY-1' }),
+  fila(8, { nombre: 'Puerto Pilcomayo', provincia: null, pais: 'PY' }),
 ]
 const PROVINCIAS = [{ id: '06', nombre: 'Buenos Aires' }, { id: '82', nombre: 'Santa Fe' }]
-const PUERTO = { id: '82021010', nombre: 'Puerto General San Martín', provincia_id: '82', provincia: 'Santa Fe' }
-const SUIPACHA_BA = { id: '06784020', nombre: 'Suipacha', provincia_id: '06', provincia: 'Buenos Aires' }
+const PROVINCIAS_UY = [{ id: 'UY-CO', nombre: 'Colonia', pais: 'UY' }, { id: 'UY-MO', nombre: 'Montevideo', pais: 'UY' }]
+const PAISES = [
+  { id: 'AR', nombre: 'Argentina' }, { id: 'BR', nombre: 'Brasil' }, { id: 'CL', nombre: 'Chile' },
+  { id: 'PY', nombre: 'Paraguay' }, { id: 'BO', nombre: 'Bolivia' }, { id: 'UY', nombre: 'Uruguay' },
+]
+const PUERTO = { id: '82021010', nombre: 'Puerto General San Martín', provincia_id: '82', provincia: 'Santa Fe', pais: 'AR' }
+const SUIPACHA_BA = { id: '06784020', nombre: 'Suipacha', provincia_id: '06', provincia: 'Buenos Aires', pais: 'AR' }
+const PALMIRA = { id: 'UY-1', nombre: 'Nueva Palmira', provincia_id: 'UY-CO', provincia: 'Colonia', pais: 'UY' }
 
 beforeEach(() => {
   get.mockReset(); post.mockReset(); put.mockReset(); _olvidarCache()
   rol = 'admin'
   get.mockImplementation((ruta?: string) => {
+    if (ruta?.startsWith('/api/geo/paises')) return Promise.resolve(PAISES)
+    if (ruta?.startsWith('/api/geo/provincias?pais=UY')) return Promise.resolve(PROVINCIAS_UY)
     if (ruta?.startsWith('/api/geo/provincias')) return Promise.resolve(PROVINCIAS)
     if (ruta?.startsWith('/api/geo/localidades')) {
+      if (ruta.includes('pais=UY')) return Promise.resolve([PALMIRA])
       return Promise.resolve(ruta.includes('q=suip') ? [SUIPACHA_BA] : [PUERTO])
     }
     return Promise.resolve(FILAS)
@@ -73,11 +84,11 @@ async function laFila(nombre: string) {
 }
 
 describe('Localidades · listado', () => {
-  it('muestra Nombre, Provincia, Origen y Estado, con la pastilla de cada fila', async () => {
+  it('muestra Nombre, Provincia, País, Origen y Estado, con la pastilla de cada fila', async () => {
     abrir()
     const tabla = await screen.findByRole('table')
     await screen.findByText('Suipacha')
-    for (const col of ['Nombre', 'Provincia', 'Origen', 'Estado']) {
+    for (const col of ['Nombre', 'Provincia', 'País', 'Origen', 'Estado']) {
       expect(within(tabla).getByRole('columnheader', { name: new RegExp(col) })).toBeInTheDocument()
     }
     const origen = async (nombre: string) =>
@@ -91,11 +102,28 @@ describe('Localidades · listado', () => {
     expect((await origen('Pto San Martín')).getAttribute('data-tono')).toBe('atencion')
   })
 
+  it('🔑 la columna País muestra el nombre del país de cada fila, y se puede buscar por él', async () => {
+    abrir()
+    const tabla = await screen.findByRole('table')
+    await screen.findByText('Suipacha')
+    const pais = async (nombre: string) => {
+      const celdas = within(await laFila(nombre)).getAllByRole('cell').map((c) => c.textContent)
+      return celdas
+    }
+    expect(await pais('Suipacha')).toContain('Argentina')
+    expect(await pais('Nueva Palmira')).toContain('Uruguay')
+    expect(await pais('Puerto Pilcomayo')).toContain('Paraguay')
+
+    fireEvent.change(screen.getByPlaceholderText(/Buscar en localidades/), { target: { value: 'uruguay' } })
+    await waitFor(() => expect(within(tabla).queryByText('Suipacha')).toBeNull())
+    expect(within(tabla).getByText('Nueva Palmira')).toBeInTheDocument()
+  })
+
   it('el filtro «Sin vincular» deja sólo las activas que faltan emparejar, y se saca con el mismo botón', async () => {
     abrir()
     await screen.findByText('Suipacha')
-    // Cuenta las activas sin vincular: 3, 4 y 5. La baja (6) no pide nada a nadie.
-    const filtro = await screen.findByRole('button', { name: 'Sin vincular (3)' })
+    // Cuenta las activas sin vincular: 3, 4, 5 y 8. La baja (6) no pide nada a nadie.
+    const filtro = await screen.findByRole('button', { name: 'Sin vincular (4)' })
     expect(filtro).toHaveAttribute('aria-pressed', 'false')
 
     fireEvent.click(filtro)
@@ -145,7 +173,7 @@ describe('Localidades · vincular al catálogo', () => {
     post.mockResolvedValue({ ...FILAS[2], catalogo_id: PUERTO.id })
     const dialogo = await abrirVincular()
     const opcion = await within(dialogo).findByRole('option', { name: 'Puerto General San Martín — Santa Fe' })
-    expect(get).toHaveBeenCalledWith('/api/geo/localidades?q=Pto%20San%20Mart%C3%ADn&limite=20')
+    expect(get).toHaveBeenCalledWith('/api/geo/localidades?q=Pto%20San%20Mart%C3%ADn&limite=20&pais=AR')
 
     const antes = get.mock.calls.filter((c) => c[0] === '/api/localidades').length
     fireEvent.click(opcion)
@@ -153,6 +181,23 @@ describe('Localidades · vincular al catálogo', () => {
     // Se cierra y se vuelve a pedir el listado para ver la pastilla nueva.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await waitFor(() => expect(get.mock.calls.filter((c) => c[0] === '/api/localidades').length).toBe(antes + 1))
+  })
+
+  it('🔑 busca en el país de la fila y se puede cambiar; al cambiarlo vuelve a buscar con ?pais=', async () => {
+    abrir()
+    fireEvent.click(within(await laFila('Puerto Pilcomayo')).getByLabelText('Vincular al catálogo'))
+    const dialogo = await screen.findByRole('dialog')
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/geo/localidades?q=Puerto%20Pilcomayo&limite=20&pais=PY'))
+    const pais = within(dialogo).getByLabelText('País')
+    await within(dialogo).findByRole('option', { name: 'Uruguay' })
+    expect(pais).toHaveValue('PY')
+
+    fireEvent.change(pais, { target: { value: 'UY' } })
+    expect(await within(dialogo).findByRole('option', { name: /Nueva Palmira — Colonia \(Uruguay\)/ })).toBeInTheDocument()
+    expect(get).toHaveBeenCalledWith('/api/geo/localidades?q=Puerto%20Pilcomayo&limite=20&pais=UY')
+
+    fireEvent.change(pais, { target: { value: 'todos' } })
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/geo/localidades?q=Puerto%20Pilcomayo&limite=20&pais=todos'))
   })
 
   it('🔑 el 409 («ya está vinculada a …») se muestra tal cual y el diálogo no se cierra', async () => {
@@ -171,7 +216,7 @@ describe('Localidades · marcar como paraje', () => {
     abrir()
     fireEvent.click(within(await laFila('Pto San Martín')).getByLabelText('Marcar como paraje'))
     await waitFor(() => expect(put).toHaveBeenCalledWith('/api/localidades/3', {
-      nombre: 'Pto San Martín', provincia: 'Santa Fe', es_paraje: true, activo: true,
+      nombre: 'Pto San Martín', provincia: 'Santa Fe', pais: 'AR', es_paraje: true, activo: true,
     }))
     expect(screen.queryByRole('dialog')).toBeNull()
   })
@@ -191,9 +236,24 @@ describe('Localidades · marcar como paraje', () => {
     fireEvent.change(within(dialogo).getByLabelText('Provincia'), { target: { value: 'Buenos Aires' } })
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Marcar como paraje' }))
     await waitFor(() => expect(put).toHaveBeenCalledWith('/api/localidades/5', {
-      nombre: 'Cnel. Bogado', provincia: 'Buenos Aires', es_paraje: true, activo: true,
+      nombre: 'Cnel. Bogado', provincia: 'Buenos Aires', pais: 'AR', es_paraje: true, activo: true,
     }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('una sin provincia de otro país conserva su país: el diálogo parte de él y el PUT lo manda', async () => {
+    put.mockResolvedValue({ ...FILAS[7], provincia: 'Presidente Hayes', es_paraje: true })
+    abrir()
+    fireEvent.click(within(await laFila('Puerto Pilcomayo')).getByLabelText('Marcar como paraje'))
+    const dialogo = await screen.findByRole('dialog')
+    expect(within(dialogo).getByLabelText('País')).toHaveValue('PY')
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/geo/provincias?pais=PY'))
+    await within(dialogo).findByRole('option', { name: 'Buenos Aires' })  // el mock devuelve la lista de siempre
+    fireEvent.change(within(dialogo).getByLabelText('Provincia'), { target: { value: 'Buenos Aires' } })
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Marcar como paraje' }))
+    await waitFor(() => expect(put).toHaveBeenCalledWith('/api/localidades/8', {
+      nombre: 'Puerto Pilcomayo', provincia: 'Buenos Aires', pais: 'PY', es_paraje: true, activo: true,
+    }))
   })
 
   it('si el servidor lo rechaza, el mensaje se ve arriba de la tabla', async () => {
@@ -279,6 +339,27 @@ describe('Localidades · altas', () => {
     await waitFor(() => expect(get.mock.calls.filter((c) => c[0] === '/api/localidades').length).toBe(antes + 1))
   })
 
+  it('🔑 «Agregar del catálogo» busca en todos los países y se acota con el desplegable: ?pais=', async () => {
+    post.mockResolvedValue(fila(11, { nombre: 'Nueva Palmira', provincia: 'Colonia', pais: 'UY', catalogo_id: 'UY-1' }))
+    abrir()
+    await screen.findByText('Tomás Jofré')
+    fireEvent.click(screen.getByRole('button', { name: /Agregar del catálogo/ }))
+    const dialogo = await screen.findByRole('dialog')
+    const pais = within(dialogo).getByLabelText('País')
+    expect(pais).toHaveValue('todos')
+    const campo = within(dialogo).getByRole('combobox', { name: 'Buscar localidad' })
+    fireEvent.focus(campo)
+    fireEvent.change(campo, { target: { value: 'palm' } })
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/geo/localidades?q=palm&limite=20&pais=todos'))
+
+    fireEvent.change(pais, { target: { value: 'UY' } })
+    const opcion = await within(dialogo).findByRole('option', { name: /Nueva Palmira — Colonia \(Uruguay\)/ })
+    expect(get).toHaveBeenCalledWith('/api/geo/localidades?q=palm&limite=20&pais=UY')
+    fireEvent.click(opcion)
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/api/localidades/desde-catalogo', { catalogo_id: 'UY-1' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
   it('si la que trae ya estaba pero de baja, lo avisa en vez de dejar creer que quedó lista', async () => {
     post.mockResolvedValue(fila(1, { nombre: 'Suipacha', catalogo_id: '06784020', activo: false }))
     abrir()
@@ -304,9 +385,28 @@ describe('Localidades · altas', () => {
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Cargar paraje' }))
 
     await waitFor(() => expect(post).toHaveBeenCalledWith('/api/localidades', {
-      nombre: 'Paraje Los Ceibos', provincia: 'Santa Fe', es_paraje: true, activo: true,
+      nombre: 'Paraje Los Ceibos', provincia: 'Santa Fe', pais: 'AR', es_paraje: true, activo: true,
     }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('«Cargar paraje» en otro país: provincias de ese país y pais en el POST', async () => {
+    post.mockResolvedValue(fila(12, { nombre: 'Estancia Don Pedro', provincia: 'Colonia', pais: 'UY', es_paraje: true }))
+    abrir()
+    await screen.findByText('Tomás Jofré')
+    fireEvent.click(screen.getByRole('button', { name: /Cargar paraje/ }))
+    const dialogo = await screen.findByRole('dialog')
+    fireEvent.change(within(dialogo).getByLabelText('Nombre del paraje'), { target: { value: 'Estancia Don Pedro' } })
+    await within(dialogo).findByRole('option', { name: 'Uruguay' })
+    fireEvent.change(within(dialogo).getByLabelText('País'), { target: { value: 'UY' } })
+    await within(dialogo).findByRole('option', { name: 'Colonia' })
+    fireEvent.change(within(dialogo).getByLabelText('Provincia'), { target: { value: 'Colonia' } })
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Cargar paraje' }))
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/api/localidades', {
+      nombre: 'Estancia Don Pedro', provincia: 'Colonia', pais: 'UY', es_paraje: true, activo: true,
+    }))
+    expect(get).toHaveBeenCalledWith('/api/geo/provincias?pais=UY')
   })
 
   it('ya no hay un «Nuevo» que deje tipear el nombre sin pasar por el catálogo', async () => {

@@ -720,7 +720,7 @@ describe('Órdenes · formulario: sugerencia del cliente', () => {
     get.mockImplementation(((anterior) => (ruta?: string) => {
       if (ruta?.startsWith('/api/terceros')) {
         return Promise.resolve([
-          { id: 1, razon_social: 'Agro Norte', es_cliente: true }, { id: 2, razon_social: 'Pereiro', es_cliente: true },
+          { id: 1, razon_social: 'Agro Norte', es_cliente: true }, { id: 2, razon_social: 'Los Talas', es_cliente: true },
         ])
       }
       return anterior(ruta)
@@ -731,7 +731,7 @@ describe('Órdenes · formulario: sugerencia del cliente', () => {
 
     await elegirCliente(dialogo, 'Agro Norte')
     await waitFor(() => expect(screen.getByLabelText('% sobre referencia')).toHaveValue('85.00'))
-    await elegirCliente(dialogo, 'Pereiro')
+    await elegirCliente(dialogo, 'Los Talas')
     await waitFor(() => expect(screen.getByLabelText('% sobre referencia')).toHaveValue('90.00'))
 
     escribir_pct('88')
@@ -768,5 +768,45 @@ describe('Órdenes · km y tarifa por tonelada en el listado y el detalle', () =
     detalle = await verDetalle('R-2')
     expect(celda('Km')).toHaveTextContent('—')
     expect(celda('Tarifa por tonelada')).toHaveTextContent('—')
+  })
+})
+
+describe('Órdenes · emitir la carta de porte desde el detalle (ADR-043)', () => {
+  /** Lo que el asistente pide al abrirse, además de lo de la pantalla. */
+  function conEmision() {
+    const base = get.getMockImplementation()!
+    get.mockImplementation((ruta?: string) => {
+      if (ruta === '/api/cartas-porte/emision/estado') {
+        return Promise.resolve({ ambiente: 'produccion', habilitada: true, puede_emitir: true })
+      }
+      if (ruta === '/api/cartas-porte/representados') {
+        return Promise.resolve({ ambiente: 'produccion', cuits: [{ cuit: '30222222223', nombre: 'Agropecuaria Los Talas' }] })
+      }
+      return base(ruta)
+    })
+  }
+
+  it('«Emitir carta de porte» abre el asistente de esa orden, con el titular sin elegir', async () => {
+    responder([orden(7)])
+    conEmision()
+    abrir()
+    const detalle = await verDetalle('R-7')
+    fireEvent.click(within(detalle).getByRole('button', { name: 'Emitir carta de porte' }))
+
+    expect(await screen.findByText('Emitir carta de porte · Orden Nº 00000007')).toBeInTheDocument()
+    const titular = await screen.findByLabelText('A nombre de')
+    await waitFor(() => expect(within(titular).getByText('Agropecuaria Los Talas')).toBeInTheDocument())
+    expect(titular).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled()
+  })
+
+  it('una orden anulada no ofrece emitir la carta de porte', async () => {
+    responder([orden(8, { estado: 'anulada' }), orden(9)])
+    abrir()
+    let detalle = await verDetalle('R-8')
+    expect(within(detalle).queryByRole('button', { name: 'Emitir carta de porte' })).toBeNull()
+    fireEvent.click(within(detalle).getByRole('button', { name: 'Cerrar' }))
+    detalle = await verDetalle('R-9')
+    expect(within(detalle).getByRole('button', { name: 'Emitir carta de porte' })).toBeInTheDocument()
   })
 })

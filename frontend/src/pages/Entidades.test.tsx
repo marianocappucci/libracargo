@@ -56,7 +56,7 @@ function responder() {
   get.mockImplementation((ruta: string) => {
     const porRol = ruta.match(/^\/api\/terceros\/rol\/(\w+)\?solo_activos=false$/)
     if (porRol) return Promise.resolve(ENTIDADES.filter((e) => e[`es_${porRol[1]}` as 'es_cliente']))
-    if (ruta.startsWith('/api/configuracion')) return Promise.resolve({ razon_social: 'Suitrans' })
+    if (ruta.startsWith('/api/configuracion')) return Promise.resolve({ razon_social: 'Transportes del Plata' })
     if (ruta === '/api/choferes') return Promise.resolve(CHOFERES)
     if (ruta === '/api/choferes?fletero_id=2') return Promise.resolve(CHOFERES.filter((c) => c.fletero_id === 2))
     if (ruta === '/api/vehiculos?fletero_id=2') return Promise.resolve(VEHICULOS)
@@ -140,6 +140,29 @@ describe('Entidades · pestañas y URL', () => {
     expect(within(fila).queryByText('Fletero')).toBeNull()
     // Y el CUIT se lee con guiones.
     expect(within(fila).getByText('30-71111111-4')).toBeInTheDocument()
+  })
+})
+
+describe('Entidades · botones en la línea del título', () => {
+  /** La fila del título: el contenedor más chico que tiene a la vez el título y el botón. */
+  const filaDelTitulo = () => screen.getByRole('heading', { name: 'Entidades' }).parentElement as HTMLElement
+
+  it.each(['clientes', 'fleteros', 'choferes', 'proveedores'])(
+    '🔑 en %s el «Nuevo» está en la misma línea que el título «Entidades», no debajo de las pestañas',
+    async (pestana) => {
+      abrir(`/entidades?pestana=${pestana}`)
+      const nuevo = await screen.findByRole('button', { name: 'Nuevo' })
+      expect(within(filaDelTitulo()).getByRole('button', { name: 'Nuevo' })).toBe(nuevo)
+      // Y las pestañas no lo contienen.
+      expect(screen.getByRole('tablist')).not.toContainElement(nuevo)
+    })
+
+  it('hay un solo «Nuevo» a la vez, y al cambiar de pestaña el de la anterior se va', async () => {
+    abrir()
+    await screen.findByRole('button', { name: 'Nuevo' })
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Fleteros' }))
+    await screen.findByText('Transportes del Sur')
+    expect(screen.getAllByRole('button', { name: 'Nuevo' })).toHaveLength(1)
   })
 })
 

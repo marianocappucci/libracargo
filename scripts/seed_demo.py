@@ -262,6 +262,38 @@ crear("/api/caja", {"fecha": hace(4), "tipo": "egreso", "concepto": "Gasoil y pe
                     "importe": "185400.00", "medio_pago": "efectivo"},
       "gasto general sin tercero")
 
+# ---- el tarifario de referencia --------------------------------------------
+# El del sector, público (10 de abril de 2026; ADR-038/039). Va acá porque el reset nocturno de la demo vacía la
+# base: cargado a mano, a la mañana siguiente la demo no tenía tarifario y la sección «Flete» de la orden no
+# proponía nada.
+def subir_tarifario():
+    import uuid
+    from pathlib import Path
+
+    archivo = Path(__file__).resolve().parent / "datos" / "tarifa-referencia-2026-04-10.csv"
+    frontera = uuid.uuid4().hex
+    partes = []
+    for nombre, valor in (("vigencia", "2026-04-10"),
+                          ("nombre", "Tarifa de referencia de cereales y oleaginosas, 10 de abril de 2026"),
+                          ("valor_estadia", "214146.67")):
+        partes.append(f'--{frontera}\r\nContent-Disposition: form-data; name="{nombre}"\r\n\r\n{valor}\r\n'.encode())
+    partes.append(f'--{frontera}\r\nContent-Disposition: form-data; name="archivo"; '
+                  f'filename="{archivo.name}"\r\nContent-Type: text/csv\r\n\r\n'.encode())
+    partes.append(archivo.read_bytes())
+    partes.append(f"\r\n--{frontera}--\r\n".encode())
+    req = urllib.request.Request(f"{BASE}/api/tarifario", data=b"".join(partes), method="POST",
+                                 headers={"Content-Type": f"multipart/form-data; boundary={frontera}"})
+    try:
+        with opener.open(req) as r:
+            t = json.loads(r.read())
+            print(f"ok tarifario: {t['filas']} filas, km {t['km_desde']}-{t['km_hasta']}")
+    except urllib.error.HTTPError as e:
+        print(f"x tarifario: HTTP {e.code} {e.read()[:200]!r}")
+        sys.exit(1)
+
+
+subir_tarifario()
+
 # ---- lo que quedó ---------------------------------------------------------
 # No es decoración: es la contraprueba de que lo sembrado deja al producto en un
 # estado coherente. Si los totales no coincidieran, la demo estaría mostrando la

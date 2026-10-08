@@ -1033,3 +1033,37 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 **Consecuencias.**
 - **Mercosur, todavía no:** el catálogo es sólo de Argentina. Brasil, Uruguay, Paraguay, Bolivia y Chile necesitan una fuente externa (GeoNames) y un formato distinto; se suma al motor si el humano lo confirma. Mientras tanto, un lugar del exterior se carga como paraje.
 - El código de localidad **de ARCA** (para la Carta de Porte) es otro catálogo. Se mapea en la fase 4b, por nombre y provincia.
+
+## ADR-042 — Las localidades del resto del Mercosur, del mismo catálogo; el tarifario en la semilla de la demo
+
+**Contexto.** El humano (2026-10-08) confirmó sumar el Mercosur al catálogo de localidades (ADR-041 lo había dejado pendiente). LibraCore v1.146.0 agrega Brasil, Chile, Paraguay, Bolivia y Uruguay: 6.621 lugares de GeoNames (`cities1000`, CC-BY 4.0), con ids `{PAÍS}-{geonameid}` y el país en cada fila. Por omisión sigue siendo sólo Argentina. Aparte, el tarifario de referencia cargado a mano en la demo **desapareció con el reinicio nocturno** (05:00, `reset_libracargo.sh`), y la sección «Flete» de la demo quedó sin referencia.
+
+**Decisión.**
+1. **`localidades.pais`** (ISO de dos letras, `AR` para lo existente). `catalogo_id` pasa a 20 caracteres y la unicidad pasa a `(nombre, provincia, pais)` (migración `0026`).
+2. El **buscador combinado** trae todo el Mercosur, Argentina primero; traer o vincular desde el catálogo copia el país. Un **paraje** puede ser de afuera, con su país y su división.
+3. **La semilla de la demo carga el tarifario** de abril de 2026, que es público y del sector, desde un CSV junto al script. Lo hace por la API, como el resto de la semilla. El test de la semilla lo cubre; para eso, su adaptador ahora respeta el `Content-Type` del pedido.
+
+**Consecuencias.**
+- Un lugar de afuera que no esté entre los más de 1.000 habitantes de GeoNames (un puerto chico, una planta) se carga como paraje, igual que en Argentina.
+- El mapeo al código de localidad **de ARCA** para la Carta de Porte es sólo para Argentina: un destino de afuera no lleva CPE de granos nacional.
+
+## ADR-043 — Emitir la Carta de Porte desde la orden, con traba en producción, plantilla por titular y enlace para el chofer
+
+**Contexto.** Fase 4 del plan de CTG y Carta de Porte. Suitrans emite cartas de porte **a nombre de un titular que le delegó** (Agropecuaria Pereiro) con un software de terceros, y quiere hacerlo desde el sistema. El protocolo está en libracore v1.144.0 (`arca_wscpe.emitir_cpe`, ADR-035 del motor): cerrojo por sucursal, guarda de timeout y el representado igual al solicitante. Una CPE real de Pereiro emitida con ese software (CTG 10135025133) mostró lo que se usa siempre: origen en campo, maíz, cosecha 2526, destino y destinatario en una planta, transportista = el fletero, pagador del flete = Pereiro, km y tarifa por tonelada. En homologación, una emisión exitosa necesita un certificado del titular; ya está pedido.
+
+**Decisión.**
+1. **Traba en producción** (`configuracion_empresa.cpe_emision_habilitada`, **apagada**): no se emite nada real hasta que un administrador la prende, y queda en la auditoría. Además, **cada** emisión real exige `confirmo: true`. En homologación no hace falta ninguna de las dos, porque no tiene efecto fiscal.
+2. **La propuesta sale de la orden** (`GET /api/cartas-porte/emision/propuesta`):
+   - del viaje: chofer (su CUIT), dominios (el vehículo), transportista (el fletero, o la empresa si no hay), pagador del flete (el cliente), kilos de carga, km y tarifa por tonelada (ADR-038);
+   - de **la plantilla del titular** (`plantillas_cpe`, lo último usado con ese titular): origen, grano, cosecha, destino, planta, destinatario, intervinientes y fumigada;
+   - lo que no se pudo completar va en `faltantes`.
+3. **Los códigos de ARCA** de provincia y localidad son otro catálogo que el censal: se buscan por nombre en los catálogos de WSCPE, que se cachean 12 horas por ambiente. CABA y Tierra del Fuego tienen sinónimo, y una coincidencia que no es única no se adivina. Sólo Argentina.
+4. **El titular tiene que estar entre las relaciones del ticket**; si no, 409 antes de llamar.
+5. **Lo emitido se guarda** como una CPE más (`emitida = true`), vinculada a la orden y con su PDF. 🔴 **Si ARCA la autoriza y falla guardarla**, el error dice que se emitió, con el CTG, para traerla con «Traer de ARCA», y **no se vuelve a emitir**. Una emisión incierta (sin respuesta de ARCA) se informa con su sucursal y número.
+6. **Anular** sólo las emitidas desde acá, y sólo un administrador.
+7. **Enlace para el chofer**, que no tiene usuario: `GET /{id}/enlace` da una ruta **firmada con HMAC** (`SECRET_KEY`) que vence a los 7 días, y `/api/publico/cpe/{id}/{vence}/{firma}.pdf` sirve el PDF sin sesión. La pantalla lo comparte por WhatsApp con un enlace `wa.me`, sin la API de Meta (opción A del plan).
+
+**Consecuencias.**
+- Migración `0027`: `cartas_porte.emitida`, la traba y `plantillas_cpe`, todo vacío o apagado.
+- Desvío, contingencia y confirmación de arribo siguen pendientes, en el motor primero.
+- Antes de la primera emisión real: el certificado de homologación de Pereiro para una prueba completa, y prender la traba a propósito.

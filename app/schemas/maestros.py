@@ -91,6 +91,8 @@ class LocalidadIn(_Base):
     provincia: str | None = Field(default=None, max_length=60)
     #: Un lugar que no está en el catálogo (ADR-041). Se carga a mano y lleva provincia.
     es_paraje: bool = False
+    #: País, ISO de dos letras (ADR-042): AR, BR, CL, PY, BO, UY u otro.
+    pais: str = Field(default="AR", pattern=r"^[A-Z]{2}$")
     activo: bool = True
 
     _limpiar = field_validator("*", mode="before")(_vacio_es_nulo)

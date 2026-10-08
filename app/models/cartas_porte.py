@@ -17,6 +17,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     ForeignKey,
     Integer,
@@ -25,7 +26,9 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Auditable, Base
@@ -80,6 +83,8 @@ class CartaPorte(Base, Auditable):
     km: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tarifa: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
 
+    #: Si la emitió este sistema (por delegación, ADR-043), y no sólo la trajo de ARCA. Sólo esas se anulan desde acá.
+    emitida: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     respuesta_arca: Mapped[str] = mapped_column(Text, nullable=False)
     consultada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -97,3 +102,16 @@ class CartaPortePdf(Base):
         ForeignKey("cartas_porte.id", ondelete="CASCADE"), primary_key=True
     )
     contenido: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+
+
+class PlantillaCpe(Base):
+    """Lo último que se usó para emitir a nombre de un titular (ADR-043): el origen, el grano, el destino, la planta,
+    los intervinientes. La próxima emisión de ese titular arranca con esto, y el operador sólo completa el viaje."""
+
+    __tablename__ = "plantillas_cpe"
+
+    cuit_titular: Mapped[str] = mapped_column(String(11), primary_key=True)
+    datos: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(),
+                                                 onupdate=func.now())
+    updated_by: Mapped[int | None] = mapped_column(Integer, nullable=True)

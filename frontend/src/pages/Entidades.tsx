@@ -28,6 +28,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ICONOS_LC } from '@/iconos'
 import { PESTANAS_DE_ENTIDADES, pestanaDeEntidades } from '@/navegacion'
+import { PantallaConTitulo } from '@/components/AccionesDelTitulo'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 import { Choferes } from './maestros'
@@ -53,25 +54,25 @@ export default function Entidades() {
 
   return (
     <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <TituloPantalla icono={Building2}>Entidades</TituloPantalla>
-      </div>
-      <Tabs value={actual} onValueChange={elegir} className="gap-4">
-        <TabsList className="no-imprimir">
-          {PESTANAS_DE_ENTIDADES.map((p) => {
-            const { etiqueta, icono: Icono } = PESTANAS[p]
-            return (
-              <TabsTrigger key={p} value={p}>
-                <Icono className="size-4" />{etiqueta}
-              </TabsTrigger>
-            )
-          })}
-        </TabsList>
-        <TabsContent value="clientes"><TercerosPorRol rol="cliente" /></TabsContent>
-        <TabsContent value="fleteros"><TercerosPorRol rol="fletero" /></TabsContent>
-        <TabsContent value="choferes"><Choferes encabezado={false} /></TabsContent>
-        <TabsContent value="proveedores"><TercerosPorRol rol="proveedor" /></TabsContent>
-      </Tabs>
+      {/* El «Nuevo» de cada pestaña va en la línea del título, arriba a la derecha (`AccionesDelTitulo`). */}
+      <PantallaConTitulo titulo={<TituloPantalla icono={Building2}>Entidades</TituloPantalla>}>
+        <Tabs value={actual} onValueChange={elegir} className="gap-4">
+          <TabsList className="no-imprimir">
+            {PESTANAS_DE_ENTIDADES.map((p) => {
+              const { etiqueta, icono: Icono } = PESTANAS[p]
+              return (
+                <TabsTrigger key={p} value={p}>
+                  <Icono className="size-4" />{etiqueta}
+                </TabsTrigger>
+              )
+            })}
+          </TabsList>
+          <TabsContent value="clientes"><TercerosPorRol rol="cliente" /></TabsContent>
+          <TabsContent value="fleteros"><TercerosPorRol rol="fletero" /></TabsContent>
+          <TabsContent value="choferes"><Choferes encabezado={false} /></TabsContent>
+          <TabsContent value="proveedores"><TercerosPorRol rol="proveedor" /></TabsContent>
+        </Tabs>
+      </PantallaConTitulo>
     </div>
   )
 }

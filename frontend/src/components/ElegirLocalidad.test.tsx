@@ -1,4 +1,4 @@
-/** El selector de origen y destino (ADR-041): maestro primero, catálogo de Argentina debajo y «cargar como paraje» al final.
+/** El selector de origen y destino (ADR-041, ADR-042): maestro primero, catálogo (Argentina y Mercosur) debajo y «cargar como paraje» al final.
  *
  *  Lo que se prueba es lo que decide la pantalla y el servidor no puede: el orden y el rótulo de los grupos, que elegir del
  *  catálogo llame a `/desde-catalogo` y deje seleccionada **la localidad que devuelve el servidor** (no la del catálogo), y
@@ -30,12 +30,19 @@ const { ElegirLocalidad } = await import('./ElegirLocalidad')
 const { aOpcionLocalidad } = await import('@/api/localidades')
 const { _olvidarCache } = await import('@/api/geo')
 
-const SUIPACHA_MAESTRO = { id: 1, nombre: 'Suipacha', provincia: 'Buenos Aires', es_paraje: false, activo: true, catalogo_id: '06784020' }
-const SUIPACHA_PARAJE = { id: 2, nombre: 'Suipacha Chica', provincia: 'Santa Fe', es_paraje: true, activo: true, catalogo_id: null }
-const SUIPACHA_BAJA = { id: 3, nombre: 'Suipacha Vieja', provincia: null, es_paraje: false, activo: false, catalogo_id: null }
-const SUIPACHA_CATALOGO = { id: '82084020', nombre: 'Suipacha', provincia_id: '82', provincia: 'Santa Fe' }
+const SUIPACHA_MAESTRO = { id: 1, nombre: 'Suipacha', provincia: 'Buenos Aires', pais: 'AR', es_paraje: false, activo: true, catalogo_id: '06784020' }
+const SUIPACHA_PARAJE = { id: 2, nombre: 'Suipacha Chica', provincia: 'Santa Fe', pais: 'AR', es_paraje: true, activo: true, catalogo_id: null }
+const SUIPACHA_BAJA = { id: 3, nombre: 'Suipacha Vieja', provincia: null, pais: 'AR', es_paraje: false, activo: false, catalogo_id: null }
+const SUIPACHA_CATALOGO = { id: '82084020', nombre: 'Suipacha', provincia_id: '82', provincia: 'Santa Fe', pais: 'AR' }
+const PALMIRA_CATALOGO = { id: 'UY-1', nombre: 'Nueva Palmira', provincia_id: 'UY-CO', provincia: 'Colonia', pais: 'UY' }
+const PALMIRA_MAESTRO = { id: 5, nombre: 'Nueva Palmira', provincia: 'Colonia', pais: 'UY', es_paraje: false, activo: true, catalogo_id: 'UY-1' }
 
 const PROVINCIAS = [{ id: '06', nombre: 'Buenos Aires' }, { id: '82', nombre: 'Santa Fe' }]
+const PROVINCIAS_UY = [{ id: 'UY-CO', nombre: 'Colonia', pais: 'UY' }, { id: 'UY-MO', nombre: 'Montevideo', pais: 'UY' }]
+const PAISES = [
+  { id: 'AR', nombre: 'Argentina' }, { id: 'BR', nombre: 'Brasil' }, { id: 'CL', nombre: 'Chile' },
+  { id: 'PY', nombre: 'Paraguay' }, { id: 'BO', nombre: 'Bolivia' }, { id: 'UY', nombre: 'Uruguay' },
+]
 
 /** El formulario de una orden, en chiquito: guarda el id elegido y la lista que conoce. */
 function Campo({ inicial = '', alElegir = vi.fn(), conocidas = [SUIPACHA_MAESTRO] }: {
@@ -59,6 +66,8 @@ beforeEach(() => {
   combinado = { maestro: [SUIPACHA_MAESTRO, SUIPACHA_PARAJE, SUIPACHA_BAJA], catalogo: [SUIPACHA_CATALOGO] }
   get.mockImplementation((ruta?: string) => {
     if (ruta?.startsWith('/api/localidades/buscar/combinado')) return Promise.resolve(combinado)
+    if (ruta?.startsWith('/api/geo/paises')) return Promise.resolve(PAISES)
+    if (ruta?.startsWith('/api/geo/provincias?pais=UY')) return Promise.resolve(PROVINCIAS_UY)
     if (ruta?.startsWith('/api/geo/provincias')) return Promise.resolve(PROVINCIAS)
     return Promise.resolve([])
   })
@@ -88,11 +97,39 @@ describe('ElegirLocalidad · búsqueda combinada', () => {
       'Cargar «suip» como paraje…',
     ])
     // El separador está entre las del maestro y las del catálogo, y no es una opción.
-    const separador = within(lista).getByText('Del catálogo de Argentina')
+    const separador = within(lista).getByText('Del catálogo (Argentina y Mercosur)')
     expect(separador).toHaveAttribute('role', 'presentation')
     const opciones = within(lista).getAllByRole('option')
     expect(separador.compareDocumentPosition(opciones[3]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(separador.compareDocumentPosition(opciones[2]) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+  })
+
+  it('🔑 las de afuera de Argentina llevan el país («Nueva Palmira — Colonia (Uruguay)»); las de Argentina, no', async () => {
+    combinado = { maestro: [SUIPACHA_MAESTRO, PALMIRA_MAESTRO], catalogo: [SUIPACHA_CATALOGO, PALMIRA_CATALOGO] }
+    render(<Campo />)
+    const { lista } = await buscar('palm')
+    await within(lista).findAllByText('Nueva Palmira — Colonia (Uruguay)')
+    const textos = within(lista).getAllByRole('option').map((o) => o.textContent)
+    expect(textos).toEqual([
+      'Suipacha — Buenos Aires',                // maestro, Argentina: sin país
+      'Nueva Palmira — Colonia (Uruguay)',      // maestro, de afuera: con país
+      'Suipacha — Santa Fe',                    // catálogo, Argentina: sin país
+      'Nueva Palmira — Colonia (Uruguay)',      // catálogo, de afuera: con país
+      'Cargar «palm» como paraje…',
+    ])
+  })
+
+  it('elegir una del catálogo de afuera trae la del servidor y el campo la muestra con su país', async () => {
+    post.mockResolvedValue({ ...PALMIRA_MAESTRO, id: 78 })
+    const alElegir = vi.fn()
+    combinado = { maestro: [], catalogo: [PALMIRA_CATALOGO] }
+    render(<Campo alElegir={alElegir} />)
+    const { lista } = await buscar('palm')
+    fireEvent.click(await within(lista).findByRole('option', { name: 'Nueva Palmira — Colonia (Uruguay)' }))
+    await waitFor(() => expect(alElegir).toHaveBeenCalledWith('78'))
+    expect(post).toHaveBeenCalledWith('/api/localidades/desde-catalogo', { catalogo_id: 'UY-1' })
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: 'Origen' })).toHaveValue('Nueva Palmira — Colonia (Uruguay)'))
   })
 
   it('espera a que se termine de tipear: «suipacha» no pide primero «sui»', async () => {
@@ -225,7 +262,7 @@ describe('ElegirLocalidad · cargar como paraje', () => {
   })
 
   it('🔑 crea con es_paraje: true y la provincia, y la nueva queda seleccionada', async () => {
-    post.mockResolvedValue({ id: 90, nombre: 'Tomás Jofré', provincia: 'Buenos Aires', es_paraje: true, activo: true, catalogo_id: null })
+    post.mockResolvedValue({ id: 90, nombre: 'Tomás Jofré', provincia: 'Buenos Aires', pais: 'AR', es_paraje: true, activo: true, catalogo_id: null })
     const alElegir = vi.fn()
     combinado = { maestro: [], catalogo: [] }
     render(<Campo alElegir={alElegir} />)
@@ -238,10 +275,52 @@ describe('ElegirLocalidad · cargar como paraje', () => {
 
     await waitFor(() => expect(alElegir).toHaveBeenCalledWith('90'))
     expect(post).toHaveBeenCalledWith('/api/localidades', {
-      nombre: 'Tomás Jofré', provincia: 'Buenos Aires', es_paraje: true, activo: true,
+      nombre: 'Tomás Jofré', provincia: 'Buenos Aires', pais: 'AR', es_paraje: true, activo: true,
     })
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(screen.getByRole('combobox', { name: 'Origen' })).toHaveValue('Tomás Jofré — Buenos Aires')
+  })
+
+  it('🔑 con país Uruguay pide las provincias de Uruguay y manda pais: "UY"; la nueva se muestra con su país', async () => {
+    post.mockResolvedValue({ id: 91, nombre: 'Playa Fomento', provincia: 'Colonia', pais: 'UY', es_paraje: true, activo: true, catalogo_id: null })
+    const alElegir = vi.fn()
+    combinado = { maestro: [], catalogo: [] }
+    render(<Campo alElegir={alElegir} />)
+    const { lista } = await buscar('Playa Fomento')
+    fireEvent.click(await within(lista).findByRole('option', { name: 'Cargar «Playa Fomento» como paraje…' }))
+    const dialogo = await screen.findByRole('dialog')
+
+    // Por omisión, Argentina; el país está arriba de la provincia.
+    const pais = within(dialogo).getByLabelText('País')
+    await within(dialogo).findByRole('option', { name: 'Uruguay' })
+    expect(pais).toHaveValue('AR')
+    const provincia = within(dialogo).getByLabelText('Provincia')
+    expect(pais.compareDocumentPosition(provincia) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    fireEvent.change(pais, { target: { value: 'UY' } })
+    await within(dialogo).findByRole('option', { name: 'Colonia' })
+    expect(get).toHaveBeenCalledWith('/api/geo/provincias?pais=UY')
+    // Ya no se ofrecen las provincias argentinas.
+    expect(within(dialogo).queryByRole('option', { name: 'Santa Fe' })).toBeNull()
+    fireEvent.change(within(dialogo).getByLabelText('Provincia'), { target: { value: 'Colonia' } })
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Cargar paraje' }))
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/api/localidades', {
+      nombre: 'Playa Fomento', provincia: 'Colonia', pais: 'UY', es_paraje: true, activo: true,
+    }))
+    await waitFor(() => expect(alElegir).toHaveBeenCalledWith('91'))
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: 'Origen' })).toHaveValue('Playa Fomento — Colonia (Uruguay)'))
+  })
+
+  it('al cambiar de país la provincia elegida se borra: era de otro país', async () => {
+    const dialogo = await abrirDialogo()
+    await within(dialogo).findByRole('option', { name: 'Buenos Aires' })
+    fireEvent.change(within(dialogo).getByLabelText('Provincia'), { target: { value: 'Buenos Aires' } })
+    expect(within(dialogo).getByLabelText('Provincia')).toHaveValue('Buenos Aires')
+    fireEvent.change(within(dialogo).getByLabelText('País'), { target: { value: 'UY' } })
+    await within(dialogo).findByRole('option', { name: 'Colonia' })
+    expect(within(dialogo).getByLabelText('Provincia')).toHaveValue('')
   })
 
   it('un 409 (ya existe en esa provincia) se muestra tal cual y el diálogo sigue abierto', async () => {

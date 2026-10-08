@@ -1,4 +1,5 @@
-/** Configuración → Localidades (ADR-041): el maestro de orígenes y destinos, con el catálogo de Argentina detrás.
+/** Configuración → Localidades (ADR-041, ADR-042): el maestro de orígenes y destinos, con el catálogo de Argentina y del
+ *  resto del Mercosur detrás.
  *
  *  Cada fila es **del catálogo** (vinculada por su código censal), **un paraje** (un lugar real que no está en ningún
  *  catálogo, cargado a mano con su provincia) o **sin vincular** (las que se fueron cargando a mano antes y todavía no
@@ -14,13 +15,14 @@ import { SelectBuscable } from 'libra-ui/SelectBuscable'
 import { Flag, Link2, MapPinPlus, Merge } from 'lucide-react'
 import { useState } from 'react'
 
-import { buscarEnElCatalogo } from '@/api/geo'
+import { buscarEnElCatalogo, nombreDePais, TODOS_LOS_PAISES } from '@/api/geo'
 import {
   conProvincia, ETIQUETA_ORIGEN, localidadesApi, origenDe, type Localidad, type OrigenDeLocalidad,
 } from '@/api/localidades'
 import { AbmMaestro, mensajeDeError, type ContextoDeLista } from '@/components/AbmMaestro'
 import { BuscadorAsincrono, type GrupoBuscado } from '@/components/BuscadorAsincrono'
 import { DialogoParaje } from '@/components/DialogoParaje'
+import { SelectPais } from '@/components/SelectPais'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -55,9 +57,9 @@ export function Localidades() {
   const cerrar = () => setDialogo(null)
 
   /** «Marcar como paraje»: si la fila ya tiene provincia no hay nada que preguntar; si no, se pide en el diálogo. */
-  async function marcarComoParaje(fila: Localidad, ctx: Ctx, provincia: string) {
+  async function marcarComoParaje(fila: Localidad, ctx: Ctx, provincia: string, pais: string) {
     await localidadesApi.editar(fila.id, {
-      nombre: fila.nombre, provincia, es_paraje: true, activo: fila.activo,
+      nombre: fila.nombre, provincia, pais, es_paraje: true, activo: fila.activo,
     })
     ctx.recargar()
     ctx.destacar(fila.id)
@@ -67,7 +69,7 @@ export function Localidades() {
     ctx.fallar(null)
     if (!fila.provincia) { setDialogo({ tipo: 'marcar', ctx, fila }); return }
     try {
-      await marcarComoParaje(fila, ctx, fila.provincia)
+      await marcarComoParaje(fila, ctx, fila.provincia, fila.pais)
     } catch (e) {
       ctx.fallar(mensajeDeError(e))
     }
@@ -85,6 +87,11 @@ export function Localidades() {
           { accessorKey: 'nombre', header: sortableHeader('Nombre') },
           { accessorKey: 'provincia', header: sortableHeader('Provincia') },
           {
+            id: 'pais',
+            header: sortableHeader('País'),
+            accessorFn: (l: Localidad) => nombreDePais(l.pais),
+          },
+          {
             id: 'origen',
             header: sortableHeader('Origen'),
             accessorFn: (l: Localidad) => ETIQUETA_ORIGEN[origenDe(l)],
@@ -94,7 +101,7 @@ export function Localidades() {
             },
           },
         ]}
-        buscarEn={(l) => [l.nombre, l.provincia, ETIQUETA_ORIGEN[origenDe(l)]]}
+        buscarEn={(l) => [l.nombre, l.provincia, nombreDePais(l.pais), ETIQUETA_ORIGEN[origenDe(l)]]}
         visibles={soloSinVincular ? faltaVincular : undefined}
         barra={(ctx) => (
           <>
@@ -142,8 +149,8 @@ export function Localidades() {
       {dialogo?.tipo === 'paraje' && (
         <DialogoParaje
           alCerrar={cerrar}
-          confirmar={async ({ nombre, provincia }) => {
-            const l = await localidadesApi.cargarParaje(nombre, provincia)
+          confirmar={async ({ nombre, provincia, pais }) => {
+            const l = await localidadesApi.cargarParaje(nombre, provincia, pais)
             dialogo.ctx.recargar()
             dialogo.ctx.destacar(l.id)
             cerrar()
@@ -154,9 +161,9 @@ export function Localidades() {
         <DialogoParaje
           alCerrar={cerrar} nombreFijo
           titulo={`Marcar «${dialogo.fila.nombre}» como paraje`} textoConfirmar="Marcar como paraje"
-          nombreInicial={dialogo.fila.nombre} provinciaInicial={dialogo.fila.provincia}
-          confirmar={async ({ provincia }) => {
-            await marcarComoParaje(dialogo.fila, dialogo.ctx, provincia)
+          nombreInicial={dialogo.fila.nombre} provinciaInicial={dialogo.fila.provincia} paisInicial={dialogo.fila.pais}
+          confirmar={async ({ provincia, pais }) => {
+            await marcarComoParaje(dialogo.fila, dialogo.ctx, provincia, pais)
             cerrar()
           }}
         />
@@ -168,15 +175,15 @@ export function Localidades() {
 /** Los resultados del catálogo como opciones del buscador. Las que ya tiene el maestro llevan una marca: elegirlas no
  *  duplica nada (el servidor devuelve la que ya está), pero conviene saberlo antes. */
 function gruposDelCatalogo(
-  q: string, ctx: Ctx, alElegir: (c: { id: string; nombre: string; provincia: string }) => Promise<void>,
+  q: string, pais: string, ctx: Ctx, alElegir: (c: { id: string; nombre: string; provincia: string }) => Promise<void>,
 ): Promise<GrupoBuscado[]> {
-  return buscarEnElCatalogo(q).then((resultados) => {
+  return buscarEnElCatalogo(q, 20, pais).then((resultados) => {
     const yaCargadas = new Set(ctx.filas.map((f) => f.catalogo_id).filter(Boolean))
     if (resultados.length === 0) return []
     return [{
       items: resultados.map((c) => ({
         clave: c.id,
-        etiqueta: conProvincia(c.nombre, c.provincia),
+        etiqueta: conProvincia(c.nombre, c.provincia, c.pais),
         marca: yaCargadas.has(c.id) ? 'Ya cargada' : undefined,
         alElegir: () => alElegir(c),
       })),
@@ -186,31 +193,35 @@ function gruposDelCatalogo(
 
 /** «Agregar del catálogo»: se busca por nombre y se trae la elegida al maestro. */
 function DialogoAgregar({ ctx, alCerrar }: { ctx: Ctx; alCerrar: () => void }) {
+  const [pais, setPais] = useState(TODOS_LOS_PAISES)
   return (
     <Dialog open onOpenChange={(v) => { if (!v) alCerrar() }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Agregar del catálogo</DialogTitle>
           <DialogDescription>
-            Las 4.027 localidades de Argentina (INDEC). Se trae una por vez, con su provincia.
+            Las localidades de Argentina (INDEC) y del resto del Mercosur (GeoNames). Se trae una por vez, con su provincia.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-1">
-          <Label htmlFor="agregar-buscar">Buscar localidad</Label>
-          <BuscadorAsincrono
-            id="agregar-buscar" etiqueta="Buscar localidad" enLinea
-            valorVisible="" placeholder="Escribí el nombre…"
-            mensajeVacio="Ninguna localidad del catálogo se llama así."
-            buscar={(q) => gruposDelCatalogo(q, ctx, async (c) => {
-              const l = await localidadesApi.desdeCatalogo(c.id)
-              ctx.recargar()
-              ctx.destacar(l.id)
-              // Si ya estaba pero de baja, el servidor la devuelve tal cual: se avisa en vez de dejar creer que quedó lista.
-              ctx.fallar(l.activo ? null
-                : `«${l.nombre}» ya estaba cargada pero está dada de baja: reactivala desde la lista.`)
-              alCerrar()
-            })}
-          />
+        <div className="grid gap-3">
+          <SelectPais id="agregar-pais" valor={pais} alCambiar={setPais} conTodos />
+          <div className="grid gap-1">
+            <Label htmlFor="agregar-buscar">Buscar localidad</Label>
+            <BuscadorAsincrono
+              id="agregar-buscar" etiqueta="Buscar localidad" enLinea claveDeBusqueda={pais}
+              valorVisible="" placeholder="Escribí el nombre…"
+              mensajeVacio="Ninguna localidad del catálogo se llama así."
+              buscar={(q) => gruposDelCatalogo(q, pais, ctx, async (c) => {
+                const l = await localidadesApi.desdeCatalogo(c.id)
+                ctx.recargar()
+                ctx.destacar(l.id)
+                // Si ya estaba pero de baja, el servidor la devuelve tal cual: se avisa en vez de dejar creer que quedó lista.
+                ctx.fallar(l.activo ? null
+                  : `«${l.nombre}» ya estaba cargada pero está dada de baja: reactivala desde la lista.`)
+                alCerrar()
+              })}
+            />
+          </div>
         </div>
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={alCerrar}>Cerrar</Button>
@@ -223,6 +234,8 @@ function DialogoAgregar({ ctx, alCerrar }: { ctx: Ctx; alCerrar: () => void }) {
 /** «Vincular al catálogo»: busca, ya con el nombre de la fila escrito, y vincula la elegida. El 409 del servidor
  *  («… ya está vinculada a «X»: si son la misma, unificalas») se muestra tal cual. */
 function DialogoVincular({ ctx, fila, alCerrar }: { ctx: Ctx; fila: Localidad; alCerrar: () => void }) {
+  // Se busca en el país de la fila: es lo más probable, y se cambia con el desplegable si la fila estaba mal cargada.
+  const [pais, setPais] = useState(fila.pais || TODOS_LOS_PAISES)
   return (
     <Dialog open onOpenChange={(v) => { if (!v) alCerrar() }}>
       <DialogContent className="sm:max-w-md">
@@ -232,19 +245,22 @@ function DialogoVincular({ ctx, fila, alCerrar }: { ctx: Ctx; fila: Localidad; a
             Elegí la localidad oficial que es. Las órdenes que ya la usan no cambian; el nombre tampoco.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-1">
-          <Label htmlFor="vincular-buscar">Buscar en el catálogo</Label>
-          <BuscadorAsincrono
-            id="vincular-buscar" etiqueta="Buscar en el catálogo" enLinea
-            valorVisible="" consultaInicial={fila.nombre} placeholder="Escribí el nombre…"
-            mensajeVacio="Ninguna localidad del catálogo se llama así."
-            buscar={(q) => gruposDelCatalogo(q, ctx, async (c) => {
-              await localidadesApi.vincular(fila.id, c.id)
-              ctx.recargar()
-              ctx.destacar(fila.id)
-              alCerrar()
-            })}
-          />
+        <div className="grid gap-3">
+          <SelectPais id="vincular-pais" valor={pais} alCambiar={setPais} conTodos />
+          <div className="grid gap-1">
+            <Label htmlFor="vincular-buscar">Buscar en el catálogo</Label>
+            <BuscadorAsincrono
+              id="vincular-buscar" etiqueta="Buscar en el catálogo" enLinea claveDeBusqueda={pais}
+              valorVisible="" consultaInicial={fila.nombre} placeholder="Escribí el nombre…"
+              mensajeVacio="Ninguna localidad del catálogo se llama así."
+              buscar={(q) => gruposDelCatalogo(q, pais, ctx, async (c) => {
+                await localidadesApi.vincular(fila.id, c.id)
+                ctx.recargar()
+                ctx.destacar(fila.id)
+                alCerrar()
+              })}
+            />
+          </div>
         </div>
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={alCerrar}>Cancelar</Button>
@@ -293,7 +309,7 @@ function DialogoUnificar({ ctx, fila, alCerrar }: { ctx: Ctx; fila: Localidad; a
             <SelectBuscable
               id="unificar-en" ariaLabel="La localidad que queda" buscarEscribiendo
               value={enId} onChange={setEnId}
-              opciones={candidatas.map((l) => ({ value: String(l.id), label: conProvincia(l.nombre, l.provincia) }))}
+              opciones={candidatas.map((l) => ({ value: String(l.id), label: conProvincia(l.nombre, l.provincia, l.pais) }))}
               placeholder="Buscar localidad…" emptyMessage="No hay otra con ese nombre."
               className="w-full min-w-0"
             />

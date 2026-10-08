@@ -23,6 +23,7 @@ import { api } from 'libra-ui/api-client'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { formatearImporte } from '@/components/esquema-orden'
 import { BadgeEstado } from 'libra-ui/badge-estado'
+import { AccionesDelTitulo } from '@/components/AccionesDelTitulo'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -283,27 +284,25 @@ export default function Comprobantes() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-end">
-        {/* El título «Comprobantes» y las pestañas son de `ComprobantesSeccion`.
-            Los dos accesos de arriba: facturar pendientes (que genera la pre
-            factura) y la lista de pre facturas, que ya no está en el menú.
+      {/* El título «Comprobantes» y las pestañas son de `ComprobantesSeccion`, y los dos accesos suben a la línea de
+          ese título (`AccionesDelTitulo`): facturar pendientes (que genera la pre factura) y la lista de pre
+          facturas, que ya no está en el menú.
 
-            El listado se imprime desde reportes (`listado-comprobantes`), que
-            exige rango. Aca el boton salia sin fechas y mandaba al papel todos
-            los comprobantes que hubiera. */}
-        <div className="flex gap-2">
-          <Button variant="outline" asChild>
-            <Link to="/pre-facturas">
-              <ICONOS_LC.preFacturas className="size-4" /> Pre facturas
-            </Link>
-          </Button>
-          <Button asChild>
-            <Link to={irA.facturarPendientes()}>
-              <Plus className="size-4" /> Facturar pendientes
-            </Link>
-          </Button>
-        </div>
-      </div>
+          El listado se imprime desde reportes (`listado-comprobantes`), que
+          exige rango. Aca el boton salia sin fechas y mandaba al papel todos
+          los comprobantes que hubiera. */}
+      <AccionesDelTitulo>
+        <Button variant="outline" asChild>
+          <Link to="/pre-facturas">
+            <ICONOS_LC.preFacturas className="size-4" /> Pre facturas
+          </Link>
+        </Button>
+        <Button asChild>
+          <Link to={irA.facturarPendientes()}>
+            <Plus className="size-4" /> Facturar pendientes
+          </Link>
+        </Button>
+      </AccionesDelTitulo>
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Campo id="f-desde" etiqueta="Desde" tipo="date" valor={desde} alCambiar={setDesde} />
