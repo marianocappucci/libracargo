@@ -164,6 +164,7 @@ export default function CuentaCorriente() {
             placeholder={`Buscar ${etiquetaDelRol.toLowerCase()} por nombre o CUIT…`}
             emptyMessage="No hay ninguno con ese nombre o CUIT."
             className="w-full min-w-0"
+            limpiable
           />
         </div>
         <div className="grid gap-1">
