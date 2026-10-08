@@ -1,25 +1,21 @@
-/** Un campo para elegir de una lista, con buscador cuando hace falta.
+/** Un campo para elegir de una lista, que siempre se busca escribiendo.
  *
- * 🔑 **Un solo lugar decide cuándo hay buscador.** Antes cada pantalla armaba su
- * propio `<select>` con la misma clase copiada, y agregar el buscador significó
- * tocarlas de a una — y quedaron dos sin tocar. Acá la regla es una: si la lista
- * pasa de `DESDE_CUANTAS`, se busca por teclado.
+ * 🔑 **Un solo lugar decide cómo se elige.** Antes cada pantalla armaba su propio
+ * `<select>` con la misma clase copiada; después este campo decidió por la
+ * cantidad (≥12 opciones, buscador; menos, el nativo). Se descartó ese criterio
+ * (ADR-039 del kit): el mismo campo se comportaba distinto según los datos de cada
+ * cliente —con 5 choferes no buscaba, con 195 sí— y el dueño pidió que todo
+ * desplegable donde se elige información («clientes, fleteros, choferes,
+ * localidades») se pueda buscar por letras, sea cual sea el largo de la lista.
  *
- * El corte no es arbitrario: con menos de una docena el desplegable nativo del
- * navegador es más rápido —se abre y se ve entera— y un buscador para cuatro
- * opciones es un paso de más. Con 186 fleteros o 195 choferes, encontrar uno sin
- * filtro es recorrer la lista a ojo.
+ * Con pocas opciones se comporta como un select común: se abre con un click y se
+ * elige con otro; escribir es opcional.
  */
 import { SelectBuscable } from 'libra-ui/SelectBuscable'
 
 import { Label } from '@/components/ui/label'
 
 export type Opcion = { id: number | string; etiqueta: string }
-
-/** A partir de acá, con buscador. Medido contra las listas reales de Suitrans:
- *  roles (3), medios de pago (4) y acciones (3) quedan como `<select>`;
- *  terceros (276), choferes (195), localidades (121) y vehículos (180), no. */
-export const DESDE_CUANTAS = 12
 
 export function Elegir({ id, etiqueta, valor, opciones, alCambiar, vacio = 'Todos',
                         deshabilitado }: {
@@ -31,31 +27,17 @@ export function Elegir({ id, etiqueta, valor, opciones, alCambiar, vacio = 'Todo
   vacio?: string
   deshabilitado?: boolean
 }) {
-  const conBuscador = opciones.length >= DESDE_CUANTAS
   const todas = [{ value: '', label: vacio },
                  ...opciones.map((o) => ({ value: String(o.id), label: o.etiqueta }))]
 
   return (
     <div className="grid min-w-0 gap-1">
       <Label htmlFor={id}>{etiqueta}</Label>
-      {conBuscador ? (
-        <SelectBuscable
-          id={id} value={valor} onChange={alCambiar} opciones={todas}
-          placeholder={vacio} emptyMessage="No hay ninguno con ese nombre."
-          ariaLabel={etiqueta} disabled={deshabilitado} className="w-full min-w-0"
-        />
-      ) : (
-        // `w-full min-w-0`: un `<select>` mide lo que mide su opción más larga y
-        // un ítem de grid tiene `min-width: auto`, así que sin esto la celda se
-        // estira y se monta sobre la de al lado.
-        <select
-          id={id} className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
-          value={valor} disabled={deshabilitado}
-          onChange={(e) => alCambiar(e.target.value)}
-        >
-          {todas.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-      )}
+      <SelectBuscable
+        id={id} value={valor} onChange={alCambiar} opciones={todas}
+        placeholder={vacio} emptyMessage="No hay ninguno con ese nombre."
+        ariaLabel={etiqueta} disabled={deshabilitado} className="w-full min-w-0"
+      />
     </div>
   )
 }

@@ -23,6 +23,7 @@ import type { Maestro, Recurso } from '@/api/maestros'
 import { clienteDe } from '@/api/maestros'
 import { enmascararCuit } from '@/api/cartas-porte'
 import { BadgeEstado } from 'libra-ui/badge-estado'
+import { SelectBuscable } from 'libra-ui/SelectBuscable'
 import { AccionesDelTitulo } from '@/components/AccionesDelTitulo'
 import { Button } from '@/components/ui/button'
 import {
@@ -163,20 +164,21 @@ function CampoForm({ campo, valor, borrador, alCambiar }: {
     )
   }
   if (campo.tipo === 'opciones') {
-    // `<select>` nativo y no el de Radix: son cinco opciones fijas dentro de un
-    // diálogo, y el de Radix monta su propio portal, que ahí pelea por el foco.
+    // Se busca escribiendo (ADR-039 del kit): estas opciones pueden venir de datos —el fletero de un chofer o de un vehículo
+    // son los 186 de la instancia— y no sólo de una constante (la condición de IVA). Es el selector del kit y no el de Radix, así
+    // que dentro del diálogo no pelea por el foco. Sin ×: donde se puede vaciar hay una opción vacía («Sin fletero»), y vaciar una
+    // condición de IVA no era posible con el `<select>` de antes y no pasa a serlo.
+    const lista = campo.opciones ?? []
     return (
       <div className="grid gap-1">
         <Label htmlFor={id}>{campo.etiqueta}</Label>
-        <select id={id} className="h-9 rounded-md border px-3 text-sm"
-                value={String(valor ?? '')}
-                onChange={(e) => alCambiar(
-                  campo.numerico ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value,
-                )}>
-          {campo.opciones?.map((o) => (
-            <option key={o.valor} value={o.valor}>{o.etiqueta}</option>
-          ))}
-        </select>
+        <SelectBuscable
+          id={id} ariaLabel={campo.etiqueta} placeholder="Elegí una opción…"
+          emptyMessage="No hay ninguna con ese nombre."
+          value={String(valor ?? '')} limpiable={false}
+          onChange={(v) => alCambiar(campo.numerico ? (v === '' ? null : Number(v)) : v)}
+          opciones={lista.map((o) => ({ value: o.valor, label: o.etiqueta }))}
+        />
       </div>
     )
   }
@@ -358,8 +360,9 @@ export function AbmMaestro<T extends Maestro>({
   )
 
   return (
-    // Con título propio es una pantalla; sin él va metido en otra (una pestaña de Entidades), que ya pone el margen.
-    <div className={encabezado ? 'p-6' : undefined}>
+    // Con título propio es una pantalla; sin él va metido en otra (una pestaña de Entidades). Ninguna de las dos pone relleno
+    // propio: el `Layout` ya separa el contenido del borde y baja el título a la altura de la marca (ADR-040 del kit).
+    <div>
       {encabezado ? (
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-2xl font-semibold">{titulo}</h1>

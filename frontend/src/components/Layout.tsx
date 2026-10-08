@@ -8,7 +8,7 @@
 // distinguir y hay que leer el texto igual.
 import { createLayout, type NavSection } from 'libra-ui/Layout'
 import { INDICADORES } from 'libra-ui/iconos-indicador'
-import { Building2, ClipboardList } from 'lucide-react'
+import { Building2, CarFront, ClipboardList } from 'lucide-react'
 
 import { useConfiguracion } from '@/api/configuracion'
 import { WORDMARK } from '@/branding'
@@ -52,6 +52,9 @@ export const NAV_SECCIONES: NavSection<Usuario>[] = [
         // Clientes, Fleteros, Choferes y Proveedores en una entrada con pestañas (ADR-040). Propia de este producto, como Órdenes:
         // «Entidades» no es un concepto del catálogo de la familia, y `Building2` es un dibujo que ningún concepto usa.
         { to: '/entidades', label: 'Entidades', icon: Building2 },
+        // Los vehículos salieron de Configuración (pedido del dueño, 2026-10-08): se usan a diario al armar una orden. `CarFront` y no
+        // `Truck`: el camión es el ícono de los fleteros, y el catálogo de identidad no tiene un concepto «vehículo».
+        { to: '/vehiculos', label: 'Vehículos', icon: CarFront },
         { to: '/cuentas', label: 'Cuenta corriente', icon: ICONOS_LC.cuentaCorriente },
         { to: '/caja', label: 'Caja', icon: ICONOS_LC.caja },
         // Una sola entrada para todo lo que es un comprobante, con dos pestañas

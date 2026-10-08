@@ -168,6 +168,11 @@ describe('Entidades (ADR-040)', () => {
     expect(irA.entidades('choferes', 4)).toBe('/entidades?pestana=choferes&ver=4')
   })
 
+  it('irA.vehiculos arma la ruta y la ficha', () => {
+    expect(irA.vehiculos()).toBe('/vehiculos')
+    expect(irA.vehiculos(21)).toBe('/vehiculos?ver=21')
+  })
+
   it('🔑 las secciones que salieron de Configuración tienen su pestaña', () => {
     expect(SECCIONES_MUDADAS_A_ENTIDADES).toEqual({ terceros: 'clientes', choferes: 'choferes' })
   })

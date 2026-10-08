@@ -9,6 +9,8 @@ import { configure, fireEvent, render, screen, waitFor, within } from '@testing-
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { elegirEnBuscable, opcionesDe } from '@/test/buscable'
+
 configure({ asyncUtilTimeout: 5000 })
 vi.setConfig({ testTimeout: 20_000 })
 
@@ -249,9 +251,11 @@ describe('ElegirLocalidad · cargar como paraje', () => {
   it('la opción final lleva lo escrito; abre el diálogo con el nombre precargado y la provincia por elegir', async () => {
     const dialogo = await abrirDialogo()
     expect(within(dialogo).getByLabelText('Nombre del paraje')).toHaveValue('Tomás Jofré')
-    const provincia = within(dialogo).getByLabelText('Provincia')
-    await within(dialogo).findByRole('option', { name: 'Santa Fe' })
+    const provincia = within(dialogo).getByRole('combobox', { name: 'Provincia' })
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/geo/provincias'))
+    // Se busca escribiendo (ADR-039 del kit) y arranca vacía: hay que elegirla.
     expect(provincia).toHaveValue('')
+    await waitFor(() => expect(opcionesDe(provincia)).toContain('Santa Fe'))
   })
 
   it('la provincia es obligatoria: sin ella no manda nada y lo dice', async () => {
@@ -269,8 +273,7 @@ describe('ElegirLocalidad · cargar como paraje', () => {
     const { lista } = await buscar('Tomás Jofré')
     fireEvent.click(await within(lista).findByRole('option', { name: 'Cargar «Tomás Jofré» como paraje…' }))
     const dialogo = await screen.findByRole('dialog')
-    await within(dialogo).findByRole('option', { name: 'Buenos Aires' })
-    fireEvent.change(within(dialogo).getByLabelText('Provincia'), { target: { value: 'Buenos Aires' } })
+    await elegirEnBuscable(within(dialogo).getByRole('combobox', { name: 'Provincia' }), 'Buenos Aires')
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Cargar paraje' }))
 
     await waitFor(() => expect(alElegir).toHaveBeenCalledWith('90'))
@@ -294,15 +297,15 @@ describe('ElegirLocalidad · cargar como paraje', () => {
     const pais = within(dialogo).getByLabelText('País')
     await within(dialogo).findByRole('option', { name: 'Uruguay' })
     expect(pais).toHaveValue('AR')
-    const provincia = within(dialogo).getByLabelText('Provincia')
+    const provincia = within(dialogo).getByRole('combobox', { name: 'Provincia' })
     expect(pais.compareDocumentPosition(provincia) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     fireEvent.change(pais, { target: { value: 'UY' } })
-    await within(dialogo).findByRole('option', { name: 'Colonia' })
-    expect(get).toHaveBeenCalledWith('/api/geo/provincias?pais=UY')
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/geo/provincias?pais=UY'))
+    await waitFor(() => expect(opcionesDe(provincia)).toContain('Colonia'))
     // Ya no se ofrecen las provincias argentinas.
-    expect(within(dialogo).queryByRole('option', { name: 'Santa Fe' })).toBeNull()
-    fireEvent.change(within(dialogo).getByLabelText('Provincia'), { target: { value: 'Colonia' } })
+    expect(opcionesDe(provincia)).not.toContain('Santa Fe')
+    await elegirEnBuscable(provincia, 'Colonia')
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Cargar paraje' }))
 
     await waitFor(() => expect(post).toHaveBeenCalledWith('/api/localidades', {
@@ -315,19 +318,18 @@ describe('ElegirLocalidad · cargar como paraje', () => {
 
   it('al cambiar de país la provincia elegida se borra: era de otro país', async () => {
     const dialogo = await abrirDialogo()
-    await within(dialogo).findByRole('option', { name: 'Buenos Aires' })
-    fireEvent.change(within(dialogo).getByLabelText('Provincia'), { target: { value: 'Buenos Aires' } })
-    expect(within(dialogo).getByLabelText('Provincia')).toHaveValue('Buenos Aires')
+    const provincia = within(dialogo).getByRole('combobox', { name: 'Provincia' })
+    await elegirEnBuscable(provincia, 'Buenos Aires')
+    expect(provincia).toHaveValue('Buenos Aires')
     fireEvent.change(within(dialogo).getByLabelText('País'), { target: { value: 'UY' } })
-    await within(dialogo).findByRole('option', { name: 'Colonia' })
-    expect(within(dialogo).getByLabelText('Provincia')).toHaveValue('')
+    await waitFor(() => expect(opcionesDe(provincia)).toContain('Colonia'))
+    expect(provincia).toHaveValue('')
   })
 
   it('un 409 (ya existe en esa provincia) se muestra tal cual y el diálogo sigue abierto', async () => {
     post.mockRejectedValue(new ApiError(409, 'ya existe una localidad «Tomás Jofré» en Buenos Aires'))
     const dialogo = await abrirDialogo()
-    await within(dialogo).findByRole('option', { name: 'Buenos Aires' })
-    fireEvent.change(within(dialogo).getByLabelText('Provincia'), { target: { value: 'Buenos Aires' } })
+    await elegirEnBuscable(within(dialogo).getByRole('combobox', { name: 'Provincia' }), 'Buenos Aires')
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Cargar paraje' }))
     expect(await within(dialogo).findByRole('alert')).toHaveTextContent('ya existe una localidad «Tomás Jofré» en Buenos Aires')
   })

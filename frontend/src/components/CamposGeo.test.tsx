@@ -61,8 +61,8 @@ describe('CamposGeo', () => {
     // guardada antes apunta a un nodo que ya no está en el documento, y el
     // test daría rojo con el componente funcionando bien.
     await waitFor(() => {
-      const control = screen.getByLabelText('Localidad')
-      expect(control.tagName).toBe('INPUT')
+      // Un texto libre es un `textbox`; el selector con búsqueda (también un `<input>`) es un `combobox`.
+      const control = screen.getByRole('textbox', { name: 'Localidad' })
       expect((control as HTMLInputElement).value).toBe('Cnel. Bogado')
     })
   })
@@ -72,8 +72,8 @@ describe('CamposGeo', () => {
     // pasaría igual si el campo fuera SIEMPRE texto.
     render(<SelectLocalidad id="l" etiqueta="Localidad" valor="Suipacha"
                             provincia="Buenos Aires" alCambiar={vi.fn()} />)
-    await screen.findByLabelText('Localidad')
-    await waitFor(() => expect(screen.getByLabelText('Localidad').tagName).not.toBe('INPUT'))
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Localidad' })).toBeTruthy())
+    expect(screen.queryByRole('textbox', { name: 'Localidad' })).toBeNull()
   })
 
   it('sin provincia elegida no se puede seleccionar la localidad, y lo dice', async () => {

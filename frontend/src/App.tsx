@@ -22,7 +22,8 @@ import Reporte from '@/pages/Reporte'
 import ReportesIndice from '@/pages/ReportesIndice'
 import Usuarios from '@/pages/Usuarios'
 import Entidades from '@/pages/Entidades'
-import { Localidades, TiposCarga, Vehiculos } from '@/pages/maestros'
+import Vehiculos from '@/pages/Vehiculos'
+import { Localidades, TiposCarga } from '@/pages/maestros'
 import { irA } from '@/navegacion'
 
 function Privado({ children }: { children: ReactNode }) {

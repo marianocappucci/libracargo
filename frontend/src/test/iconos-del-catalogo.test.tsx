@@ -111,15 +111,23 @@ describe('el menú usa el catálogo', () => {
     }
   })
 
-  it('🔴 las entradas propias del producto (Órdenes de carga, Cartas de porte y Entidades) no usan el dibujo de un concepto del catálogo', () => {
+  it('🔴 las entradas propias del producto (Órdenes de carga, Cartas de porte, Entidades y Vehículos) no usan el dibujo de un concepto del catálogo', () => {
     const delCatalogo = new Set(Object.values(iconosDe('libracargo')).map(nombre))
     const propias = [...iconosDelNav(leer('components/Layout.tsx'))].filter(([ruta]) => !(ruta in MENU))
-    expect(propias.map(([ruta]) => ruta)).toEqual(['/ordenes', '/cartas-porte', '/entidades'])
+    expect(propias.map(([ruta]) => ruta)).toEqual(['/ordenes', '/cartas-porte', '/entidades', '/vehiculos'])
     for (const [, icono] of propias) {
       const componente = componenteDeLaEntrada(icono)
       expect(componente, icono).toBeDefined()
       expect(delCatalogo.has(nombre(componente) ?? icono)).toBe(false)
     }
+  })
+
+  it('🔴 «Vehículos» está en el menú principal, justo debajo de «Entidades», con CarFront (el camión es de los fleteros)', () => {
+    const items = NAV_SECCIONES.flatMap((s) => s.items)
+    const i = items.findIndex((x) => x.to === '/entidades')
+    expect(items[i + 1]).toMatchObject({ to: '/vehiculos', label: 'Vehículos', icon: lucide.CarFront })
+    expect(iconosDelNav(leer('components/Layout.tsx')).get('/vehiculos')).toBe('CarFront')
+    expect(leer('pages/Vehiculos.tsx')).toContain('icono={CarFront}')
   })
 
   it('🔴 «Cartas de porte» sale del catálogo de indicadores: `INDICADORES.cartasDePorte` es FileBadge, no un FileCheck suelto', () => {

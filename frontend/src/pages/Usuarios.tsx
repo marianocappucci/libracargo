@@ -17,7 +17,7 @@ export default function Usuarios() {
   const { user } = useAuth()
 
   return (
-    <div className="p-6">
+    <div>
       {/* El título lo pone la pantalla compartida, que desde libra-ui v0.34.0
           recibe el icono del sidebar de este producto. Antes había uno acá
           también y la pantalla decía «Usuarios» dos veces. */}

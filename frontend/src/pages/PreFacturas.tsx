@@ -66,7 +66,7 @@ export default function PreFacturas() {
   ]
 
   return (
-    <div className="p-6">
+    <div>
       <div className="mb-4 flex items-center justify-between gap-3">
         {/* Ya no tiene entrada de menú: se llega desde Comprobantes > Clientes, y de acá se vuelve ahí. */}
         <div className="flex items-center gap-3">
@@ -90,6 +90,7 @@ export default function PreFacturas() {
       <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="grid min-w-0 gap-1">
           <Label htmlFor="pf-estado">Estado</Label>
+          {/* select-cerrado: los estados de la pre factura (`ESTADOS`), una constante del código: no hay nada que buscar */}
           <select id="pf-estado" className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
                   value={estado} onChange={(e) => setEstado(e.target.value)}>
             <option value="">Todas</option>

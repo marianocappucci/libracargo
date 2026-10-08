@@ -33,6 +33,7 @@ export function SelectPais({ id, etiqueta = 'País', valor, alCambiar, conTodos 
   return (
     <div className="grid gap-1">
       <Label htmlFor={id}>{etiqueta}</Label>
+      {/* select-cerrado: los seis países del Mercosur (catálogo cerrado del sistema, no datos de la empresa): no hay nada que buscar */}
       <select
         id={id} className="h-9 rounded-md border px-3 text-sm"
         value={valor} onChange={(e) => alCambiar(e.target.value)}

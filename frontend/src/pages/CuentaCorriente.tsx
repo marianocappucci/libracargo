@@ -222,7 +222,7 @@ export default function CuentaCorriente() {
   )
 
   return (
-    <div className="p-6">
+    <div>
       <div className="mb-4">
         <TituloPantalla
           icono={ICONOS_LC.cuentaCorriente}

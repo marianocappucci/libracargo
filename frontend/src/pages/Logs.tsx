@@ -51,16 +51,13 @@ import { destinoDelLog } from '@/navegacion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
+import { SelectBuscable } from 'libra-ui/SelectBuscable'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 import { formatearFecha } from '@/components/esquema-orden'
 import { ICONOS_LC } from '@/iconos'
 
 const POR_PAGINA = 50
 
-const TODAS = '__todas__'
 
 /** Las tres acciones, con el mismo color que manda el backend de los otros
  *  cinco productos (`libraauth.auditoria.ACCION_META`). Acá el color no viene
@@ -218,7 +215,7 @@ export default function Logs() {
   const sinFiltros = Object.values(filtros).every((v) => v == null || v === '')
 
   return (
-    <div className="p-6">
+    <div>
       {/* El titulo, y nada mas. El boton de imprimir se fue a reportes
           (`listado-logs`): desde aca imprimia los 15.884 registros de una,
           porque nada obligaba a poner fechas. */}
@@ -272,30 +269,19 @@ export default function Logs() {
 
           <div className="flex flex-wrap items-end gap-3">
             <Campo id="l-entidad" etiqueta="Entidad">
-              <Select
-                value={filtros.entidad ?? TODAS}
-                onValueChange={(v) => set({ entidad: v === TODAS ? undefined : v })}
-              >
-                <SelectTrigger id="l-entidad" className="w-48"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={TODAS}>Todas</SelectItem>
-                  {entidades.map((e) => (
-                    <SelectItem key={e} value={e}>{e.replace(/_/g, ' ')}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SelectBuscable
+                id="l-entidad" className="w-48" ariaLabel="Entidad" placeholder="Todas"
+                value={filtros.entidad ?? ''} onChange={(v) => set({ entidad: v || undefined })}
+                opciones={[{ value: '', label: 'Todas' },
+                           ...entidades.map((e) => ({ value: e, label: e.replace(/_/g, ' ') }))]}
+              />
             </Campo>
             <Campo id="l-usuario" etiqueta="Usuario">
-              <Select
-                value={filtros.usuario ?? TODAS}
-                onValueChange={(v) => set({ usuario: v === TODAS ? undefined : v })}
-              >
-                <SelectTrigger id="l-usuario" className="w-48"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={TODAS}>Todos</SelectItem>
-                  {usuarios.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SelectBuscable
+                id="l-usuario" className="w-48" ariaLabel="Usuario" placeholder="Todos"
+                value={filtros.usuario ?? ''} onChange={(v) => set({ usuario: v || undefined })}
+                opciones={[{ value: '', label: 'Todos' }, ...usuarios.map((u) => ({ value: u, label: u }))]}
+              />
             </Campo>
             <Campo id="l-desde" etiqueta="Desde">
               <Input id="l-desde" type="date" className="w-40" value={filtros.desde ?? ''}

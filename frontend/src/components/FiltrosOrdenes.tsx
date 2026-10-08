@@ -90,6 +90,7 @@ export function FiltrosOrdenes({ valor, opciones, alCambiar }: Props) {
         <Label htmlFor="f-etapa">Etapa</Label>
         {/* Las cinco etapas del viaje. «Liquidada» no es una sexta: es una orden facturada, y se filtra con el
             Estado «Facturada (liquidada)». */}
+        {/* select-cerrado: las cinco etapas del viaje (`ETAPAS`), una constante del código: no hay nada que buscar */}
         <select id="f-etapa" className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
                 value={valor.etapa ?? ''}
                 onChange={(e) => set({ etapa: (e.target.value || undefined) as Etapa | undefined })}>

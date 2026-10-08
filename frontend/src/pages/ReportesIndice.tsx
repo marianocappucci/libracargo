@@ -55,7 +55,7 @@ export default function ReportesIndice() {
   const listados = catalogo.filter((r) => r.detalle)
 
   return (
-    <div className="p-6">
+    <div>
       <TituloPantalla icono={ICONOS_LC.reportes}>Reportes</TituloPantalla>
       <p className="text-muted-foreground mt-1 text-sm">
         Cada uno se abre por separado y se parametriza por lo suyo. Todos se

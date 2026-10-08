@@ -8,6 +8,8 @@ import { configure, fireEvent, render, screen, waitFor, within } from '@testing-
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { elegirEnBuscable, opcionesDe } from '@/test/buscable'
+
 // El asistente tiene muchos campos y el CI es lento: el segundo por defecto de `waitFor` no siempre alcanza.
 configure({ asyncUtilTimeout: 5000 })
 vi.setConfig({ testTimeout: 20_000 })
@@ -106,9 +108,7 @@ function abrir() {
 
 /** Elige el titular y pasa a los datos; espera a que la propuesta esté en pantalla. */
 async function irALosDatos() {
-  const select = await screen.findByLabelText('A nombre de')
-  await waitFor(() => expect(within(select).getAllByRole('option').length).toBeGreaterThan(1))
-  fireEvent.change(select, { target: { value: TITULAR } })
+  await elegirEnBuscable(await screen.findByLabelText('A nombre de'), 'Agropecuaria Los Talas')
   const siguiente = screen.getByRole('button', { name: 'Siguiente' })
   await waitFor(() => expect(siguiente).toBeEnabled())
   fireEvent.click(siguiente)
@@ -136,12 +136,13 @@ afterEach(() => {
 describe('Emitir carta de porte · paso 1, el titular', () => {
   it('«A nombre de» no tiene valor por defecto, ni siquiera con un único titular', async () => {
     abrir()
-    const select = (await screen.findByLabelText('A nombre de')) as HTMLSelectElement
-    await waitFor(() => expect(within(select).getByText('Agropecuaria Los Talas')).toBeInTheDocument())
-    expect(select.value).toBe('')
+    const titular = await screen.findByLabelText('A nombre de')
+    await waitFor(() => expect(opcionesDe(titular)).toContain('Agropecuaria Los Talas'))
+    // Sin elegir: el campo muestra la opción vacía («Elegir…»), no un titular.
+    expect(titular).toHaveValue('Elegir…')
     // Sin elegir no se puede avanzar, aunque la emisión esté habilitada.
     expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled()
-    fireEvent.change(select, { target: { value: TITULAR } })
+    await elegirEnBuscable(titular, 'Agropecuaria Los Talas')
     await waitFor(() => expect(screen.getByRole('button', { name: 'Siguiente' })).toBeEnabled())
   })
 
@@ -150,9 +151,7 @@ describe('Emitir carta de porte · paso 1, el titular', () => {
     abrir()
     expect(await screen.findByText(
       'La emisión real está apagada. La habilita un administrador en Configuración / ARCA.')).toBeInTheDocument()
-    const select = await screen.findByLabelText('A nombre de')
-    await waitFor(() => expect(within(select).getAllByRole('option').length).toBeGreaterThan(1))
-    fireEvent.change(select, { target: { value: TITULAR } })
+    await elegirEnBuscable(await screen.findByLabelText('A nombre de'), 'Agropecuaria Los Talas')
     expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled()
     // Nunca se pidió la propuesta.
     expect(get.mock.calls.some(([r]) => String(r).includes('/emision/propuesta'))).toBe(false)
@@ -175,7 +174,8 @@ describe('Emitir carta de porte · paso 2, los datos', () => {
 
     // Pidió la propuesta de ESA orden para ESE titular.
     expect(get).toHaveBeenCalledWith(`${RUTA}/emision/propuesta?orden_id=12&cuit_titular=${TITULAR}`)
-    expect(screen.getByLabelText('Grano')).toHaveValue('15')
+    // Los catálogos de ARCA se buscan escribiendo: el campo muestra el nombre, no el código.
+    await waitFor(() => expect(screen.getByLabelText('Grano')).toHaveValue('Soja'))
     expect(screen.getByLabelText('Cosecha')).toHaveValue('2526')
     expect(screen.getByText('2526 = 2025/2026')).toBeInTheDocument()
     expect(screen.getByLabelText('Peso bruto (kg)')).toHaveValue('44000')
@@ -192,9 +192,9 @@ describe('Emitir carta de porte · paso 2, los datos', () => {
     expect(screen.getByLabelText('Kilómetros a recorrer')).toHaveValue('320')
     // La partida se propone dentro de una hora, en hora argentina.
     expect(screen.getByLabelText('Fecha y hora de partida')).toHaveValue('2026-10-08T16:00')
-    expect(screen.getByLabelText('Provincia de origen')).toHaveValue('12')
-    await waitFor(() => expect(screen.getByLabelText('Localidad de origen')).toHaveValue('3456'))
-    await waitFor(() => expect(screen.getByLabelText('Localidad de destino')).toHaveValue('777'))
+    await waitFor(() => expect(screen.getByLabelText('Provincia de origen')).toHaveValue('Córdoba'))
+    await waitFor(() => expect(screen.getByLabelText('Localidad de origen')).toHaveValue('Suipacha'))
+    await waitFor(() => expect(screen.getByLabelText('Localidad de destino')).toHaveValue('Rosario'))
   })
 
   it('muestra los faltantes y marca los obligatorios vacíos: sin completarlos no se avanza', async () => {
@@ -244,8 +244,8 @@ describe('Emitir carta de porte · paso 2, los datos', () => {
     await waitFor(() => expect(get).toHaveBeenCalledWith(
       `${RUTA}/catalogos/plantas?cuit_titular=${TITULAR}&cuit=30555555558`))
     const planta = await screen.findByLabelText('N.º de planta de destino')
-    await waitFor(() => expect(within(planta).getByText('Planta 11')).toBeInTheDocument())
-    expect(planta).toHaveValue('9')
+    await waitFor(() => expect(opcionesDe(planta)).toContain('Planta 11'))
+    expect(planta).toHaveValue('Planta 9')
   })
 })
 

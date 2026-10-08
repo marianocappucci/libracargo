@@ -62,8 +62,8 @@ function Etapa({ form }: { form: Form }) {
   return (
     <div className="grid gap-1">
       <Label htmlFor="etapa">Etapa</Label>
-      {/* `<select>` nativo: son cinco valores fijos. Es la etapa del viaje; el estado de facturación es otro dato
-          y no se elige acá (lo cambia facturar). */}
+      {/* select-cerrado: cinco valores fijos (`ETAPAS`), una constante del código: no hay nada que buscar. Es la etapa del viaje;
+          el estado de facturación es otro dato y no se elige acá (lo cambia facturar). */}
       <select id="etapa" className="h-9 rounded-md border px-3 text-sm" {...form.register('etapa')}>
         {ETAPAS.map((e) => <option key={e.valor} value={e.valor}>{e.etiqueta}</option>)}
       </select>
@@ -302,7 +302,7 @@ export default function Ordenes() {
   ]
 
   return (
-    <div className="p-6">
+    <div>
       <div className="mb-4">
         {/* El listado se imprime desde reportes (`listado-ordenes`), que exige
             rango: desde aca el boton salia con la pantalla recien abierta y

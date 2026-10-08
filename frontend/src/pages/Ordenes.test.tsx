@@ -9,6 +9,8 @@ import { configure, fireEvent, render, screen, waitFor, within } from '@testing-
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { opcionesDe } from '@/test/buscable'
+
 // La sección «Flete» consulta la referencia con una espera de 250 ms antes de pedirla: en el CI, con este archivo
 // tardando ~50 s, el segundo por defecto de `waitFor` no alcanza y el test falla por tiempo, no por lógica.
 configure({ asyncUtilTimeout: 5000 })
@@ -795,8 +797,9 @@ describe('Órdenes · emitir la carta de porte desde el detalle (ADR-043)', () =
 
     expect(await screen.findByText('Emitir carta de porte · Orden Nº 00000007')).toBeInTheDocument()
     const titular = await screen.findByLabelText('A nombre de')
-    await waitFor(() => expect(within(titular).getByText('Agropecuaria Los Talas')).toBeInTheDocument())
-    expect(titular).toHaveValue('')
+    await waitFor(() => expect(opcionesDe(titular)).toContain('Agropecuaria Los Talas'))
+    // Sin elegir: el campo muestra la opción vacía («Elegir…»), no un titular.
+    expect(titular).toHaveValue('Elegir…')
     expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled()
   })
 

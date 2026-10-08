@@ -1,7 +1,8 @@
 /** Las pantallas de maestros que no son terceros.
  *
  * Los terceros (clientes, fleteros y proveedores) viven en «Entidades» (`TercerosPorRol`, ADR-040), y los choferes
- * son una de sus pestañas. Los vehículos, las localidades y los tipos de carga quedan en Configuración.
+ * son una de sus pestañas. Los vehículos tienen su entrada en el menú (`pages/Vehiculos.tsx`); las localidades y los tipos de
+ * carga quedan en Configuración.
  *
  * Cada una es la misma `AbmMaestro` con sus columnas y sus campos. Lo que se
  * elige acá son las columnas: **la tabla no muestra todo lo que el formulario
@@ -54,7 +55,7 @@ export function Choferes({ encabezado = true }: { encabezado?: boolean }) {
   )
 }
 
-export function Vehiculos() {
+export function Vehiculos({ encabezado = true }: { encabezado?: boolean }) {
   const fleteros = useFleteros()
   const ficha = useFichaEnLaUrl()
   const fletero = (id: unknown) => fleteros.find((f) => f.id === id)?.razon_social ?? ''
@@ -62,6 +63,7 @@ export function Vehiculos() {
     <AbmMaestro<Maestro>
       recurso="vehiculos"
       titulo="Vehículos"
+      encabezado={encabezado}
       campos={conFleteros(CAMPOS_VEHICULO, fleteros)}
       columnas={[col('patente_chasis', 'Chasis'),
                  col('patente_acoplado', 'Acoplado'),
