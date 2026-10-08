@@ -18,6 +18,11 @@ vi.mock('libra-ui/api-client', async () => {
   return { ApiError, api: { get, post: vi.fn(), put: vi.fn(), del: vi.fn() } }
 })
 
+// Localidades pregunta quién es el usuario (unificar es sólo del administrador).
+vi.mock('@/context/AuthContext', () => ({
+  useAuth: () => ({ user: { role: 'operador', name: 'Ana' }, loading: false, logout: vi.fn() }),
+}))
+
 const { ApiError } = await import('libra-ui/api-client')
 const { mensajeDeError } = await import('./AbmMaestro')
 const { Localidades } = await import('@/pages/maestros')

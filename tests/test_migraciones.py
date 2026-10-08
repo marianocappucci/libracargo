@@ -567,3 +567,26 @@ def test_la_0022_deja_cerradas_las_ordenes_que_ya_existian(base_limpia):
     finally:
         if original:
             os.environ["DATABASE_URL"] = original
+
+
+def test_la_0025_vincula_lo_que_coincide_una_sola_vez(base_limpia):
+    """ADR-041: vincula por nombre (y provincia) cuando hay **una** coincidencia; no renombra ni borra nada."""
+    original = os.environ.get("DATABASE_URL")
+    try:
+        cfg = _alembic(base_limpia)
+        command.upgrade(cfg, "0024")
+        eng = create_engine(base_limpia)
+        with eng.begin() as con:
+            con.execute(text("INSERT INTO localidades (nombre, provincia, activa) VALUES "
+                             "('Suipacha', NULL, true), ('San Pedro', NULL, true), ('Campo', NULL, true)"))
+        command.upgrade(cfg, "head")
+        with eng.connect() as con:
+            filas = dict(con.execute(text(
+                "SELECT nombre, coalesce(catalogo_id, '-') || '|' || coalesce(provincia, '-') FROM localidades")).all())
+        assert filas["Suipacha"] == "06784020|Buenos Aires", "una sola coincidencia: vinculada y con provincia"
+        assert filas["San Pedro"] == "-|-", "está en varias provincias: no se adivina"
+        assert filas["Campo"] == "-|-", "no está en el catálogo"
+        eng.dispose()
+    finally:
+        if original:
+            os.environ["DATABASE_URL"] = original

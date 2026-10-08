@@ -1,6 +1,8 @@
 import { api } from 'libra-ui/api-client'
 import type { TonoEstado } from 'libra-ui/badge-estado'
 
+import type { OpcionLocalidad } from '@/api/localidades'
+
 /** Por dónde va el viaje (ADR-037). **No es el estado de facturación**: una orden facturada sigue teniendo etapa. */
 export const VALORES_DE_ETAPA = ['asignada', 'cargada', 'en_viaje', 'descargada', 'cerrada'] as const
 export type Etapa = (typeof VALORES_DE_ETAPA)[number]
@@ -217,7 +219,12 @@ export async function cargarOpciones() {
     // lugares que concatenaban las listas —caja y el filtro de los reportes—,
     // y elegir cualquiera de las dos filas hacía lo mismo.
     terceros: mapear(terceros, 'razon_social', 'cuit'),
-    localidades: mapear(localidades, 'nombre'),
+    // Con provincia y marca de paraje: el selector de origen y destino muestra «Suipacha — Buenos Aires». La `etiqueta`
+    // sigue siendo el nombre solo, que es lo que leen la grilla y los filtros.
+    localidades: localidades.map((f): OpcionLocalidad => ({
+      id: f.id as number, etiqueta: String(f.nombre ?? ''),
+      provincia: (f.provincia as string | null | undefined) ?? null, es_paraje: f.es_paraje === true,
+    })),
     choferes: mapear(choferes, 'nombre'),
     vehiculos: mapear(vehiculos, 'patente_chasis'),
     tipos: mapear(tipos, 'nombre'),

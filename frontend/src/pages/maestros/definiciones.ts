@@ -43,15 +43,14 @@ export const CAMPOS_TERCERO: Campo[] = [
   ACTIVO,
 ]
 
-/** El maestro de orígenes y destinos.
+/** El formulario de **editar** una localidad del maestro de orígenes y destinos.
  *
- *  🔑 El `nombre` es un campo de localidad —se elige del catálogo— pero **sigue
- *  siendo texto libre por debajo**, con la salida explícita para escribirlo.
- *  Es lo que permite cargar un paraje que no está en ningún recurso oficial sin
- *  romper las 121 filas que ya existen, varias de ellas abreviadas. */
+ *  Las altas no pasan por acá (ADR-041): se traen del catálogo de Argentina o se cargan como paraje, desde los botones de
+ *  la pantalla. Este formulario corrige lo que ya está: el nombre es texto porque hay filas cargadas a mano con
+ *  abreviaturas (`Cnel. Bogado`) que se arreglan escribiendo, y la provincia se elige del catálogo. */
 export const CAMPOS_LOCALIDAD: Campo[] = [
+  { nombre: 'nombre', etiqueta: 'Nombre' },
   { nombre: 'provincia', etiqueta: 'Provincia', tipo: 'provincia' },
-  { nombre: 'nombre', etiqueta: 'Nombre', tipo: 'localidad', provinciaEn: 'provincia' },
   ACTIVO,
 ]
 

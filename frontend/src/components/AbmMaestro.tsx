@@ -60,6 +60,18 @@ export type ContextoDeConflicto<T extends Maestro> = {
   destacar: (id: number) => void
 }
 
+/** Lo que recibe quien agrega algo propio a la lista (botones por fila, una barra de altas y filtros). */
+export type ContextoDeLista<T extends Maestro> = {
+  /** Todas las filas cargadas, también las que un filtro esconde. */
+  filas: T[]
+  /** Vuelve a pedir el listado. */
+  recargar: () => void
+  /** Marca una fila en la tabla, para que se vea dónde quedó lo que se acaba de hacer. */
+  destacar: (id: number) => void
+  /** Muestra (o, con `null`, saca) un aviso de error arriba de la tabla, el mismo que usan las bajas y reactivaciones. */
+  fallar: (mensaje: string | null) => void
+}
+
 type Props<T extends Maestro> = {
   recurso: Recurso
   titulo: string
@@ -85,6 +97,14 @@ type Props<T extends Maestro> = {
   fichaExtra?: (fila: T) => ReactNode
   /** Si devuelve algo para ese error de guardado, se dibuja en vez del texto pelado. */
   conflicto?: (error: unknown, ctx: ContextoDeConflicto<T>) => ReactNode
+  /** Botones propios de cada fila, antes del lápiz (Localidades: vincular, marcar como paraje, unificar). */
+  accionesDeFila?: (fila: T, ctx: ContextoDeLista<T>) => ReactNode
+  /** Lo que va arriba, junto al botón «Nuevo»: altas alternativas y filtros rápidos. */
+  barra?: (ctx: ContextoDeLista<T>) => ReactNode
+  /** Esconde «Nuevo»: la pantalla trae sus propias altas en la `barra`. */
+  sinNuevo?: boolean
+  /** Un filtro rápido: sólo se ven las filas para las que da `true`. Las otras siguen cargadas. */
+  visibles?: (fila: T) => boolean
 }
 
 export function mensajeDeError(e: unknown): string {
@@ -200,7 +220,7 @@ function agrupar(campos: Campo[]): { grupo?: string; campos: Campo[] }[] {
 export function AbmMaestro<T extends Maestro>({
   recurso, titulo, columnas, campos, buscarEn, defaults = {},
   encabezado = true, singular, cargar, abrirId = null, alCerrarFicha,
-  fichaExtra, conflicto,
+  fichaExtra, conflicto, accionesDeFila, barra, sinNuevo = false, visibles,
 }: Props<T>) {
   const [filas, setFilas] = useState<T[]>([])
   const [cargando, setCargando] = useState(true)
@@ -287,6 +307,8 @@ export function AbmMaestro<T extends Maestro>({
     }
   }
 
+  const contexto: ContextoDeLista<T> = { filas, recargar, destacar: setDestacada, fallar: setError }
+
   const columnasCompletas = [
     ...columnas,
     {
@@ -304,6 +326,7 @@ export function AbmMaestro<T extends Maestro>({
       header: '',
       cell: ({ row }: { row: { original: T } }) => (
         <div className="flex justify-end gap-1">
+          {accionesDeFila?.(row.original, contexto)}
           <Button variant="ghost" size="icon" aria-label="Editar"
                   onClick={() => abrir(row.original)}>
             <Pencil className="size-4" />
@@ -325,9 +348,14 @@ export function AbmMaestro<T extends Maestro>({
     <div className={encabezado ? 'p-6' : undefined}>
       <div className={`mb-4 flex items-center ${encabezado ? 'justify-between' : 'justify-end'}`}>
         {encabezado && <h1 className="text-2xl font-semibold">{titulo}</h1>}
-        <Button onClick={() => abrir(null)}>
-          <Plus className="size-4" /> Nuevo
-        </Button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {barra?.(contexto)}
+          {!sinNuevo && (
+            <Button onClick={() => abrir(null)}>
+              <Plus className="size-4" /> Nuevo
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Con el formulario abierto el error se lee adentro: el de la página queda detrás del modal y el 422 del
@@ -344,10 +372,11 @@ export function AbmMaestro<T extends Maestro>({
           prueba clickear una fila. */}
       <DataTable
         columns={columnasCompletas}
-        data={filas}
+        data={visibles ? filas.filter(visibles) : filas}
         onRowClick={abrir}
         getRowClassName={(f) => (f.id === destacada ? 'bg-primary/10' : undefined)}
-        emptyMessage={cargando ? 'Cargando…' : 'Todavía no hay nada cargado.'}
+        emptyMessage={cargando ? 'Cargando…'
+          : visibles && filas.length > 0 ? 'Ninguna coincide con el filtro.' : 'Todavía no hay nada cargado.'}
         search={{ campos: buscarEn, placeholder: `Buscar en ${titulo.toLowerCase()}…` }}
       />
 

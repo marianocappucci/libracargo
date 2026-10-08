@@ -14,7 +14,7 @@ import type { Maestro } from '@/api/maestros'
 import { AbmMaestro } from '@/components/AbmMaestro'
 
 import {
-  CAMPOS_CHOFER, CAMPOS_LOCALIDAD, CAMPOS_TIPO_CARGA, CAMPOS_VEHICULO, conFleteros,
+  CAMPOS_CHOFER, CAMPOS_TIPO_CARGA, CAMPOS_VEHICULO, conFleteros,
 } from './definiciones'
 import { useFichaEnLaUrl, useFleteros } from './hooks'
 
@@ -23,17 +23,8 @@ const col = (nombre: string, etiqueta: string) => ({
   header: sortableHeader(etiqueta),
 })
 
-export function Localidades() {
-  return (
-    <AbmMaestro<Maestro>
-      recurso="localidades"
-      titulo="Localidades"
-      campos={CAMPOS_LOCALIDAD}
-      columnas={[col('nombre', 'Nombre'), col('provincia', 'Provincia')]}
-      buscarEn={(f) => [f.nombre as string, f.provincia as string]}
-    />
-  )
-}
+// Configuración → Localidades vive aparte: es la única con catálogo, parajes y acciones propias (ADR-041).
+export { Localidades } from './Localidades'
 
 export function Choferes({ encabezado = true }: { encabezado?: boolean }) {
   const fleteros = useFleteros()

@@ -13,15 +13,18 @@ por dónde se busca, cómo se ordena— entra por parámetro.
 # es un error al importar — las rutas simplemente **no se registran**, y el
 # `openapi()` explota mucho después con un mensaje que no nombra la causa.
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import String, cast, func, or_, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from libracore import geografia
+from pydantic import BaseModel, Field
+from sqlalchemy import String, cast, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user, require_staff
+from app.auth import get_current_user, require_admin, require_staff
 from app.db import obtener_sesion
 from app.models.enums import AccionAuditoria
 from app.models.maestros import Chofer, Localidad, Tercero, TipoCarga, Vehiculo
+from app.models.operacion import OrdenCarga
 from app.schemas.maestros import (
     ChoferIn,
     ChoferOut,
@@ -299,3 +302,123 @@ tipos_carga = construir_router(
 
 #: El orden es el del menú, no alfabético.
 TODOS = [terceros, localidades, choferes, vehiculos, tipos_carga]
+
+
+# ── Localidades: el catálogo de LibraCore y los parajes (ADR-041) ───────────
+#
+# El maestro sigue siendo el que usan las órdenes (FK). El catálogo censal de LibraCore es de sólo lectura y
+# tiene las 4.027 localidades de Argentina: una localidad se **trae** de ahí (queda vinculada por su código
+# censal) en vez de tipearse; lo que no está —un paraje, una planta, un campo con nombre— se carga a mano como
+# **paraje**, con su provincia.
+
+
+class _CatalogoIn(BaseModel):
+    catalogo_id: str = Field(min_length=1, max_length=8)
+
+
+class _UnificarIn(BaseModel):
+    en_id: int
+
+
+def _del_catalogo(catalogo_id: str) -> dict:
+    loc = geografia.localidad(catalogo_id)
+    if loc is None:
+        raise HTTPException(404, f"no hay una localidad con código {catalogo_id!r} en el catálogo")
+    return loc
+
+
+@localidades.get("/buscar/combinado")
+def buscar_localidades(q: str = Query(min_length=1), limite: int = Query(default=20, ge=1, le=100),
+                       sesion: Session = Depends(obtener_sesion)):
+    """Para el selector de origen y destino: lo que ya está en el maestro y, debajo, lo del catálogo que todavía
+    no está (con su provincia). Lo del catálogo se trae con `POST /desde-catalogo` al elegirlo."""
+    aguja = geografia.normalizar(q)
+    propias = [loc for loc in sesion.scalars(select(Localidad).order_by(Localidad.nombre))
+               if aguja in geografia.normalizar(loc.nombre)]
+    propias.sort(key=lambda loc: (not geografia.normalizar(loc.nombre).startswith(aguja), loc.nombre))
+    ya = {loc.catalogo_id for loc in propias if loc.catalogo_id} | set(
+        sesion.scalars(select(Localidad.catalogo_id).where(Localidad.catalogo_id.is_not(None))))
+    catalogo = [c for c in geografia.localidades(q=q, limite=limite + len(ya)) if c["id"] not in ya][:limite]
+    return {"maestro": [_a_salida(loc, LocalidadOut, "activa") for loc in propias[:limite]], "catalogo": catalogo}
+
+
+@localidades.post("/desde-catalogo", response_model=LocalidadOut)
+def traer_del_catalogo(datos: _CatalogoIn, response: Response, sesion: Session = Depends(obtener_sesion),
+                       actual: dict = Depends(get_current_user)):
+    """La localidad del maestro que corresponde a esa del catálogo: la que ya está vinculada, una del mismo nombre
+    y provincia que se vincula, o una nueva (201)."""
+    loc = _del_catalogo(datos.catalogo_id)
+    existente = sesion.scalar(select(Localidad).where(Localidad.catalogo_id == loc["id"]))
+    if existente is not None:
+        return _a_salida(existente, LocalidadOut, "activa")
+    mismo = next((x for x in sesion.scalars(select(Localidad).where(Localidad.catalogo_id.is_(None)))
+                  if geografia.normalizar(x.nombre) == geografia.normalizar(loc["nombre"])
+                  and geografia.normalizar(x.provincia or "") == geografia.normalizar(loc["provincia"])), None)
+    if mismo is not None:
+        antes = auditoria.instantanea(mismo)
+        mismo.catalogo_id, mismo.es_paraje, mismo.activa = loc["id"], False, True
+        auditoria.registrar(sesion, actual, "localidades", mismo.id, AccionAuditoria.MODIFICACION,
+                            antes=antes, despues=mismo)
+        sesion.commit()
+        return _a_salida(mismo, LocalidadOut, "activa")
+    nueva = Localidad(nombre=loc["nombre"], provincia=loc["provincia"], catalogo_id=loc["id"], activa=True)
+    sesion.add(nueva)
+    try:
+        sesion.flush()
+        auditoria.registrar(sesion, actual, "localidades", nueva.id, AccionAuditoria.ALTA, despues=nueva)
+        sesion.commit()
+    except IntegrityError as err:
+        sesion.rollback()
+        raise traducir_integridad(err) from None
+    response.status_code = 201
+    return _a_salida(nueva, LocalidadOut, "activa")
+
+
+@localidades.post("/{id_}/vincular", response_model=LocalidadOut)
+def vincular_al_catalogo(id_: int, datos: _CatalogoIn, sesion: Session = Depends(obtener_sesion),
+                         actual: dict = Depends(get_current_user)):
+    """Vincula una localidad que ya existe con una del catálogo (deja de ser paraje). Completa la provincia si
+    faltaba; el nombre no se toca."""
+    loc = _del_catalogo(datos.catalogo_id)
+    obj = sesion.get(Localidad, id_)
+    if obj is None:
+        raise HTTPException(404, f"no existe localidades con id {id_}")
+    otra = sesion.scalar(select(Localidad).where(Localidad.catalogo_id == loc["id"], Localidad.id != id_))
+    if otra is not None:
+        raise HTTPException(409, f"«{loc['nombre']}» del catálogo ya está vinculada a «{otra.nombre}» (id {otra.id})"
+                                 ": si son la misma, unificalas")
+    antes = auditoria.instantanea(obj)
+    obj.catalogo_id, obj.es_paraje = loc["id"], False
+    obj.provincia = obj.provincia or loc["provincia"]
+    try:
+        auditoria.registrar(sesion, actual, "localidades", obj.id, AccionAuditoria.MODIFICACION,
+                            antes=antes, despues=obj)
+        sesion.commit()
+    except IntegrityError as err:
+        sesion.rollback()
+        raise traducir_integridad(err) from None
+    return _a_salida(obj, LocalidadOut, "activa")
+
+
+@localidades.post("/{id_}/unificar", response_model=LocalidadOut, dependencies=[Depends(require_admin)])
+def unificar(id_: int, datos: _UnificarIn, sesion: Session = Depends(obtener_sesion),
+             actual: dict = Depends(get_current_user)):
+    """Dos localidades que son el mismo lugar («Pto. San Martín» y «Pto San Martín»): las órdenes de `id_` pasan
+    a `en_id` y `id_` queda dada de baja. Sólo un administrador: mueve el origen o el destino de órdenes."""
+    if id_ == datos.en_id:
+        raise HTTPException(422, "una localidad no se unifica consigo misma")
+    origen, destino = sesion.get(Localidad, id_), sesion.get(Localidad, datos.en_id)
+    if origen is None or destino is None:
+        raise HTTPException(404, "no existe alguna de las dos localidades")
+    movidas = 0
+    for columna in (OrdenCarga.origen_id, OrdenCarga.destino_id):
+        movidas += sesion.execute(update(OrdenCarga).where(columna == id_)
+                                  .values({columna.key: datos.en_id})).rowcount
+    antes = auditoria.instantanea(origen)
+    origen.activa = False
+    destino.activa = True
+    auditoria.registrar(sesion, actual, "localidades", origen.id, AccionAuditoria.BAJA, antes=antes,
+                        despues={**auditoria.instantanea(origen), "unificada_en": destino.id,
+                                 "ordenes_movidas": movidas})
+    sesion.commit()
+    return _a_salida(destino, LocalidadOut, "activa")

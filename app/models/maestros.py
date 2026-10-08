@@ -87,8 +87,21 @@ class Localidad(Base, Auditable):
     nombre: Mapped[str] = mapped_column(String(80), nullable=False)
     provincia: Mapped[str | None] = mapped_column(String(60), nullable=True)
     activa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    #: El código censal de la localidad en el catálogo de LibraCore (`geografia.localidad`), si está vinculada
+    #: (ADR-041). Una localidad del catálogo está una sola vez en el maestro.
+    catalogo_id: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    #: Un lugar real que no está en ningún catálogo (un paraje, una planta, un campo con nombre): la excepción
+    #: que se carga a mano, con su provincia.
+    es_paraje: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
-    __table_args__ = (UniqueConstraint("nombre", name="uq_localidades_nombre"),)
+    # 🔑 Único por nombre **y provincia**, no por nombre: con el catálogo entran «San Pedro» de Buenos Aires y
+    # de Jujuy, que son dos lugares. La `0025` cambió la restricción vieja (`uq_localidades_nombre`).
+    __table_args__ = (
+        # `NULLS NOT DISTINCT`: sin eso, dos «Suipacha» sin provincia no chocarían (en SQL, NULL ≠ NULL).
+        UniqueConstraint("nombre", "provincia", name="uq_localidades_nombre_provincia",
+                         postgresql_nulls_not_distinct=True),
+        UniqueConstraint("catalogo_id", name="uq_localidades_catalogo"),
+    )
 
 
 class Chofer(Base, Auditable, Anotable):
