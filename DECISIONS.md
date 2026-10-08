@@ -1011,3 +1011,25 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 - **El duplicado que ya existe no se une solo**: los dos registros tienen órdenes y cuenta corriente de cada lado. Unificar entidades es una operación aparte, con su propio diseño.
 - Una fixture de los tests usaba el mismo CUIT para dos fleteros distintos; ahora tiene uno propio.
 - Vehículos queda en Configuración y se ve desde la ficha del fletero.
+
+## ADR-041 — Las localidades se traen del catálogo de Argentina; los parajes son la excepción cargada a mano
+
+**Contexto.** El humano (2026-10-08): «en Configuración tenemos Localidades, un listado que se fue cargando con los lugares donde se hicieron fletes. ¿Se puede traer una base con todas las localidades de Argentina y del Mercosur? Y que también se pueda poner a mano un paraje que no esté como localidad, como excepción, porque cargar las localidades es medio de gusto». LibraCore ya tiene el catálogo oficial de Argentina: 24 provincias y 4.027 localidades censales del INDEC, empaquetado y de sólo lectura (`libracore.geografia`). Y ya decía que el maestro editable tiene que seguir siendo del producto, porque hay lugares reales que no figuran en ningún recurso oficial. Medido en Suitrans: 120 localidades.
+- **92 coinciden** con una sola localidad del catálogo.
+- **28 no**:
+  - partidos, como Exaltación de la Cruz o General Rodríguez;
+  - abreviaturas duplicadas: «Pto. San Martín» y «Pto San Martín»;
+  - parajes y puntos: Tomás Jofré, Ortiz Basualdo, Puerto Robles;
+  - basura del legado: «Campo», «Shap», «(sin nombre)».
+
+**Decisión.**
+1. **El maestro sigue siendo el de las órdenes** (FK de origen y destino), y suma **`catalogo_id`** (código censal, único) y **`es_paraje`**. La unicidad pasa de `nombre` a **`(nombre, provincia)`** con `NULLS NOT DISTINCT`: entran «San Pedro» de Buenos Aires y de Jujuy, y dos «Suipacha» sin provincia siguen chocando.
+2. **Una localidad se trae del catálogo** (`POST /api/localidades/desde-catalogo`): si ya está vinculada se devuelve; si hay una del mismo nombre y provincia se vincula; si no, se crea. El selector de origen y destino busca en las dos fuentes (`GET /api/localidades/buscar/combinado`).
+3. **Un paraje se carga a mano, con provincia obligatoria** (`es_paraje`).
+4. **Vincular** una existente al catálogo y **unificar** dos que son el mismo lugar. Unificar mueve el origen y el destino de las órdenes y da de baja la que sobra; lo hace sólo un administrador y queda en la auditoría con las órdenes movidas.
+5. **La migración `0025` vincula sola** lo que coincide una sola vez y completa la provincia faltante. **No renombra ni borra**: lo demás queda «sin vincular» para revisar en la pantalla.
+6. La búsqueda por código censal es del motor (`geografia.localidad(id)`, libracore v1.145.0).
+
+**Consecuencias.**
+- **Mercosur, todavía no:** el catálogo es sólo de Argentina. Brasil, Uruguay, Paraguay, Bolivia y Chile necesitan una fuente externa (GeoNames) y un formato distinto; se suma al motor si el humano lo confirma. Mientras tanto, un lugar del exterior se carga como paraje.
+- El código de localidad **de ARCA** (para la Carta de Porte) es otro catálogo. Se mapea en la fase 4b, por nombre y provincia.

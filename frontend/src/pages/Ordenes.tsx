@@ -12,9 +12,12 @@ import type { Filtros, Opciones, Orden } from '@/api/ordenes'
 import { ETAPAS, cargarOpciones, ordenes as api } from '@/api/ordenes'
 import { formatearKilos } from '@/api/cartas-porte'
 import { useConfiguracion } from '@/api/configuracion'
+import type { Localidad } from '@/api/localidades'
+import { aOpcionLocalidad } from '@/api/localidades'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { AdjuntosDeOrden } from '@/components/AdjuntosDeOrden'
 import { CambiarEtapa } from '@/components/CambiarEtapa'
+import { ElegirLocalidad } from '@/components/ElegirLocalidad'
 import { SeccionFlete } from '@/components/FleteDeOrden'
 import { KilosDelDetalle, SeccionKilos } from '@/components/KilosDeOrden'
 import { OrdenImpresa } from '@/components/OrdenImpresa'
@@ -99,6 +102,35 @@ function Elegir({ form, nombre, etiqueta, opciones, opcional }: {
   )
 }
 
+/** Origen y destino: el selector que busca en el maestro y en el catálogo de Argentina, y deja cargar un paraje (ADR-041).
+ *  La localidad que se trae del catálogo o se carga a mano se suma a la lista del formulario (`alIncorporar`) para que
+ *  su nombre se pueda mostrar, y se elige. */
+function ElegirLocalidadDeOrden({ form, nombre, etiqueta, opciones, alIncorporar }: {
+  form: Form
+  nombre: keyof EntradaOrden
+  etiqueta: string
+  opciones: Opciones['localidades']
+  alIncorporar: (l: Localidad) => void
+}) {
+  const error = form.formState.errors[nombre]
+  const valor = form.watch(nombre)
+  return (
+    <div className="grid min-w-0 gap-1">
+      <Label htmlFor={nombre}>{etiqueta}</Label>
+      <ElegirLocalidad
+        id={nombre} etiqueta={etiqueta}
+        valor={valor === undefined || valor === null ? '' : String(valor)}
+        localidades={opciones}
+        alElegir={(v) => form.setValue(nombre, v as never, { shouldValidate: true })}
+        alIncorporar={alIncorporar}
+        invalido={error ? true : undefined}
+      >
+        {error && <p className="text-destructive text-xs">{String(error.message)}</p>}
+      </ElegirLocalidad>
+    </div>
+  )
+}
+
 export default function Ordenes() {
   const [filas, setFilas] = useState<Orden[]>([])
   const [opciones, setOpciones] = useState<Opciones | null>(null)
@@ -119,6 +151,17 @@ export default function Ordenes() {
     resolver: zodResolver(esquemaOrden),
     defaultValues: ORDEN_VACIA as EntradaOrden,
   })
+
+  // Una localidad traída del catálogo o cargada como paraje desde el selector: entra a la lista del formulario (y al
+  // filtro de la grilla) sin volver a pedir todas las opciones. Si ya estaba, se reemplaza: puede haber cambiado.
+  const incorporarLocalidad = useCallback((l: Localidad) => {
+    setOpciones((o) => {
+      if (!o) return o
+      const nueva = aOpcionLocalidad(l)
+      const hay = o.localidades.some((x) => x.id === l.id)
+      return { ...o, localidades: hay ? o.localidades.map((x) => (x.id === l.id ? nueva : x)) : [...o.localidades, nueva] }
+    })
+  }, [])
 
   useEffect(() => {
     cargarOpciones().then(setOpciones).catch((e) => setError(mensajeDeError(e)))
@@ -294,10 +337,10 @@ export default function Ordenes() {
                     opciones={opciones?.clientes ?? []} />
             <Elegir form={form} nombre="fletero_id" etiqueta="Fletero"
                     opciones={opciones?.fleteros ?? []} opcional />
-            <Elegir form={form} nombre="origen_id" etiqueta="Origen"
-                    opciones={opciones?.localidades ?? []} />
-            <Elegir form={form} nombre="destino_id" etiqueta="Destino"
-                    opciones={opciones?.localidades ?? []} />
+            <ElegirLocalidadDeOrden form={form} nombre="origen_id" etiqueta="Origen"
+                                    opciones={opciones?.localidades ?? []} alIncorporar={incorporarLocalidad} />
+            <ElegirLocalidadDeOrden form={form} nombre="destino_id" etiqueta="Destino"
+                                    opciones={opciones?.localidades ?? []} alIncorporar={incorporarLocalidad} />
             <Elegir form={form} nombre="chofer_id" etiqueta="Chofer"
                     opciones={opciones?.choferes ?? []} opcional />
             <Elegir form={form} nombre="vehiculo_id" etiqueta="Vehículo"

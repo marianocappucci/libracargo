@@ -56,3 +56,12 @@ export function _olvidarCache(): void {
   provinciasEnMemoria = null
   localidadesPorProvincia.clear()
 }
+
+/** Busca en el catálogo por nombre (sin tildes ni mayúsculas, lo resuelve el servidor). Es lo que usan «Vincular al
+ *  catálogo» y «Agregar del catálogo» de Configuración → Localidades: ahí se busca escribiendo, no se baja una provincia
+ *  entera. Sin caché: cada consulta es distinta. */
+export function buscarEnElCatalogo(q: string, limite = 20): Promise<LocalidadDelCatalogo[]> {
+  return api.get<LocalidadDelCatalogo[]>(
+    `/api/geo/localidades?q=${encodeURIComponent(q)}&limite=${limite}`,
+  )
+}

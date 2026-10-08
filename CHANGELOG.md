@@ -3,6 +3,14 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Localidades del catálogo de Argentina; los parajes, a mano
+
+- **El origen y el destino se buscan en el catálogo oficial de Argentina** (4.027 localidades del INDEC), además de las ya cargadas (ADR-041). Elegir una del catálogo la suma sola. Lo que no está (un paraje, una planta, un campo con nombre) se carga **a mano como paraje**, con su provincia.
+- **Configuración → Localidades** muestra de dónde sale cada una: Catálogo, Paraje o Sin vincular. Se puede **vincular** una al catálogo, **marcarla como paraje** o **unificar** dos que son el mismo lugar; esto último mueve sus órdenes y lo hace sólo un administrador.
+- **Migración `0025`**: vincula sola las que coinciden con una sola localidad del catálogo (en Suitrans, 92 de 120) y completa su provincia. No renombra ni borra nada. La unicidad pasa a nombre + provincia.
+- **API**: `GET /api/localidades/buscar/combinado`, `POST /api/localidades/desde-catalogo`, `POST /api/localidades/{id}/vincular` y `POST /api/localidades/{id}/unificar` (admin). `catalogo_id` y `es_paraje` en las localidades.
+- **Pin**: libracore v1.145.0.
+
 ## [Unreleased] — «Entidades» en el menú: clientes, fleteros, choferes y proveedores
 
 - **Nuevo ítem del menú «Entidades»** (ADR-040), con pestañas **Clientes, Fleteros, Choferes y Proveedores**. Terceros y Choferes salen de Configuración.
