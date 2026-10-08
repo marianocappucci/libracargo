@@ -29,6 +29,7 @@ import { useSearchParams } from 'react-router-dom'
 import { ICONOS_LC } from '@/iconos'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { seccionDe } from '@/navegacion'
+import { PantallaConTitulo } from '@/components/AccionesDelTitulo'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 import Comprobantes from './Comprobantes'
@@ -45,19 +46,20 @@ export default function ComprobantesSeccion() {
 
   return (
     <div>
-      <TituloPantalla icono={ICONOS_LC.comprobantes}>Comprobantes</TituloPantalla>
-      <Tabs value={actual} onValueChange={elegir} className="mt-4 gap-4">
-        <TabsList className="no-imprimir">
-          <TabsTrigger value="clientes">
-            <ICONOS_LC.clientes className="size-4" />Clientes
-          </TabsTrigger>
-          <TabsTrigger value="proveedores">
-            <ICONOS_LC.proveedores className="size-4" />Proveedores
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="clientes"><Comprobantes /></TabsContent>
-        <TabsContent value="proveedores"><Gastos /></TabsContent>
-      </Tabs>
+      <PantallaConTitulo titulo={<TituloPantalla icono={ICONOS_LC.comprobantes}>Comprobantes</TituloPantalla>}>
+        <Tabs value={actual} onValueChange={elegir} className="gap-4">
+          <TabsList className="no-imprimir">
+            <TabsTrigger value="clientes">
+              <ICONOS_LC.clientes className="size-4" />Clientes
+            </TabsTrigger>
+            <TabsTrigger value="proveedores">
+              <ICONOS_LC.proveedores className="size-4" />Proveedores
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="clientes"><Comprobantes /></TabsContent>
+          <TabsContent value="proveedores"><Gastos /></TabsContent>
+        </Tabs>
+      </PantallaConTitulo>
     </div>
   )
 }

@@ -4,8 +4,9 @@
  *  El servidor decide qué vale (JPG, PNG, WEBP, HEIC o PDF de hasta 10 MB, por el contenido y no por el nombre) y su
  *  422 se muestra tal cual; acá no se repite esa regla.
  */
+import { CampoArchivo } from 'libra-ui/CampoArchivo'
 import { ExternalLink, Paperclip, Trash2 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { Adjunto, Orden } from '@/api/ordenes'
 import { adjuntosDeOrden } from '@/api/ordenes'
@@ -13,7 +14,6 @@ import { formatearInstante } from '@/api/cartas-porte'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { formatearTamanio } from '@/components/esquema-orden'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
 export function AdjuntosDeOrden({ orden }: { orden: Orden }) {
@@ -22,7 +22,6 @@ export function AdjuntosDeOrden({ orden }: { orden: Orden }) {
   const [subiendo, setSubiendo] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [aBorrar, setABorrar] = useState<Adjunto | null>(null)
-  const entrada = useRef<HTMLInputElement>(null)
   const anulada = orden.estado === 'anulada'
 
   useEffect(() => {
@@ -35,7 +34,7 @@ export function AdjuntosDeOrden({ orden }: { orden: Orden }) {
     return () => { vigente = false }
   }, [orden.id])
 
-  async function subir(archivo: File | undefined) {
+  async function subir(archivo: File | null) {
     if (!archivo) return
     setError(null); setSubiendo(true)
     try {
@@ -46,8 +45,6 @@ export function AdjuntosDeOrden({ orden }: { orden: Orden }) {
       setError(mensajeDeError(e))
     } finally {
       setSubiendo(false)
-      // Sin esto, elegir el MISMO archivo otra vez (tras un error, por ejemplo) no dispara `change`.
-      if (entrada.current) entrada.current.value = ''
     }
   }
 
@@ -97,8 +94,8 @@ export function AdjuntosDeOrden({ orden }: { orden: Orden }) {
           </Label>
           {/* `image/*` hace que el celular ofrezca sacar la foto en el momento, además de la galería y los archivos;
               sin `capture` a propósito: con él no se podría elegir un PDF. */}
-          <Input id="adjunto-nuevo" ref={entrada} type="file" accept="image/*,application/pdf"
-                 disabled={subiendo} onChange={(e) => subir(e.target.files?.[0])} />
+          <CampoArchivo id="adjunto-nuevo" archivo={null} accept="image/*,application/pdf"
+                        placeholder="Foto o PDF" disabled={subiendo} onChange={(f) => void subir(f)} />
         </div>
       )}
 

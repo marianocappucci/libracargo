@@ -144,6 +144,23 @@ describe('las pestañas', () => {
     expect(activas()).toEqual(['Comprobantes'])
   })
 
+  it('🔑 «Pre facturas» y «Facturar pendientes» están en la línea del título «Comprobantes», no debajo de las pestañas', async () => {
+    montar('/comprobantes')
+    const facturar = await screen.findByText('Facturar pendientes')
+    const fila = screen.getByRole('heading', { name: 'Comprobantes' }).parentElement as HTMLElement
+    expect(within(fila).getByText('Facturar pendientes')).toBe(facturar)
+    expect(within(fila).getByText('Pre facturas')).toBeInTheDocument()
+    expect(screen.getByRole('tablist')).not.toContainElement(facturar)
+  })
+
+  it('en Proveedores la línea del título lleva el «Nuevo comprobante» de esa pestaña, y los de Clientes no', async () => {
+    montar('/comprobantes?seccion=proveedores')
+    const nuevo = await screen.findByRole('button', { name: /Nuevo comprobante/ })
+    const fila = screen.getByRole('heading', { name: 'Comprobantes' }).parentElement as HTMLElement
+    expect(within(fila).getByRole('button', { name: /Nuevo comprobante/ })).toBe(nuevo)
+    expect(within(fila).queryByText('Facturar pendientes')).toBeNull()
+  })
+
   it('🔑 la pestaña queda en la URL: elegir Proveedores la escribe, y atrás vuelve a Clientes', async () => {
     const { container } = montar('/comprobantes')
     fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Proveedores' }))

@@ -17,7 +17,8 @@
  * Era texto libre, donde entraba cualquier cosa; no es la lista del kit, cuyos
  * valores son las etiquetas y no los del enum de este producto.
  */
-import { Trash2, Upload } from 'lucide-react'
+import { CampoArchivo } from 'libra-ui/CampoArchivo'
+import { Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import type { Configuracion as Datos } from '@/api/configuracion'
@@ -76,7 +77,7 @@ export function DatosDeLaEmpresa() {
     }
   }
 
-  async function subirLogo(archivo: File | undefined) {
+  async function subirLogo(archivo: File | null) {
     if (!archivo) return
     setError(null); setAviso(null)
     try {
@@ -158,14 +159,9 @@ export function DatosDeLaEmpresa() {
           )}
           <div className="flex flex-col gap-2">
             <Label htmlFor="c-logo" className="sr-only">Subir logo</Label>
-            <Button asChild variant="outline">
-              <label htmlFor="c-logo" className="cursor-pointer">
-                <Upload className="size-4" /> Subir logo
-                <input id="c-logo" type="file" className="hidden"
-                       accept="image/png,image/jpeg,image/webp"
-                       onChange={(e) => subirLogo(e.target.files?.[0])} />
-              </label>
-            </Button>
+            {/* `archivo={null}`: elegir y subir ya, sin guardar el `File` (el logo vive en el servidor). */}
+            <CampoArchivo id="c-logo" archivo={null} accept="image/png,image/jpeg,image/webp"
+                          placeholder="PNG, JPG o WEBP" className="w-56" onChange={(f) => void subirLogo(f)} />
             {datos.tiene_logo && (
               <Button variant="ghost" onClick={async () => {
                 const nueva = await configuracion.borrarLogo()
