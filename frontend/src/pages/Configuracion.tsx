@@ -30,19 +30,19 @@
  *  suite. Con el tutorial de la contraseña de aplicación de Gmail.
  */
 import { createConfiguracion } from 'libra-ui/Configuracion'
-import {
-  CarFront, MapPin, Package, Route, ShieldCheck, Users, UserSquare,
-} from 'lucide-react'
+import { CarFront, MapPin, Package, Route, ShieldCheck } from 'lucide-react'
+import { Navigate, useSearchParams } from 'react-router-dom'
 
 import { ICONOS_LC } from '@/iconos'
+import { irA, SECCIONES_MUDADAS_A_ENTIDADES } from '@/navegacion'
 import { FacturacionArca } from '@/pages/Arca'
 import { DatosDeLaEmpresa } from '@/pages/DatosDeLaEmpresa'
 import {
-  Choferes, Localidades, Terceros, TiposCarga, Vehiculos,
+  Localidades, TiposCarga, Vehiculos,
 } from '@/pages/maestros'
 import { TarifarioDeReferencia } from '@/pages/Tarifario'
 
-export const Configuracion = createConfiguracion({
+const ConfiguracionDelKit = createConfiguracion({
   // El icono que el sidebar de este producto le da a /configuracion.
   icono: ICONOS_LC.configuracion,
   // Sale en el tutorial de Gmail —es el nombre que hay que ponerle a la
@@ -62,12 +62,11 @@ export const Configuracion = createConfiguracion({
       },
     ],
   },
-  // Los maestros. Se cargan al arrancar y después se tocan poco, que es el
-  // criterio por el que están en Configuración y no como siete ítems del menú
-  // lateral con el mismo peso que las pantallas de todos los días.
+  // Los maestros que quedan. Se cargan al arrancar y después se tocan poco, que es el
+  // criterio por el que están en Configuración y no como ítems del menú
+  // lateral con el mismo peso que las pantallas de todos los días. Terceros y Choferes ya no están:
+  // son «Entidades», una entrada propia del menú (ADR-040).
   propias: [
-    { clave: 'terceros', label: 'Terceros', icono: Users, contenido: <Terceros /> },
-    { clave: 'choferes', label: 'Choferes', icono: UserSquare, contenido: <Choferes /> },
     // `CarFront` y no `Truck`: en LibraCargo el camión es el ícono de los fleteros (catálogo de íconos de identidad, ADR-035).
     { clave: 'vehiculos', label: 'Vehículos', icono: CarFront, contenido: <Vehiculos /> },
     { clave: 'localidades', label: 'Localidades', icono: MapPin, contenido: <Localidades /> },
@@ -77,5 +76,20 @@ export const Configuracion = createConfiguracion({
     { clave: 'tarifario', label: 'Tarifario de referencia', icono: Route, contenido: <TarifarioDeReferencia /> },
   ],
 })
+
+/** Configuración, con los enlaces viejos a Terceros y Choferes redirigidos a «Entidades» (ADR-040).
+ *
+ *  `/configuracion?seccion=terceros` y `?seccion=choferes` existían en marcadores, en el log y en los correos: sin la
+ *  redirección el kit cae en su primera sección y quien llega no sabe adónde se fue lo que buscaba. Se conserva el
+ *  resto del query (el `?ver=`), y `replace`: el enlace viejo no queda en el historial. */
+export function Configuracion() {
+  const [params] = useSearchParams()
+  const pestana = SECCIONES_MUDADAS_A_ENTIDADES[params.get('seccion') ?? '']
+  if (pestana) {
+    const ver = Number(params.get('ver'))
+    return <Navigate to={irA.entidades(pestana, Number.isInteger(ver) && ver > 0 ? ver : undefined)} replace />
+  }
+  return <ConfiguracionDelKit />
+}
 
 export default Configuracion

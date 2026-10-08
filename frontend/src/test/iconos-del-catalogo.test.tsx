@@ -38,12 +38,13 @@ vi.mock('@/context/AuthContext', () => ({
 
 const { default: App } = await import('@/App')
 const { default: CuentaCorriente } = await import('@/pages/CuentaCorriente')
+const { default: Entidades } = await import('@/pages/Entidades')
 const { NAV_SECCIONES } = await import('@/components/Layout')
 
 const SRC = join(process.cwd(), 'src')
 const leer = (ruta: string) => readFileSync(join(SRC, ruta), 'utf8')
 
-/** Qué concepto del catálogo es cada entrada del menú que lo tiene. «Órdenes de carga» y «Cartas de porte» son de este producto y no entran al catálogo. */
+/** Qué concepto del catálogo es cada entrada del menú que lo tiene. «Órdenes de carga», «Cartas de porte» y «Entidades» son de este producto y no entran al catálogo. */
 const MENU: Record<string, Concepto> = {
   '/': 'dashboard',
   '/cuentas': 'cuentaCorriente',
@@ -103,10 +104,10 @@ describe('el menú usa el catálogo', () => {
     }
   })
 
-  it('🔴 las entradas propias del producto (Órdenes de carga y Cartas de porte) no usan el dibujo de un concepto del catálogo', () => {
+  it('🔴 las entradas propias del producto (Órdenes de carga, Cartas de porte y Entidades) no usan el dibujo de un concepto del catálogo', () => {
     const delCatalogo = new Set(Object.values(iconosDe('libracargo')).map(nombre))
     const propias = [...iconosDelNav(leer('components/Layout.tsx'))].filter(([ruta]) => !(ruta in MENU))
-    expect(propias.map(([ruta]) => ruta)).toEqual(['/ordenes', '/cartas-porte'])
+    expect(propias.map(([ruta]) => ruta)).toEqual(['/ordenes', '/cartas-porte', '/entidades'])
     for (const [, icono] of propias) {
       expect(delCatalogo.has(nombre((lucide as unknown as Record<string, unknown>)[icono]) ?? icono)).toBe(false)
     }
@@ -165,5 +166,16 @@ describe('Proveedores es Store y Fleteros es Truck, en lo que se dibuja', () => 
     expect(iconoDe(within(pestanas).getByRole('tab', { name: 'Clientes' }))).toBe('lucide-users')
     expect(iconoDe(within(pestanas).getByRole('tab', { name: 'Fleteros' }))).toBe('lucide-truck')
     expect(iconoDe(within(pestanas).getByRole('tab', { name: 'Proveedores' }))).toBe('lucide-store')
+  })
+
+  it('🔴 Entidades: las pestañas repiten los íconos de Cuenta corriente, y Choferes no choca con ninguno', async () => {
+    render(<MemoryRouter initialEntries={['/entidades']}><Entidades /></MemoryRouter>)
+    const pestanas = await screen.findByRole('tablist')
+    const dibujos = ['Clientes', 'Fleteros', 'Choferes', 'Proveedores']
+      .map((n) => iconoDe(within(pestanas).getByRole('tab', { name: n })))
+    expect(dibujos.slice(0, 2)).toEqual(['lucide-users', 'lucide-truck'])
+    expect(dibujos[3]).toBe('lucide-store')
+    // Cuatro pestañas, cuatro dibujos: es lo que el catálogo exige dentro de un producto.
+    expect(new Set(dibujos).size).toBe(4)
   })
 })

@@ -3,6 +3,30 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Localidades del catálogo de Argentina; los parajes, a mano
+
+- **El origen y el destino se buscan en el catálogo oficial de Argentina** (4.027 localidades del INDEC), además de las ya cargadas (ADR-041). Elegir una del catálogo la suma sola. Lo que no está (un paraje, una planta, un campo con nombre) se carga **a mano como paraje**, con su provincia.
+- **Configuración → Localidades** muestra de dónde sale cada una: Catálogo, Paraje o Sin vincular. Se puede **vincular** una al catálogo, **marcarla como paraje** o **unificar** dos que son el mismo lugar; esto último mueve sus órdenes y lo hace sólo un administrador.
+- **Migración `0025`**: vincula sola las que coinciden con una sola localidad del catálogo (en Suitrans, 92 de 120) y completa su provincia. No renombra ni borra nada. La unicidad pasa a nombre + provincia.
+- **API**: `GET /api/localidades/buscar/combinado`, `POST /api/localidades/desde-catalogo`, `POST /api/localidades/{id}/vincular` y `POST /api/localidades/{id}/unificar` (admin). `catalogo_id` y `es_paraje` en las localidades.
+- **Pin**: libracore v1.145.0.
+
+## [Unreleased] — «Entidades» en el menú: clientes, fleteros, choferes y proveedores
+
+- **Nuevo ítem del menú «Entidades»** (ADR-040), con pestañas **Clientes, Fleteros, Choferes y Proveedores**. Terceros y Choferes salen de Configuración.
+- **Una persona o empresa es una sola entidad, con uno o más roles.** Si se da de alta un CUIT que ya existe, el sistema no la duplica: avisa quién es y ofrece **sumarle el rol**, por ejemplo cuando un fletero también es proveedor.
+- **La ficha del fletero** muestra sus choferes y sus vehículos.
+- **API**: `POST /api/terceros/{id}/roles/{rol}`; 409 con la entidad existente cuando el CUIT se repite; `?fletero_id=` en `/api/choferes` y `/api/vehiculos`; la búsqueda de choferes incluye el CUIT.
+- Sin migración.
+
+## [Unreleased] — El tarifario se carga desde el PDF; la carta de porte dice desde cuándo está en su estado
+
+- **Cargar el tarifario desde el PDF** que se descarga de la página (ADR-039). El sistema lee la tabla de km y tarifas, la vigencia y el valor de estadía, y muestra una **vista previa** antes de cargarlo, para comparar con el PDF. Los números del PDF vienen codificados en otra tipografía: el sistema los decodifica y verifica que la tabla tenga sentido (km consecutivos y tarifas que no bajan). Si no puede leerla con seguridad, no carga nada y lo avisa. El CSV sigue como alternativa.
+- **Cartas de porte: «Anulada desde el 22-09-2026 09:13».** Se muestra desde cuándo la carta está en su estado. El PDF de una carta es del día en que se emitió, y una anulación posterior no aparece en él.
+- **API**: `POST /api/tarifario/previsualizar`; `POST /api/tarifario` acepta PDF y la vigencia, el nombre y la estadía pasan a ser opcionales. `fecha_inicio_estado` en las cartas de porte.
+- **Migración `0024`**: una columna vacía en `cartas_porte`, que se completa al actualizar cada carta.
+- Dependencia nueva: `pdfplumber`.
+
 ## [Unreleased] — El tarifario de referencia, y km y tarifa por tonelada en la orden
 
 - **Tarifario de referencia** (ADR-038): la tabla de tarifas por tonelada para cada kilómetro, con su vigencia y el valor de estadía. Se carga desde un CSV `km;tarifa` en Configuración (sólo un administrador) y las ediciones anteriores se conservan.

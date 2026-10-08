@@ -41,21 +41,49 @@ describe('sugerencia', () => {
   })
 })
 
-describe('cargar', () => {
-  const archivo = new File(['80;23.205,57\n'], 'tarifario.csv', { type: 'text/csv' })
+describe('previsualizar', () => {
+  it('manda el archivo como multipart a /previsualizar y devuelve lo leído', async () => {
+    const leido = { vigencia: '2026-04-10', filas: 1050, muestra: [], reemplaza: false }
+    postForm.mockResolvedValue(leido)
+    const archivo = new File(['%PDF-1.4'], 'tarifario.pdf', { type: 'application/pdf' })
+    await expect(tarifario.previsualizar(archivo)).resolves.toBe(leido)
+    const [ruta, cuerpo] = postForm.mock.calls[0] as [string, FormData]
+    expect(ruta).toBe('/api/tarifario/previsualizar')
+    expect((cuerpo.get('archivo') as File).name).toBe('tarifario.pdf')
+    expect([...cuerpo.keys()]).toEqual(['archivo'])
+  })
 
-  it('manda el CSV, la vigencia y el nombre como multipart; el valor de estadía sólo si hay', async () => {
+  it('un 422 se propaga: el `detail` explica por qué no se pudo leer', async () => {
+    postForm.mockRejectedValue(error(422))
+    await expect(tarifario.previsualizar(new File(['x'], 'a.pdf'))).rejects.toThrow('HTTP 422')
+  })
+})
+
+describe('cargar', () => {
+  const archivo = new File(['%PDF-1.4'], 'tarifario.pdf', { type: 'application/pdf' })
+
+  it('manda sólo el archivo si no hay nada que decir: el servidor lee el resto del PDF', async () => {
     postForm.mockResolvedValue({ id: 1 })
-    await tarifario.cargar({ archivo, vigencia: '2026-04-10', nombre: 'Abril 2026', valorEstadia: ' 214.146,67 ' })
+    await tarifario.cargar({ archivo })
     const [ruta, cuerpo] = postForm.mock.calls[0] as [string, FormData]
     expect(ruta).toBe('/api/tarifario')
     expect(cuerpo.get('archivo')).toBeInstanceOf(File)
+    expect([...cuerpo.keys()]).toEqual(['archivo'])
+  })
+
+  it('la vigencia, el nombre y el valor de estadía, si vienen, van como multipart (sin los espacios de los costados)', async () => {
+    postForm.mockResolvedValue({ id: 1 })
+    await tarifario.cargar({ archivo, vigencia: '2026-04-10', nombre: ' Abril 2026 ', valorEstadia: ' 214.146,67 ' })
+    const cuerpo = postForm.mock.calls[0][1] as FormData
     expect(cuerpo.get('vigencia')).toBe('2026-04-10')
     expect(cuerpo.get('nombre')).toBe('Abril 2026')
-    // Tal cual lo escribió, sin el espacio de los costados: el servidor entiende `214.146,67`.
+    // Tal cual lo escribió: el servidor entiende `214.146,67`.
     expect(cuerpo.get('valor_estadia')).toBe('214.146,67')
+  })
 
-    await tarifario.cargar({ archivo, vigencia: '2026-04-10', nombre: 'Abril 2026', valorEstadia: '  ' })
-    expect((postForm.mock.calls[1][1] as FormData).has('valor_estadia')).toBe(false)
+  it('un campo vacío no se manda', async () => {
+    postForm.mockResolvedValue({ id: 1 })
+    await tarifario.cargar({ archivo, vigencia: '', nombre: '  ', valorEstadia: '  ' })
+    expect([...(postForm.mock.calls[0][1] as FormData).keys()]).toEqual(['archivo'])
   })
 })

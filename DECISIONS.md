@@ -976,3 +976,60 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 **Consecuencias.**
 - La emisión de la Carta de Porte (fase 4) toma `km` y `tarifa_tonelada` de la orden. El esquema de ARCA admite hasta 99.999,99 $/t; una referencia de más de 1.000 km lo supera, y ahí la emisión avisa.
 - Del PDF de abril salen completos los km de 1 a 1.000. Más allá, sólo filas sueltas: lo que no está se informa como faltante.
+
+## ADR-039 — El tarifario se carga desde el PDF que publica el sector; los dígitos codificados se deducen y se verifican
+
+**Contexto.** ADR-038 cargaba el tarifario desde un CSV y dejaba el PDF afuera, porque sus números vienen con una tipografía sin tabla de caracteres. El humano corrigió (2026-10-08): «el transportista carga el PDF que descarga de la página, porque no está en CSV; el sistema lo convierte». Medido con `pdfplumber` sobre la edición del 10 de abril de 2026: los números salen como `(cid:N)`, con 488-497 para 0-9, 558 para el punto de miles y 559 para la coma. El título, la fecha («10 ABRIL 2026») y el «Valor de estadía: $214.146,67» salen como texto común. La tabla trae completos los km 1 a 1.000; más allá, el PDF publica sólo algunas filas.
+
+**Decisión.**
+1. **`POST /api/tarifario` acepta el PDF**, reconocido por `%PDF`, además del CSV. Del PDF salen las filas, la **vigencia** (día, mes en letras y año), el **valor de estadía** y el nombre. Lo que venga en el formulario manda sobre lo leído. Un CSV sin vigencia la pide.
+2. **La codificación no se deja fija**, porque otra edición puede numerar los glifos distinto. Se deduce de la forma de las tarifas (`d.ddd,dd`): la **coma** es el símbolo que va 3 lugares antes del final de cada tarifa, el **punto de miles** el que va 7, y los **diez restantes, en orden**, son 0-9.
+3. **Se verifica antes de cargar:** al menos 100 filas, los km arrancan en 1 y son consecutivos en un tramo de al menos 100, y las tarifas no bajan al subir los km. Si algo no cierra, **no se carga nada** y el error lo dice: un tarifario mal leído es peor que ninguno.
+4. **`POST /api/tarifario/previsualizar`** lee y muestra, **sin guardar**: vigencia, estadía, filas, rango de km, una muestra de km para comparar a ojo y si reemplaza una edición. La pantalla confirma después.
+5. Dependencia nueva: `pdfplumber`.
+
+**Consecuencias.**
+- La pantalla pide el PDF; el CSV queda como alternativa.
+- El PDF real de abril es fixture de los tests (es público). Un test con otra numeración comprueba que la deducción no depende de la de abril.
+- Si una edición futura cambia la **forma** de la tabla (otras columnas, otro formato de número), la verificación la rechaza y se carga por CSV hasta ajustar la lectura.
+- Va junto con `cartas_porte.fecha_inicio_estado` (migración `0024`): el humano vio una CPE «Anulada» cuyo PDF decía otra cosa. El PDF es del día de la emisión y la anulación fue después; la pantalla ahora dice «desde cuándo».
+
+## ADR-040 — «Entidades» en el menú principal: una persona o empresa es una sola, con roles; fletero y chofer, separados
+
+**Contexto.** El humano (2026-10-08): «de Configuración sacamos Terceros y Choferes y ponemos un ítem en el menú principal que diga Entidades, y dentro Clientes, Fleteros, Choferes y Proveedores». También pidió, a nivel de datos, un modelo común de personas y empresas con roles, para que una misma entidad pueda ser fletero y proveedor sin duplicar datos, y fletero (transportista, propietario o contratado) y chofer (quien conduce) separados. **El modelo ya era así**: `terceros` tiene una fila por entidad, con `es_cliente`, `es_fletero` y `es_proveedor` (al menos uno, ADR anteriores), y `choferes` es aparte, con `fletero_id` y su CUIT (ADR-037). Lo que faltaba era la pantalla y una regla. Medido en Suitrans:
+- 276 terceros, **ninguno con más de un rol**;
+- **un CUIT cargado dos veces**, una como cliente y otra como fletero;
+- **68 con un CUIT de relleno** («1») que vino del legado.
+
+**Decisión.**
+1. **Un CUIT, una entidad.** Al dar de alta o editar, un CUIT de 11 dígitos que ya tiene **otra** entidad da **409**, con la entidad existente y sus roles (`detail.existente`). Así la pantalla ofrece **sumarle el rol** en lugar de duplicarla. Los CUIT que no tienen 11 dígitos, como el relleno del legado, no se comparan. Es una regla de la API y no una restricción de la base, porque el duplicado que ya existe la violaría.
+2. **`POST /api/terceros/{id}/roles/{rol}`** le suma un rol a una entidad y la reactiva si estaba de baja, con auditoría.
+3. **`?fletero_id=`** en `/api/choferes` y `/api/vehiculos`, para la ficha del fletero. El constructor de maestros gana dos costuras, `filtros` y `validar`, y los demás maestros no cambian. La búsqueda de choferes incluye el CUIT.
+4. **Pantalla «Entidades»** en el menú principal, con pestañas Clientes, Fleteros, Choferes y Proveedores. Terceros y Choferes salen de Configuración, y los enlaces viejos redirigen.
+
+**Consecuencias.**
+- **El duplicado que ya existe no se une solo**: los dos registros tienen órdenes y cuenta corriente de cada lado. Unificar entidades es una operación aparte, con su propio diseño.
+- Una fixture de los tests usaba el mismo CUIT para dos fleteros distintos; ahora tiene uno propio.
+- Vehículos queda en Configuración y se ve desde la ficha del fletero.
+
+## ADR-041 — Las localidades se traen del catálogo de Argentina; los parajes son la excepción cargada a mano
+
+**Contexto.** El humano (2026-10-08): «en Configuración tenemos Localidades, un listado que se fue cargando con los lugares donde se hicieron fletes. ¿Se puede traer una base con todas las localidades de Argentina y del Mercosur? Y que también se pueda poner a mano un paraje que no esté como localidad, como excepción, porque cargar las localidades es medio de gusto». LibraCore ya tiene el catálogo oficial de Argentina: 24 provincias y 4.027 localidades censales del INDEC, empaquetado y de sólo lectura (`libracore.geografia`). Y ya decía que el maestro editable tiene que seguir siendo del producto, porque hay lugares reales que no figuran en ningún recurso oficial. Medido en Suitrans: 120 localidades.
+- **92 coinciden** con una sola localidad del catálogo.
+- **28 no**:
+  - partidos, como Exaltación de la Cruz o General Rodríguez;
+  - abreviaturas duplicadas: «Pto. San Martín» y «Pto San Martín»;
+  - parajes y puntos: Tomás Jofré, Ortiz Basualdo, Puerto Robles;
+  - basura del legado: «Campo», «Shap», «(sin nombre)».
+
+**Decisión.**
+1. **El maestro sigue siendo el de las órdenes** (FK de origen y destino), y suma **`catalogo_id`** (código censal, único) y **`es_paraje`**. La unicidad pasa de `nombre` a **`(nombre, provincia)`** con `NULLS NOT DISTINCT`: entran «San Pedro» de Buenos Aires y de Jujuy, y dos «Suipacha» sin provincia siguen chocando.
+2. **Una localidad se trae del catálogo** (`POST /api/localidades/desde-catalogo`): si ya está vinculada se devuelve; si hay una del mismo nombre y provincia se vincula; si no, se crea. El selector de origen y destino busca en las dos fuentes (`GET /api/localidades/buscar/combinado`).
+3. **Un paraje se carga a mano, con provincia obligatoria** (`es_paraje`).
+4. **Vincular** una existente al catálogo y **unificar** dos que son el mismo lugar. Unificar mueve el origen y el destino de las órdenes y da de baja la que sobra; lo hace sólo un administrador y queda en la auditoría con las órdenes movidas.
+5. **La migración `0025` vincula sola** lo que coincide una sola vez y completa la provincia faltante. **No renombra ni borra**: lo demás queda «sin vincular» para revisar en la pantalla.
+6. La búsqueda por código censal es del motor (`geografia.localidad(id)`, libracore v1.145.0).
+
+**Consecuencias.**
+- **Mercosur, todavía no:** el catálogo es sólo de Argentina. Brasil, Uruguay, Paraguay, Bolivia y Chile necesitan una fuente externa (GeoNames) y un formato distinto; se suma al motor si el humano lo confirma. Mientras tanto, un lugar del exterior se carga como paraje.
+- El código de localidad **de ARCA** (para la Carta de Porte) es otro catálogo. Se mapea en la fase 4b, por nombre y provincia.

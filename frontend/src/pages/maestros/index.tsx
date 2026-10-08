@@ -1,4 +1,7 @@
-/** Las cinco pantallas de maestros.
+/** Las pantallas de maestros que no son terceros.
+ *
+ * Los terceros (clientes, fleteros y proveedores) viven en «Entidades» (`TercerosPorRol`, ADR-040), y los choferes
+ * son una de sus pestañas. Los vehículos, las localidades y los tipos de carga quedan en Configuración.
  *
  * Cada una es la misma `AbmMaestro` con sus columnas y sus campos. Lo que se
  * elige acá son las columnas: **la tabla no muestra todo lo que el formulario
@@ -11,83 +14,62 @@ import type { Maestro } from '@/api/maestros'
 import { AbmMaestro } from '@/components/AbmMaestro'
 
 import {
-  CAMPOS_CHOFER, CAMPOS_LOCALIDAD, CAMPOS_TERCERO,
-  CAMPOS_TIPO_CARGA, CAMPOS_VEHICULO,
+  CAMPOS_CHOFER, CAMPOS_TIPO_CARGA, CAMPOS_VEHICULO, conFleteros,
 } from './definiciones'
+import { useFichaEnLaUrl, useFleteros } from './hooks'
 
 const col = (nombre: string, etiqueta: string) => ({
   accessorKey: nombre,
   header: sortableHeader(etiqueta),
 })
 
-export function Terceros() {
-  return (
-    <AbmMaestro<Maestro>
-      recurso="terceros"
-      titulo="Terceros"
-      campos={CAMPOS_TERCERO}
-      columnas={[
-        col('razon_social', 'Razón social'),
-        col('cuit', 'CUIT'),
-        col('localidad', 'Localidad'),
-        {
-          id: 'roles',
-          header: 'Roles',
-          // Los tres roles en una sola columna: son tres booleanos y tres
-          // columnas de tildes ocupan el ancho de la razón social sin decir
-          // más que esto.
-          accessorFn: (f: Maestro) => [
-            f.es_cliente ? 'Cliente' : null,
-            f.es_fletero ? 'Fletero' : null,
-            f.es_proveedor ? 'Proveedor' : null,
-          ].filter(Boolean).join(', '),
-        },
-      ]}
-      buscarEn={(f) => [f.razon_social as string, f.cuit as string,
-                        f.localidad as string, f.contacto as string]}
-      defaults={{ condicion_iva: 'consumidor_final', es_cliente: true } as Partial<Maestro>}
-    />
-  )
-}
+// Configuración → Localidades vive aparte: es la única con catálogo, parajes y acciones propias (ADR-041).
+export { Localidades } from './Localidades'
 
-export function Localidades() {
-  return (
-    <AbmMaestro<Maestro>
-      recurso="localidades"
-      titulo="Localidades"
-      campos={CAMPOS_LOCALIDAD}
-      columnas={[col('nombre', 'Nombre'), col('provincia', 'Provincia')]}
-      buscarEn={(f) => [f.nombre as string, f.provincia as string]}
-    />
-  )
-}
-
-export function Choferes() {
+export function Choferes({ encabezado = true }: { encabezado?: boolean }) {
+  const fleteros = useFleteros()
+  const ficha = useFichaEnLaUrl()
+  const fletero = (id: unknown) => fleteros.find((f) => f.id === id)?.razon_social ?? ''
   return (
     <AbmMaestro<Maestro>
       recurso="choferes"
       titulo="Choferes"
-      campos={CAMPOS_CHOFER}
-      columnas={[col('nombre', 'Nombre'), col('dni', 'DNI'),
+      singular="chofer"
+      encabezado={encabezado}
+      campos={conFleteros(CAMPOS_CHOFER, fleteros)}
+      columnas={[col('nombre', 'Nombre'),
                  // Se guarda en once dígitos; en la tabla se lee con guiones.
                  { id: 'cuit', header: sortableHeader('CUIT'),
                    accessorFn: (f: Maestro) => formatearCuit(f.cuit as string | null) },
-                 col('telefono', 'Teléfono')]}
+                 col('dni', 'DNI'),
+                 col('telefono', 'Teléfono'),
+                 // El fletero para el que maneja: sale del listado de fleteros, no de la fila.
+                 { id: 'fletero', header: sortableHeader('Fletero'),
+                   accessorFn: (f: Maestro) => fletero(f.fletero_id) }]}
       buscarEn={(f) => [f.nombre as string, f.dni as string, f.cuit as string,
-                        formatearCuit(f.cuit as string | null), f.telefono as string]}
+                        formatearCuit(f.cuit as string | null), f.telefono as string,
+                        fletero(f.fletero_id)]}
+      {...ficha}
     />
   )
 }
 
 export function Vehiculos() {
+  const fleteros = useFleteros()
+  const ficha = useFichaEnLaUrl()
+  const fletero = (id: unknown) => fleteros.find((f) => f.id === id)?.razon_social ?? ''
   return (
     <AbmMaestro<Maestro>
       recurso="vehiculos"
       titulo="Vehículos"
-      campos={CAMPOS_VEHICULO}
+      campos={conFleteros(CAMPOS_VEHICULO, fleteros)}
       columnas={[col('patente_chasis', 'Chasis'),
-                 col('patente_acoplado', 'Acoplado')]}
-      buscarEn={(f) => [f.patente_chasis as string, f.patente_acoplado as string]}
+                 col('patente_acoplado', 'Acoplado'),
+                 { id: 'fletero', header: sortableHeader('Fletero'),
+                   accessorFn: (f: Maestro) => fletero(f.fletero_id) }]}
+      buscarEn={(f) => [f.patente_chasis as string, f.patente_acoplado as string,
+                        fletero(f.fletero_id)]}
+      {...ficha}
     />
   )
 }

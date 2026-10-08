@@ -21,9 +21,9 @@ import PreLiquidacionTransportistas from '@/pages/PreLiquidacionTransportistas'
 import Reporte from '@/pages/Reporte'
 import ReportesIndice from '@/pages/ReportesIndice'
 import Usuarios from '@/pages/Usuarios'
-import {
-  Choferes, Localidades, Terceros, TiposCarga, Vehiculos,
-} from '@/pages/maestros'
+import Entidades from '@/pages/Entidades'
+import { Localidades, TiposCarga, Vehiculos } from '@/pages/maestros'
+import { irA } from '@/navegacion'
 
 function Privado({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
@@ -87,8 +87,11 @@ export default function App() {
                 <Route path="/usuarios" element={<Usuarios />} />
                 <Route path="/logs" element={<Logs />} />
                 <Route path="/configuracion" element={<Configuracion />} />
-                <Route path="/terceros" element={<Terceros />} />
-                <Route path="/choferes" element={<Choferes />} />
+                {/* Los terceros y los choferes ya no son pantallas sueltas: son pestañas de «Entidades» (ADR-040).
+                    Las rutas viejas se redirigen, que es lo que el log de actividad y los marcadores todavía usan. */}
+                <Route path="/entidades" element={<Entidades />} />
+                <Route path="/terceros" element={<Navigate to={irA.entidades('clientes')} replace />} />
+                <Route path="/choferes" element={<Navigate to={irA.entidades('choferes')} replace />} />
                 <Route path="/vehiculos" element={<Vehiculos />} />
                 <Route path="/localidades" element={<Localidades />} />
                 <Route path="/tipos-carga" element={<TiposCarga />} />

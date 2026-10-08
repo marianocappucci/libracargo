@@ -89,13 +89,23 @@ class TerceroOut(TerceroIn):
 class LocalidadIn(_Base):
     nombre: str = Field(min_length=1, max_length=80)
     provincia: str | None = Field(default=None, max_length=60)
+    #: Un lugar que no está en el catálogo (ADR-041). Se carga a mano y lleva provincia.
+    es_paraje: bool = False
     activo: bool = True
 
     _limpiar = field_validator("*", mode="before")(_vacio_es_nulo)
 
+    @model_validator(mode="after")
+    def _paraje_con_provincia(self):
+        if self.es_paraje and not self.provincia:
+            raise ValueError("un paraje lleva provincia: es lo que lo ubica cuando no está en el catálogo")
+        return self
+
 
 class LocalidadOut(LocalidadIn):
     id: int
+    #: El código censal si está vinculada al catálogo (sólo lectura: se vincula por su endpoint).
+    catalogo_id: str | None = None
 
 
 # ------------------------------------------------------------------ choferes

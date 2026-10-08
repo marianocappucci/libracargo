@@ -18,45 +18,47 @@ vi.mock('libra-ui/api-client', async () => {
   return { ApiError, api: { get, post: vi.fn(), put: vi.fn(), del: vi.fn() } }
 })
 
+// Localidades pregunta quién es el usuario (unificar es sólo del administrador).
+vi.mock('@/context/AuthContext', () => ({
+  useAuth: () => ({ user: { role: 'operador', name: 'Ana' }, loading: false, logout: vi.fn() }),
+}))
+
 const { ApiError } = await import('libra-ui/api-client')
 const { mensajeDeError } = await import('./AbmMaestro')
-const { Terceros } = await import('@/pages/maestros')
+const { Localidades } = await import('@/pages/maestros')
 
 describe('AbmMaestro', () => {
   beforeEach(() => get.mockReset())
 
   it('muestra las filas y distingue la baja del alta', async () => {
     get.mockResolvedValue([
-      { id: 1, razon_social: 'Agro Norte', activo: true, es_cliente: true },
-      { id: 2, razon_social: 'Vieja SA', activo: false, es_fletero: true },
+      { id: 1, nombre: 'Rosario', provincia: 'Santa Fe', activo: true },
+      { id: 2, nombre: 'Vieja Ciudad', provincia: 'Chaco', activo: false },
     ])
-    render(<MemoryRouter><Terceros /></MemoryRouter>)
+    render(<MemoryRouter><Localidades /></MemoryRouter>)
 
-    await waitFor(() => expect(screen.getByText('Agro Norte')).toBeInTheDocument())
-    expect(screen.getByText('Vieja SA')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Rosario')).toBeInTheDocument())
+    expect(screen.getByText('Vieja Ciudad')).toBeInTheDocument()
     // La columna de estado es lo que hace visible la baja lógica: sin ella las
     // dos filas se ven iguales y no hay forma de saber cuál está dada de baja.
     expect(screen.getByText('Activo')).toBeInTheDocument()
     expect(screen.getByText('Baja')).toBeInTheDocument()
-    // Y los roles, que en la tabla van en una sola columna.
-    expect(screen.getByText('Cliente')).toBeInTheDocument()
-    expect(screen.getByText('Fletero')).toBeInTheDocument()
   })
 
   it('el boton de cada fila dice si da de baja o reactiva', async () => {
     get.mockResolvedValue([
-      { id: 1, razon_social: 'Activa SA', activo: true, es_cliente: true },
-      { id: 2, razon_social: 'Baja SA', activo: false, es_cliente: true },
+      { id: 1, nombre: 'Activa', provincia: null, activo: true },
+      { id: 2, nombre: 'Baja', provincia: null, activo: false },
     ])
-    render(<MemoryRouter><Terceros /></MemoryRouter>)
-    await waitFor(() => expect(screen.getByText('Activa SA')).toBeInTheDocument())
+    render(<MemoryRouter><Localidades /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('Activa')).toBeInTheDocument())
     expect(screen.getByLabelText('Dar de baja')).toBeInTheDocument()
     expect(screen.getByLabelText('Reactivar')).toBeInTheDocument()
   })
 
   it('la tabla vacia no se confunde con la tabla cargando', async () => {
     get.mockResolvedValue([])
-    render(<MemoryRouter><Terceros /></MemoryRouter>)
+    render(<MemoryRouter><Localidades /></MemoryRouter>)
     await waitFor(() =>
       expect(screen.getByText('Todavía no hay nada cargado.')).toBeInTheDocument())
   })
@@ -76,6 +78,13 @@ describe('mensajeDeError', () => {
     const detalle = [{ msg: 'el tercero tiene que ser al menos una cosa' }]
     const e = new ApiError(422, detalle as unknown as string)
     expect(mensajeDeError(e)).toBe('el tercero tiene que ser al menos una cosa')
+  })
+
+  it('🔑 un detail OBJETO (el 409 del CUIT repetido) se muestra por su mensaje, no como [object Object]', () => {
+    // Llega con el objeto entero (un doble, o un kit que no lo aplane); con la `libra-ui` real, `detail` ya es el mensaje.
+    const detalle = { mensaje: 'El CUIT 30-1 ya es de «X» (fletero).', existente: { id: 7 } }
+    const e = new ApiError(409, detalle as unknown as string)
+    expect(mensajeDeError(e)).toBe('El CUIT 30-1 ya es de «X» (fletero).')
   })
 
   it('un error cualquiera no rompe la pantalla', () => {

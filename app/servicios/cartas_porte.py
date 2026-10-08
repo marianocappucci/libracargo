@@ -127,6 +127,7 @@ def _volcar(fila: CartaPorte, cpe: arca_wscpe.CartaDePorte, cuit: str, amb: str)
     fila.tipo_cpe, fila.sucursal, fila.nro_orden = cpe.tipo_cpe, cpe.sucursal, cpe.nro_orden
     fila.estado = cpe.estado or "?"
     fila.fecha_emision, fila.fecha_vencimiento = cpe.fecha_emision, cpe.fecha_vencimiento
+    fila.fecha_inicio_estado = cpe.fecha_inicio_estado
     t, c = cpe.transporte, cpe.carga
     fila.fecha_partida = t.fecha_hora_partida
     fila.cuit_representada, fila.ambiente = cuit, amb

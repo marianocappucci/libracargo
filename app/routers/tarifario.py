@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user, require_admin, require_staff
 from app.db import obtener_sesion
 from app.models.tarifario import TarifaDeReferencia, Tarifario
-from app.schemas.tarifario import FilaOut, ReferenciaOut, SugerenciaOut, TarifarioOut
+from app.schemas.tarifario import FilaOut, ReferenciaOut, SugerenciaOut, TarifarioOut, VistaPreviaOut
 from app.servicios import tarifario as servicio
 
 router = APIRouter(prefix="/api/tarifario", tags=["tarifario"], dependencies=[Depends(require_staff)])
@@ -60,24 +60,64 @@ def filas(tarifario_id: int, sesion: Session = Depends(obtener_sesion)):
                                .order_by(TarifaDeReferencia.km)).mappings())
 
 
-@router.post("", response_model=TarifarioOut, status_code=201, dependencies=[Depends(require_admin)])
-def cargar(archivo: UploadFile = File(...), vigencia: date = Form(...), nombre: str = Form(..., min_length=1),
-           valor_estadia: str | None = Form(default=None), sesion: Session = Depends(obtener_sesion),
-           actual: dict = Depends(get_current_user)):
-    """Carga una edición desde un CSV `km;tarifa`. Si ya hay una con esa vigencia, **la reemplaza entera**."""
-    contenido = archivo.file.read(MAX_BYTES + 1)
+def _leer(contenido: bytes) -> servicio.TarifarioLeido:
+    """El PDF que publica el sector (se reconoce por `%PDF`) o un CSV `km;tarifa`."""
     if len(contenido) > MAX_BYTES:
         raise HTTPException(422, "el archivo es demasiado grande para un tarifario")
     try:
-        filas_leidas = servicio.leer_csv(contenido)
-        estadia = servicio._numero(valor_estadia) if valor_estadia and valor_estadia.strip() else None
+        if contenido.lstrip()[:5] == b"%PDF-":
+            return servicio.leer_pdf(contenido)
+        return servicio.TarifarioLeido(filas=servicio.leer_csv(contenido), vigencia=None, valor_estadia=None,
+                                       nombre="")
     except servicio.TarifarioInvalido as e:
         raise HTTPException(422, str(e)) from None
+
+
+def _estadia(texto: str | None) -> Decimal | None:
+    if not texto or not texto.strip():
+        return None
+    try:
+        valor = servicio._numero(texto)
     except (ValueError, InvalidOperation):
         raise HTTPException(422, "el valor de estadía no es un número") from None
-    if estadia is not None and estadia < Decimal(0):
+    if valor < Decimal(0):
         raise HTTPException(422, "el valor de estadía no puede ser negativo")
-    t = servicio.cargar(sesion, actual, vigencia=vigencia, nombre=nombre.strip(), filas=filas_leidas,
+    return valor
+
+
+#: Los km que se muestran en la vista previa, para comparar a ojo contra el PDF.
+_MUESTRA = (1, 10, 50, 80, 100, 200, 500, 1000)
+
+
+@router.post("/previsualizar", response_model=VistaPreviaOut, dependencies=[Depends(require_admin)])
+def previsualizar(archivo: UploadFile = File(...), sesion: Session = Depends(obtener_sesion)):
+    """Lee el PDF (o el CSV) y dice lo que cargaría, **sin guardar nada**: para revisarlo antes de confirmar."""
+    leido = _leer(archivo.file.read(MAX_BYTES + 1))
+    existe = (leido.vigencia is not None and
+              sesion.scalar(select(Tarifario.id).where(Tarifario.vigencia == leido.vigencia)) is not None)
+    return VistaPreviaOut(
+        vigencia=leido.vigencia, nombre=leido.nombre or None, valor_estadia=leido.valor_estadia,
+        filas=len(leido.filas), km_desde=min(leido.filas), km_hasta=max(leido.filas),
+        muestra=[FilaOut(km=k, tarifa=leido.filas[k]) for k in _MUESTRA if k in leido.filas],
+        reemplaza=existe)
+
+
+@router.post("", response_model=TarifarioOut, status_code=201, dependencies=[Depends(require_admin)])
+def cargar(archivo: UploadFile = File(...), vigencia: date | None = Form(default=None),
+           nombre: str | None = Form(default=None), valor_estadia: str | None = Form(default=None),
+           sesion: Session = Depends(obtener_sesion), actual: dict = Depends(get_current_user)):
+    """Carga una edición desde el **PDF que publica el sector** o desde un CSV `km;tarifa` (ADR-039).
+
+    Del PDF salen la vigencia, el nombre y el valor de estadía; lo que venga en el formulario **manda** sobre lo
+    leído. Si ya hay una edición con esa vigencia, **la reemplaza entera**.
+    """
+    leido = _leer(archivo.file.read(MAX_BYTES + 1))
+    vigencia_final = vigencia or leido.vigencia
+    if vigencia_final is None:
+        raise HTTPException(422, "indicá la vigencia: el archivo no la dice")
+    nombre_final = (nombre or "").strip() or leido.nombre or f"Tarifa de referencia {vigencia_final:%d-%m-%Y}"
+    estadia = _estadia(valor_estadia) if valor_estadia and valor_estadia.strip() else leido.valor_estadia
+    t = servicio.cargar(sesion, actual, vigencia=vigencia_final, nombre=nombre_final, filas=leido.filas,
                         valor_estadia=estadia)
     sesion.commit()
     return _resumen(sesion, t)

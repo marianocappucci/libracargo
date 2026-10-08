@@ -30,6 +30,7 @@ const parte = (cuit: string | null, nombre: string | null = null) => ({ cuit, no
 function carta(id: number, extra: Record<string, unknown> = {}) {
   return {
     id, nro_ctg: 10123456780 + id, numero: `00001-0007241${id}`, estado: 'AC', estado_descripcion: 'Activa',
+    fecha_inicio_estado: null,
     fecha_emision: '2026-10-05T14:30:00', fecha_vencimiento: '2026-10-08T14:30:00',
     fecha_partida: '2026-10-05T16:00:00-03:00',
     cuit_representada: '30222222223', ambiente: 'produccion',
@@ -174,6 +175,27 @@ describe('Cartas de porte · listado', () => {
     expect(within(detalle).getByText('pendiente')).toBeInTheDocument()
     // La partida viene con zona (-03:00) y se lee en hora de Argentina.
     expect(within(detalle).getByText('05-10-2026 16:00')).toBeInTheDocument()
+  })
+
+  it('🔑 una carta anulada dice desde cuándo, en hora de Argentina: su PDF es del día de la emisión', async () => {
+    responder({ lista: [carta(1, {
+      estado: 'AN', estado_descripcion: 'Anulada', tiene_pdf: true, fecha_inicio_estado: '2026-10-07T18:45:00+00:00',
+    })] })
+    abrir()
+    fireEvent.click(await screen.findByText('10123456781'))
+    const detalle = await screen.findByRole('dialog')
+    expect(within(detalle).getByText('Anulada')).toBeInTheDocument()
+    expect(within(detalle).getByText('desde 07-10-2026 15:45')).toBeInTheDocument()
+    // La emisión sigue siendo la del PDF: otra fecha, la de antes.
+    expect(within(detalle).getByText('05-10-2026 14:30')).toBeInTheDocument()
+  })
+
+  it('sin fecha de inicio del estado no inventa un «desde»', async () => {
+    responder({ lista: [carta(1)] })
+    abrir()
+    fireEvent.click(await screen.findByText('10123456781'))
+    const detalle = await screen.findByRole('dialog')
+    expect(within(detalle).queryByText(/^desde /)).toBeNull()
   })
 })
 

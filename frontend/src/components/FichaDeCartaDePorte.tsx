@@ -48,7 +48,14 @@ export function FichaDeCartaDePorte({ carta }: { carta: CartaPorte }) {
         <Dato etiqueta="N.º de CPE">{carta.numero || '—'}</Dato>
         <Dato etiqueta="CTG">{carta.nro_ctg}</Dato>
         <Dato etiqueta="Estado">
-          <BadgeEstado tono={tonoDeEstado(carta.estado)}>{carta.estado_descripcion}</BadgeEstado>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <BadgeEstado tono={tonoDeEstado(carta.estado)}>{carta.estado_descripcion}</BadgeEstado>
+            {carta.fecha_inicio_estado && (
+              <span className="text-muted-foreground text-xs font-normal">
+                desde {formatearInstante(carta.fecha_inicio_estado)}
+              </span>
+            )}
+          </div>
         </Dato>
         <Dato etiqueta="Emisión">{formatearInstante(carta.fecha_emision)}</Dato>
         <Dato etiqueta="Vencimiento">{formatearInstante(carta.fecha_vencimiento)}</Dato>
