@@ -45,6 +45,7 @@ export function CambiarEtapa({ orden, alCambiar }: {
       <div className="flex flex-wrap items-end gap-2">
         <div className="grid gap-1">
           <Label htmlFor="cambiar-etapa" className="text-xs">Etapa del viaje</Label>
+          {/* select-cerrado: las cinco etapas del viaje, una constante del código (`ETAPAS`): no hay nada que buscar */}
           <select id="cambiar-etapa" className="h-9 rounded-md border px-2 text-sm"
                   value={orden.etapa} disabled={anulada || guardando}
                   onChange={(e) => mover(e.target.value as Etapa)}>

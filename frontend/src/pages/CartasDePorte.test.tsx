@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { elegirEnBuscable, opcionesDe } from '@/test/buscable'
+
 const get = vi.fn()
 const post = vi.fn()
 const put = vi.fn()
@@ -309,16 +311,15 @@ describe('Cartas de porte · Traer de ARCA', () => {
   it('🔑 «Consultar como» arranca sin elegir y Guardar no se habilita hasta elegirlo', async () => {
     const dialogo = await abrirTraer()
     const select = await within(dialogo).findByLabelText('Consultar como')
-    // Sin valor por defecto, aunque haya un solo CUIT. Muestra el nombre y, si no hay, el CUIT con guiones.
-    expect(select).toHaveValue('')
-    expect(within(dialogo).getByRole('option', { name: 'Transportes del Plata SRL' })).toBeInTheDocument()
-    expect(within(dialogo).getByRole('option', { name: '30-99999999-5' })).toBeInTheDocument()
+    // Sin valor por defecto, aunque haya un solo CUIT (el campo dice «Elegir…»). Muestra el nombre y, si no hay, el CUIT con guiones.
+    expect(select).toHaveValue('Elegir…')
+    expect(opcionesDe(select)).toEqual(expect.arrayContaining(['Transportes del Plata SRL', '30-99999999-5']))
 
     fireEvent.change(within(dialogo).getByLabelText('CTG'), { target: { value: '10123456781' } })
     expect(within(dialogo).getByRole('button', { name: 'Guardar' })).toBeDisabled()
     expect(within(dialogo).getByRole('button', { name: 'Ver antes de guardar' })).toBeDisabled()
 
-    fireEvent.change(select, { target: { value: '30222222223' } })
+    await elegirEnBuscable(select, 'Transportes del Plata SRL')
     expect(within(dialogo).getByRole('button', { name: 'Guardar' })).toBeEnabled()
     expect(within(dialogo).getByRole('button', { name: 'Ver antes de guardar' })).toBeEnabled()
   })
@@ -326,7 +327,7 @@ describe('Cartas de porte · Traer de ARCA', () => {
   it('con un solo CUIT tampoco lo elige solo', async () => {
     responder({ representados: { ambiente: 'produccion', cuits: [{ cuit: '30222222223', nombre: null }] } })
     const dialogo = await abrirTraer()
-    expect(await within(dialogo).findByLabelText('Consultar como')).toHaveValue('')
+    expect(await within(dialogo).findByLabelText('Consultar como')).toHaveValue('Elegir…')
   })
 
   it('el ambiente va en texto chico, y homologación se resalta porque no tiene CPE reales', async () => {
@@ -366,7 +367,7 @@ describe('Cartas de porte · Traer de ARCA', () => {
 
   it('lee varios CTG: quita los repetidos y no deja guardar con uno que no tiene 11 dígitos', async () => {
     const dialogo = await abrirTraer()
-    fireEvent.change(await within(dialogo).findByLabelText('Consultar como'), { target: { value: '30222222223' } })
+    await elegirEnBuscable(await within(dialogo).findByLabelText('Consultar como'), 'Transportes del Plata SRL')
     const campo = within(dialogo).getByLabelText('CTG')
 
     // Separados por espacio, coma y renglón; uno repetido; uno corto.
@@ -386,7 +387,7 @@ describe('Cartas de porte · Traer de ARCA', () => {
 
   it('el tope es de 50 CTG por vez', async () => {
     const dialogo = await abrirTraer()
-    fireEvent.change(await within(dialogo).findByLabelText('Consultar como'), { target: { value: '30222222223' } })
+    await elegirEnBuscable(await within(dialogo).findByLabelText('Consultar como'), 'Transportes del Plata SRL')
     const ctgs = Array.from({ length: 51 }, (_, i) => String(10000000000 + i)).join(' ')
     fireEvent.change(within(dialogo).getByLabelText('CTG'), { target: { value: ctgs } })
     expect(within(dialogo).getByRole('alert')).toHaveTextContent('hasta 50 CTG')
@@ -400,7 +401,7 @@ describe('Cartas de porte · Traer de ARCA', () => {
       pagador_flete: parte('30111111118', 'Agro Norte SA'),
     }))
     const dialogo = await abrirTraer()
-    fireEvent.change(await within(dialogo).findByLabelText('Consultar como'), { target: { value: '30222222223' } })
+    await elegirEnBuscable(await within(dialogo).findByLabelText('Consultar como'), 'Transportes del Plata SRL')
     fireEvent.change(within(dialogo).getByLabelText('CTG'), { target: { value: '10123456781' } })
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Ver antes de guardar' }))
 
@@ -428,7 +429,7 @@ describe('Cartas de porte · Traer de ARCA', () => {
   it('si la carta ya estaba guardada, la vista previa avisa que se va a actualizar', async () => {
     post.mockResolvedValue(carta(1, { id: null, guardada_id: 7 }))
     const dialogo = await abrirTraer()
-    fireEvent.change(await within(dialogo).findByLabelText('Consultar como'), { target: { value: '30222222223' } })
+    await elegirEnBuscable(await within(dialogo).findByLabelText('Consultar como'), 'Transportes del Plata SRL')
     fireEvent.change(within(dialogo).getByLabelText('CTG'), { target: { value: '10123456781' } })
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Ver antes de guardar' }))
     expect(await within(dialogo).findByText('Ya está guardada: se va a actualizar')).toBeInTheDocument()
@@ -437,7 +438,7 @@ describe('Cartas de porte · Traer de ARCA', () => {
   it('un 404 o un 409 de la consulta se muestran, y no hay vista previa', async () => {
     post.mockRejectedValue(await error(409, 'El CUIT 30222222223 no tiene delegación'))
     const dialogo = await abrirTraer()
-    fireEvent.change(await within(dialogo).findByLabelText('Consultar como'), { target: { value: '30222222223' } })
+    await elegirEnBuscable(await within(dialogo).findByLabelText('Consultar como'), 'Transportes del Plata SRL')
     fireEvent.change(within(dialogo).getByLabelText('CTG'), { target: { value: '10123456781' } })
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Ver antes de guardar' }))
     expect(await within(dialogo).findByRole('alert')).toHaveTextContent('no tiene delegación')
@@ -450,7 +451,7 @@ describe('Cartas de porte · Traer de ARCA', () => {
       { ctg: 10123456782, id: null, error: 'ARCA no tiene esa carta de porte' },
     ])
     const dialogo = await abrirTraer()
-    fireEvent.change(await within(dialogo).findByLabelText('Consultar como'), { target: { value: '30222222223' } })
+    await elegirEnBuscable(await within(dialogo).findByLabelText('Consultar como'), 'Transportes del Plata SRL')
     fireEvent.change(within(dialogo).getByLabelText('CTG'), { target: { value: '10123456781, 10123456782' } })
     get.mockClear()
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Guardar' }))
@@ -471,7 +472,7 @@ describe('Cartas de porte · Traer de ARCA', () => {
   it('un 409 al guardar (falta la delegación) corta todo y se lee', async () => {
     post.mockRejectedValue(await error(409, 'El CUIT no tiene delegación'))
     const dialogo = await abrirTraer()
-    fireEvent.change(await within(dialogo).findByLabelText('Consultar como'), { target: { value: '30222222223' } })
+    await elegirEnBuscable(await within(dialogo).findByLabelText('Consultar como'), 'Transportes del Plata SRL')
     fireEvent.change(within(dialogo).getByLabelText('CTG'), { target: { value: '10123456781 10123456782' } })
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Guardar' }))
     expect(await within(dialogo).findByRole('alert')).toHaveTextContent('El CUIT no tiene delegación')
@@ -480,13 +481,13 @@ describe('Cartas de porte · Traer de ARCA', () => {
 
   it('cada vez que se abre arranca limpio: el CUIT vuelve a quedar sin elegir', async () => {
     let dialogo = await abrirTraer()
-    fireEvent.change(await within(dialogo).findByLabelText('Consultar como'), { target: { value: '30222222223' } })
+    await elegirEnBuscable(await within(dialogo).findByLabelText('Consultar como'), 'Transportes del Plata SRL')
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Cancelar' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
     fireEvent.click(screen.getByRole('button', { name: /Traer de ARCA/ }))
     dialogo = await screen.findByRole('dialog')
-    expect(await within(dialogo).findByLabelText('Consultar como')).toHaveValue('')
+    expect(await within(dialogo).findByLabelText('Consultar como')).toHaveValue('Elegir…')
   })
 })
 

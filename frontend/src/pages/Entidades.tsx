@@ -53,7 +53,7 @@ export default function Entidades() {
   }
 
   return (
-    <div className="p-6">
+    <div>
       {/* El «Nuevo» de cada pestaña va en la línea del título, arriba a la derecha (`AccionesDelTitulo`). */}
       <PantallaConTitulo titulo={<TituloPantalla icono={Building2}>Entidades</TituloPantalla>}>
         <Tabs value={actual} onValueChange={elegir} className="gap-4">

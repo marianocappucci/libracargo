@@ -330,7 +330,7 @@ export default function Reporte() {
     .map(([k, v]) => `${k}: ${v}`).join(' · ') || 'sin filtros'
 
   return (
-    <div className="p-6">
+    <div>
       <Link to="/reportes"
             className="text-muted-foreground no-imprimir mb-2 inline-flex items-center gap-1 text-sm hover:underline">
         <ArrowLeft className="size-3" /> Todos los reportes

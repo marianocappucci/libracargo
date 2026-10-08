@@ -43,6 +43,8 @@ export const irA = {
     const query = params.toString()
     return query ? `/entidades?${query}` : '/entidades'
   },
+  /** «Vehículos», una entrada propia del menú (antes una sección de Configuración). Con `ver`, con la ficha de esa fila abierta. */
+  vehiculos: (ver?: number) => (ver !== undefined ? `/vehiculos?ver=${ver}` : '/vehiculos'),
 }
 
 /** Las cuatro pestañas de la entrada «Entidades» del menú (ADR-040). Tres son roles de una misma entidad —una

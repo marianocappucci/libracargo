@@ -5,42 +5,36 @@ vi.mock('libra-ui/api-client', () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), del: vi.fn() },
 }))
 
-const { DESDE_CUANTAS, Elegir } = await import('./Elegir')
+const { Elegir } = await import('./Elegir')
 
 function lista(cuantas: number) {
   return Array.from({ length: cuantas }, (_, i) => ({ id: i + 1, etiqueta: `Opción ${i + 1}` }))
 }
 
 describe('Elegir', () => {
-  it('con pocas opciones usa el desplegable del navegador', () => {
-    // Con cuatro opciones el nativo se abre y se ve entero: un buscador ahí es
-    // un paso de más.
-    render(<Elegir id="e" etiqueta="Medio" valor="" opciones={lista(4)}
+  it.each([3, 11, 12, 200])('con %i opciones se busca escribiendo, no es un <select> del navegador', (cuantas) => {
+    // ADR-039 del kit: el criterio es el origen de las opciones, no su cantidad. Antes
+    // la lista corta (menos de 12) era un <select> nativo y la larga un buscador: el
+    // mismo campo se comportaba distinto según los datos de cada cliente.
+    render(<Elegir id="e" etiqueta="Cliente" valor="" opciones={lista(cuantas)}
                    alCambiar={() => {}} />)
-    expect(screen.getByLabelText('Medio').tagName).toBe('SELECT')
+    const campo = screen.getByLabelText('Cliente')
+    expect(campo.tagName).toBe('INPUT')
+    expect(campo).toHaveAttribute('role', 'combobox')
   })
 
-  it('con muchas opciones aparece el buscador', () => {
-    // El control con buscador no es un <select>: es un botón que abre un panel
-    // con un campo de texto. Distinguirlos por el tag es lo que hace que este
-    // test signifique algo.
-    render(<Elegir id="e" etiqueta="Cliente" valor="" opciones={lista(DESDE_CUANTAS)}
-                   alCambiar={() => {}} />)
-    expect(screen.getByLabelText('Cliente').tagName).not.toBe('SELECT')
-  })
-
-  it('el umbral es el que dice la constante, no uno inventado', () => {
-    // El control del test de arriba: una opción menos y vuelve al nativo. Sin
-    // esto, "muchas opciones" podría ser cualquier número.
-    render(<Elegir id="e" etiqueta="Justo abajo" valor=""
-                   opciones={lista(DESDE_CUANTAS - 1)} alCambiar={() => {}} />)
-    expect(screen.getByLabelText('Justo abajo').tagName).toBe('SELECT')
+  it('escribir filtra la lista, aunque tenga pocas opciones', () => {
+    render(<Elegir id="e" etiqueta="Medio" valor="" opciones={[
+      { id: 1, etiqueta: 'Efectivo' }, { id: 2, etiqueta: 'Transferencia' }, { id: 3, etiqueta: 'Cheque' },
+    ]} alCambiar={() => {}} />)
+    fireEvent.change(screen.getByLabelText('Medio'), { target: { value: 'trans' } })
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Transferencia'])
   })
 
   it('la opción vacía se puede nombrar: no siempre dice "Todos"', () => {
     render(<Elegir id="e" etiqueta="Tercero" valor="" opciones={lista(3)}
                    vacio="Ninguno (gasto general)" alCambiar={() => {}} />)
-    expect(screen.getByText('Ninguno (gasto general)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Tercero')).toHaveAttribute('placeholder', 'Ninguno (gasto general)')
   })
 
   it('elegir avisa con el id como texto', () => {
@@ -49,7 +43,16 @@ describe('Elegir', () => {
     const alCambiar = vi.fn()
     render(<Elegir id="e" etiqueta="Cuenta" valor="" opciones={lista(3)}
                    alCambiar={alCambiar} />)
-    fireEvent.change(screen.getByLabelText('Cuenta'), { target: { value: '2' } })
+    fireEvent.click(screen.getByLabelText('Cuenta'))
+    fireEvent.click(screen.getByRole('option', { name: 'Opción 2' }))
     expect(alCambiar).toHaveBeenCalledWith('2')
+  })
+
+  it('elegir "Todos" devuelve la cadena vacía', () => {
+    const alCambiar = vi.fn()
+    render(<Elegir id="e" etiqueta="Cuenta" valor="2" opciones={lista(3)} alCambiar={alCambiar} />)
+    fireEvent.click(screen.getByLabelText('Cuenta'))
+    fireEvent.click(screen.getByRole('option', { name: 'Todos' }))
+    expect(alCambiar).toHaveBeenCalledWith('')
   })
 })

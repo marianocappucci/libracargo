@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { elegirEnBuscable, opcionesDe } from '@/test/buscable'
+
 const get = vi.fn()
 vi.mock('libra-ui/api-client', () => ({
   ApiError: class extends Error {},
@@ -94,7 +96,7 @@ async function abrir() {
     </MemoryRouter>,
   )
   await waitFor(() =>
-    expect(screen.getByLabelText('Transportista').querySelectorAll('option').length).toBe(3))
+    expect(opcionesDe(screen.getByLabelText('Transportista'))).toEqual(['Todos', 'Juan Pérez', 'Transportes del Oeste']))
   return vista
 }
 
@@ -196,11 +198,10 @@ describe('Pre liquidación de transportistas', () => {
     await abrir()
     await ponerElRango()
     await screen.findByLabelText('Juan Pérez')
-    const select = screen.getByLabelText('Transportista')
-    await waitFor(() => expect(select.querySelectorAll('option').length).toBe(3))
+    const campo = screen.getByLabelText('Transportista')
 
     get.mockClear()
-    await act(async () => { fireEvent.change(select, { target: { value: '2' } }) })
+    await act(async () => { await elegirEnBuscable(campo, 'Juan Pérez') })
     await waitFor(() => expect(pedidos().some((r) => r.includes('fletero_id=2'))).toBe(true))
     await waitFor(() =>
       expect((screen.getByText('Ver PDF').closest('a') as HTMLAnchorElement).getAttribute('href'))

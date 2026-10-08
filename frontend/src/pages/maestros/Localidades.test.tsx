@@ -8,6 +8,8 @@ import { configure, fireEvent, render, screen, waitFor, within } from '@testing-
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { elegirEnBuscable } from '@/test/buscable'
+
 // Los buscadores esperan 250 ms tras la última tecla y en el CI la suite entera tarda más que en una notebook.
 configure({ asyncUtilTimeout: 5000 })
 vi.setConfig({ testTimeout: 20_000 })
@@ -232,8 +234,7 @@ describe('Localidades · marcar como paraje', () => {
     expect(await within(dialogo).findByRole('alert')).toHaveTextContent('Elegí la provincia')
     expect(put).not.toHaveBeenCalled()
 
-    await within(dialogo).findByRole('option', { name: 'Buenos Aires' })
-    fireEvent.change(within(dialogo).getByLabelText('Provincia'), { target: { value: 'Buenos Aires' } })
+    await elegirEnBuscable(within(dialogo).getByRole('combobox', { name: 'Provincia' }), 'Buenos Aires')
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Marcar como paraje' }))
     await waitFor(() => expect(put).toHaveBeenCalledWith('/api/localidades/5', {
       nombre: 'Cnel. Bogado', provincia: 'Buenos Aires', pais: 'AR', es_paraje: true, activo: true,
@@ -248,8 +249,7 @@ describe('Localidades · marcar como paraje', () => {
     const dialogo = await screen.findByRole('dialog')
     expect(within(dialogo).getByLabelText('País')).toHaveValue('PY')
     await waitFor(() => expect(get).toHaveBeenCalledWith('/api/geo/provincias?pais=PY'))
-    await within(dialogo).findByRole('option', { name: 'Buenos Aires' })  // el mock devuelve la lista de siempre
-    fireEvent.change(within(dialogo).getByLabelText('Provincia'), { target: { value: 'Buenos Aires' } })
+    await elegirEnBuscable(within(dialogo).getByRole('combobox', { name: 'Provincia' }), 'Buenos Aires')
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Marcar como paraje' }))
     await waitFor(() => expect(put).toHaveBeenCalledWith('/api/localidades/8', {
       nombre: 'Puerto Pilcomayo', provincia: 'Buenos Aires', pais: 'PY', es_paraje: true, activo: true,
@@ -380,8 +380,7 @@ describe('Localidades · altas', () => {
     fireEvent.click(screen.getByRole('button', { name: /Cargar paraje/ }))
     const dialogo = await screen.findByRole('dialog')
     fireEvent.change(within(dialogo).getByLabelText('Nombre del paraje'), { target: { value: 'Paraje Los Ceibos' } })
-    await within(dialogo).findByRole('option', { name: 'Santa Fe' })
-    fireEvent.change(within(dialogo).getByLabelText('Provincia'), { target: { value: 'Santa Fe' } })
+    await elegirEnBuscable(within(dialogo).getByRole('combobox', { name: 'Provincia' }), 'Santa Fe')
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Cargar paraje' }))
 
     await waitFor(() => expect(post).toHaveBeenCalledWith('/api/localidades', {
@@ -399,8 +398,7 @@ describe('Localidades · altas', () => {
     fireEvent.change(within(dialogo).getByLabelText('Nombre del paraje'), { target: { value: 'Estancia Don Pedro' } })
     await within(dialogo).findByRole('option', { name: 'Uruguay' })
     fireEvent.change(within(dialogo).getByLabelText('País'), { target: { value: 'UY' } })
-    await within(dialogo).findByRole('option', { name: 'Colonia' })
-    fireEvent.change(within(dialogo).getByLabelText('Provincia'), { target: { value: 'Colonia' } })
+    await elegirEnBuscable(within(dialogo).getByRole('combobox', { name: 'Provincia' }), 'Colonia')
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Cargar paraje' }))
 
     await waitFor(() => expect(post).toHaveBeenCalledWith('/api/localidades', {

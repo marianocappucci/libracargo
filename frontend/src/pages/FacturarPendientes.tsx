@@ -82,6 +82,7 @@ function Eleccion({ id, etiqueta, valor, alCambiar, children }: {
   return (
     <div className="grid min-w-0 gap-1">
       <Label htmlFor={id}>{etiqueta}</Label>
+      {/* select-cerrado: el tipo de comprobante, `<option>` escritos en cada uso (seis). El cliente va por `Elegir`, que se busca */}
       <select id={id} className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
               value={valor} onChange={(e) => alCambiar(e.target.value)}>
         {children}
@@ -267,7 +268,7 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
     : null
 
   return (
-    <div className="p-4">
+    <div>
       <div className="mb-4 flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild
                 aria-label={editando ? 'Volver a la pre factura' : 'Volver a Comprobantes'}>

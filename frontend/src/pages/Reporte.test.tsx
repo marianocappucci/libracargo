@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { elegirEnBuscable, opcionesDe } from '@/test/buscable'
+
 const get = vi.fn()
 vi.mock('libra-ui/api-client', () => ({
   ApiError: class extends Error {},
@@ -99,11 +101,11 @@ describe('Reporte', () => {
     responder([{ tercero_id: 3, tercero: 'Agro Norte', ordenes: 2,
                  facturado: '3630.00', comision: '300.00', saldo: '2130.00' }])
     abrir('por-cliente')
-    const select = await screen.findByLabelText('Cliente')
-    await waitFor(() => expect(select.querySelectorAll('option').length).toBe(2))
+    const campo = await screen.findByLabelText('Cliente')
+    await waitFor(() => expect(opcionesDe(campo)).toEqual(['Todos', 'Agro Norte']))
 
     get.mockClear()
-    fireEvent.change(select, { target: { value: '3' } })
+    await elegirEnBuscable(campo, 'Agro Norte')
     await waitFor(() =>
       expect(get.mock.calls.some((llamada) => {
         const ruta = String(llamada[0] ?? '')

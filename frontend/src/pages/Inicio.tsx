@@ -67,7 +67,7 @@ export default function Inicio() {
   }).format(new Date())
 
   return (
-    <div className="p-6">
+    <div>
       <TituloPantalla icono={ICONOS_LC.dashboard}>LibraCargo</TituloPantalla>
       <p className="text-muted-foreground mt-1 text-sm">
         Cómo viene {mesLegible}. Los saldos son de hoy y no tienen período.

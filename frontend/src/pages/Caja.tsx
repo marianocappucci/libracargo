@@ -61,6 +61,8 @@ function Opcion({ id, etiqueta, valor, alCambiar, deshabilitado, children }: {
   return (
     <div className="grid gap-1">
       <Label htmlFor={id}>{etiqueta}</Label>
+      {/* select-cerrado: lo usan Tipo, Cuenta del tercero y Medio de pago, de dos a cuatro `<option>` escritos en cada uso. Los datos
+          (el tercero) van por `Elegir`, que se busca escribiendo */}
       <select id={id} className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
               disabled={deshabilitado} value={valor}
               onChange={(e) => alCambiar(e.target.value)}>
@@ -216,7 +218,7 @@ export default function Caja() {
   ]
 
   return (
-    <div className="p-6">
+    <div>
       <div className="mb-4">
         {/* El listado se imprime desde reportes (`listado-caja`), que exige
             rango. Y de paso deja de estar el truco de `desplazamiento > 0 ? []`:

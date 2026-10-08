@@ -9,6 +9,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { elegirEnBuscable } from '@/test/buscable'
+
 const get = vi.fn()
 const post = vi.fn()
 const put = vi.fn()
@@ -31,6 +33,7 @@ vi.mock('@/context/AuthContext', () => ({
 
 const { default: Entidades } = await import('./Entidades')
 const { Configuracion } = await import('./Configuracion')
+const { default: Vehiculos } = await import('./Vehiculos')
 const { ApiError } = await import('libra-ui/api-client')
 
 type Rol = 'cliente' | 'fletero' | 'proveedor'
@@ -75,6 +78,7 @@ function abrir(url = '/entidades') {
       <Routes>
         <Route path="/entidades" element={<><Entidades /><Ubicacion /></>} />
         <Route path="/configuracion" element={<Configuracion />} />
+        <Route path="/vehiculos" element={<><Vehiculos /><Ubicacion /></>} />
       </Routes>
     </MemoryRouter>,
   )
@@ -306,9 +310,9 @@ describe('Entidades · Choferes', () => {
     fireEvent.click(await screen.findByText('Ana Gómez'))
     const dialogo = await screen.findByRole('dialog')
     const campo = await within(dialogo).findByLabelText('Fletero')
-    await waitFor(() => expect(within(campo).getByRole('option', { name: 'Transportes del Sur' })).toBeInTheDocument())
     put.mockResolvedValue({})
-    fireEvent.change(campo, { target: { value: '2' } })
+    // El fletero se busca escribiendo (ADR-039 del kit): el campo es un combobox y las opciones existen con la lista abierta.
+    await elegirEnBuscable(campo, 'Transportes del Sur')
     fireEvent.click(within(dialogo).getByText('Guardar'))
     await waitFor(() => expect(put).toHaveBeenCalled())
     expect(put.mock.calls[0][0]).toBe('/api/choferes/12')
@@ -326,7 +330,7 @@ describe('Entidades · ficha del fletero', () => {
     expect(chofer).toHaveAttribute('href', '/entidades?pestana=choferes&ver=11')
     expect(within(ficha).getByText(/20-12345678-6/)).toBeInTheDocument()
     const vehiculo = await within(ficha).findByRole('link', { name: 'AB123CD' })
-    expect(vehiculo).toHaveAttribute('href', '/configuracion?seccion=vehiculos&ver=21')
+    expect(vehiculo).toHaveAttribute('href', '/vehiculos?ver=21')
     expect(within(ficha).getByText(/Acoplado EF456GH/)).toBeInTheDocument()
     expect(get).toHaveBeenCalledWith('/api/choferes?fletero_id=2')
     expect(get).toHaveBeenCalledWith('/api/vehiculos?fletero_id=2')
@@ -353,13 +357,14 @@ describe('Entidades · ficha del fletero', () => {
   })
 })
 
-describe('Configuración sin Terceros ni Choferes', () => {
-  it('🔑 ya no tiene las pestañas Terceros ni Choferes; quedan las demás', async () => {
+describe('Configuración sin Terceros, Choferes ni Vehículos', () => {
+  it('🔑 ya no tiene las pestañas Terceros, Choferes ni Vehículos; quedan las demás', async () => {
     render(<MemoryRouter initialEntries={['/configuracion']}><Configuracion /></MemoryRouter>)
     const pestanas = (await screen.findAllByRole('tab')).map((t) => t.textContent)
     expect(pestanas).not.toContain('Terceros')
     expect(pestanas).not.toContain('Choferes')
-    for (const queda of ['Vehículos', 'Localidades', 'Tipos de carga', 'Tarifario de referencia']) {
+    expect(pestanas).not.toContain('Vehículos')
+    for (const queda of ['Localidades', 'Tipos de carga', 'Tarifario de referencia']) {
       expect(pestanas).toContain(queda)
     }
   })
@@ -368,14 +373,16 @@ describe('Configuración sin Terceros ni Choferes', () => {
     ['/configuracion?seccion=terceros', '/entidades?pestana=clientes'],
     ['/configuracion?seccion=choferes', '/entidades?pestana=choferes'],
     ['/configuracion?seccion=choferes&ver=11', '/entidades?pestana=choferes&ver=11'],
+    ['/configuracion?seccion=vehiculos', '/vehiculos'],
+    ['/configuracion?seccion=vehiculos&ver=21', '/vehiculos?ver=21'],
   ])('🔴 el enlace viejo %s redirige a %s', async (viejo, nuevo) => {
     abrir(viejo)
     await waitFor(() => expect(ubicacion()).toBe(nuevo))
   })
 
   it('los demás enlaces de Configuración no se tocan', async () => {
-    render(<MemoryRouter initialEntries={['/configuracion?seccion=vehiculos']}><Configuracion /></MemoryRouter>)
-    const pestana = await screen.findByRole('tab', { name: 'Vehículos' })
+    render(<MemoryRouter initialEntries={['/configuracion?seccion=localidades']}><Configuracion /></MemoryRouter>)
+    const pestana = await screen.findByRole('tab', { name: 'Localidades' })
     expect(pestana).toHaveAttribute('data-state', 'active')
   })
 
@@ -385,8 +392,10 @@ describe('Configuración sin Terceros ni Choferes', () => {
       if (ruta.startsWith('/api/terceros/rol/fletero')) return Promise.resolve([ENTIDADES[1]])
       return Promise.resolve([])
     })
-    render(<MemoryRouter initialEntries={['/configuracion?seccion=vehiculos&ver=21']}><Configuracion /></MemoryRouter>)
+    abrir('/vehiculos?ver=21')
     const dialogo = await screen.findByRole('dialog')
     expect(within(dialogo).getByLabelText('Patente del chasis')).toHaveValue('AB123CD')
+    // Es una pantalla del menú: tiene su título (con el diálogo abierto el resto queda oculto al lector, de ahí `hidden`).
+    expect(screen.getByRole('heading', { name: 'Vehículos', hidden: true })).toBeInTheDocument()
   })
 })

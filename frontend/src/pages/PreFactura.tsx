@@ -141,7 +141,7 @@ export default function PreFactura() {
 
   if (!pf) {
     return (
-      <div className="p-6">
+      <div>
         {error
           ? <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{error}</p>
           : <p className="text-muted-foreground text-sm">Cargando…</p>}
@@ -153,7 +153,7 @@ export default function PreFactura() {
   }
 
   return (
-    <div className="p-6">
+    <div>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <Button variant="ghost" size="icon" asChild aria-label="Volver a Pre facturas">
           <Link to="/pre-facturas"><ArrowLeft className="size-4" /></Link>

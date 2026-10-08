@@ -9,6 +9,7 @@
  *  formulario anidado en un portal sube por el árbol y dispararía el de la orden. Enter se atiende en el campo.
  */
 import { useEffect, useState } from 'react'
+import { SelectBuscable } from 'libra-ui/SelectBuscable'
 
 import { PAIS_POR_OMISION, provincias as traerProvincias, type Provincia } from '@/api/geo'
 import { mensajeDeError } from '@/components/AbmMaestro'
@@ -113,14 +114,14 @@ export function DialogoParaje({
             {sinCatalogo ? (
               <Input id="paraje-provincia" value={provincia} onChange={(e) => setProvincia(e.target.value)} />
             ) : (
-              // `<select>` nativo: son pocas opciones fijas dentro de un diálogo, y el de Radix pelea ahí por el foco.
-              <select
-                id="paraje-provincia" className="h-9 rounded-md border px-3 text-sm" required
-                value={provincia} onChange={(e) => setProvincia(e.target.value)}
-              >
-                <option value="">Elegí la provincia…</option>
-                {(lista ?? []).map((p) => <option key={p.id} value={p.nombre}>{p.nombre}</option>)}
-              </select>
+              // Se busca escribiendo (ADR-039 del kit): 24 provincias argentinas. El selector del kit no es el de Radix, así que no
+              // pelea por el foco dentro del diálogo.
+              <SelectBuscable
+                id="paraje-provincia" required ariaLabel="Provincia" placeholder="Elegí la provincia…"
+                emptyMessage="No hay ninguna provincia con ese nombre."
+                value={provincia} onChange={setProvincia}
+                opciones={(lista ?? []).map((p) => ({ value: p.nombre, label: p.nombre }))}
+              />
             )}
           </div>
           {error && <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{error}</p>}

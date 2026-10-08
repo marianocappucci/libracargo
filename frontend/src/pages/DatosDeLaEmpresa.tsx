@@ -121,6 +121,7 @@ export function DatosDeLaEmpresa() {
           emite si el CUIT de su configuración es éste (ver Configuración → ARCA). */}
       <div className="mt-4 grid max-w-sm gap-1">
         <Label htmlFor="c-condicion_iva">Condición frente al IVA</Label>
+        {/* select-cerrado: las cinco condiciones frente al IVA (`CONDICIONES_IVA`), una constante del código: no hay nada que buscar */}
         <Select value={datos.condicion_iva ?? ''}
                 onValueChange={(v) => set({ condicion_iva: v })}>
           <SelectTrigger id="c-condicion_iva"><SelectValue placeholder="Elegí una" /></SelectTrigger>

@@ -10,6 +10,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { elegirEnBuscable, opcionesDe } from '@/test/buscable'
+
 const get = vi.fn()
 const post = vi.fn()
 const put = vi.fn()
@@ -51,8 +53,8 @@ function orden(id: number, extra: Record<string, unknown> = {}) {
   }
 }
 
-/** Monta la pantalla con las rutas a las que navega, y elige el cliente. */
-async function abrir(cliente = '1') {
+/** Monta la pantalla con las rutas a las que navega, y elige el cliente (por su nombre: el campo se busca escribiendo). */
+async function abrir(cliente = 'Agro Norte') {
   render(
     <MemoryRouter initialEntries={['/comprobantes/facturar']}>
       <Routes>
@@ -60,13 +62,13 @@ async function abrir(cliente = '1') {
         <Route path="/pre-facturas/:id" element={<p>Pantalla de la pre factura</p>} />
       </Routes>
     </MemoryRouter>)
-  const selectCliente = await screen.findByLabelText('Cliente')
-  await waitFor(() => expect(selectCliente.querySelectorAll('option').length).toBe(2))
+  const campoCliente = await screen.findByLabelText('Cliente')
+  await waitFor(() => expect(opcionesDe(campoCliente)).toEqual(['Elegir…', 'Agro Norte']))
   // Dentro de act: elegir el cliente dispara el pedido de las pendientes, y
   // ese estado llega despues del evento. Sin esto React avisa que la
   // actualizacion quedo afuera, y lo que se assertee puede ser el estado previo.
   await act(async () => {
-    fireEvent.change(selectCliente, { target: { value: cliente } })
+    await elegirEnBuscable(campoCliente, cliente)
   })
 }
 
