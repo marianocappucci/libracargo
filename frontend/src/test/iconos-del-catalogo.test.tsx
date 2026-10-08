@@ -15,6 +15,7 @@ import * as lucide from 'lucide-react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { auditarMenuContraCatalogo, iconoDelTitulo, iconosDelNav } from 'libra-ui/auditoria-de-titulos'
 import { ICONOS, iconoDelConcepto, iconosDe, type Concepto } from 'libra-ui/iconos-identidad'
+import { INDICADORES, iconoDelIndicador, type ConceptoIndicador } from 'libra-ui/iconos-indicador'
 
 const get = vi.fn()
 vi.mock('libra-ui/api-client', async () => {
@@ -44,7 +45,7 @@ const { NAV_SECCIONES } = await import('@/components/Layout')
 const SRC = join(process.cwd(), 'src')
 const leer = (ruta: string) => readFileSync(join(SRC, ruta), 'utf8')
 
-/** Qué concepto del catálogo es cada entrada del menú que lo tiene. «Órdenes de carga», «Cartas de porte» y «Entidades» son de este producto y no entran al catálogo. */
+/** Qué concepto del catálogo es cada entrada del menú que lo tiene. «Órdenes de carga» y «Entidades» son de este producto y no entran al catálogo de identidad; «Cartas de porte» sale del de indicadores (ADR-038). */
 const MENU: Record<string, Concepto> = {
   '/': 'dashboard',
   '/cuentas': 'cuentaCorriente',
@@ -73,6 +74,12 @@ const TITULOS: Record<string, Concepto> = {
 }
 
 const nombre = (i: unknown) => (i as { displayName?: string }).displayName
+
+/** El componente de lucide al que apunta el `icon:` de una entrada propia del menú: un nombre suelto (`ClipboardList`) o `INDICADORES.concepto`. */
+function componenteDeLaEntrada(expresion: string): unknown {
+  const indicador = /^INDICADORES\.([a-z][A-Za-z0-9]*)$/.exec(expresion)
+  return indicador ? INDICADORES[indicador[1] as ConceptoIndicador] : (lucide as unknown as Record<string, unknown>)[expresion]
+}
 
 describe('LibraCargo es el único producto con excepción en el catálogo', () => {
   it('🔴 Proveedores es Store y Fleteros es Truck; el resto de la familia deja Truck para Proveedores', () => {
@@ -109,8 +116,30 @@ describe('el menú usa el catálogo', () => {
     const propias = [...iconosDelNav(leer('components/Layout.tsx'))].filter(([ruta]) => !(ruta in MENU))
     expect(propias.map(([ruta]) => ruta)).toEqual(['/ordenes', '/cartas-porte', '/entidades'])
     for (const [, icono] of propias) {
-      expect(delCatalogo.has(nombre((lucide as unknown as Record<string, unknown>)[icono]) ?? icono)).toBe(false)
+      const componente = componenteDeLaEntrada(icono)
+      expect(componente, icono).toBeDefined()
+      expect(delCatalogo.has(nombre(componente) ?? icono)).toBe(false)
     }
+  })
+
+  it('🔴 «Cartas de porte» sale del catálogo de indicadores: `INDICADORES.cartasDePorte` es FileBadge, no un FileCheck suelto', () => {
+    // Se escribe `INDICADORES.cartasDePorte` y no `iconoDelIndicador(…)` porque es la forma que lee `auditarTitulos`; para un concepto propio
+    // del catálogo (sin excepción por producto) las dos son el mismo componente.
+    expect(iconosDelNav(leer('components/Layout.tsx')).get('/cartas-porte')).toBe('INDICADORES.cartasDePorte')
+    expect(INDICADORES.cartasDePorte).toBe(iconoDelIndicador('cartasDePorte'))
+    expect(INDICADORES.cartasDePorte).toBe(lucide.FileBadge)
+    const item = NAV_SECCIONES.flatMap((s) => s.items).find((i) => i.to === '/cartas-porte')
+    expect(item!.icon).toBe(iconoDelIndicador('cartasDePorte', 'libracargo'))
+  })
+
+  it('🔴 la carta de porte se dibuja igual en el menú, el título, el botón de la orden y el asistente de emisión (ninguno importa FileCheck/FileBadge de lucide)', () => {
+    for (const ruta of ['components/Layout.tsx', 'pages/CartasDePorte.tsx', 'pages/Ordenes.tsx', 'components/EmitirCartaDePorte.tsx']) {
+      const importaDeLucide = [...leer(ruta).matchAll(/import\s*\{([^}]*)\}\s*from\s*'lucide-react'/g)].flatMap((m) => m[1].split(',').map((x) => x.trim()))
+      expect(importaDeLucide.filter((x) => /^File(Check|Badge)\b/.test(x)), ruta).toEqual([])
+    }
+    expect(leer('pages/CartasDePorte.tsx')).toContain('icono={INDICADORES.cartasDePorte}')
+    expect(leer('pages/Ordenes.tsx')).toContain('<IconoIndicador concepto="cartasDePorte"')
+    expect(leer('components/EmitirCartaDePorte.tsx')).toContain('<IconoIndicador concepto="cartasDePorte"')
   })
 })
 

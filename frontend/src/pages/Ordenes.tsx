@@ -1,8 +1,9 @@
 /** El listado de órdenes: una pantalla con filtros, no once pantallas. */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
+import { IconoIndicador } from 'libra-ui/IconoIndicador'
 import { SelectBuscable } from 'libra-ui/SelectBuscable'
-import { Ban, ClipboardList, Eye, FileCheck, Pencil, Plus, Printer } from 'lucide-react'
+import { Ban, ClipboardList, Eye, Pencil, Plus, Printer } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { UseFormReturn } from 'react-hook-form'
 import { useForm } from 'react-hook-form'
@@ -302,13 +303,17 @@ export default function Ordenes() {
 
   return (
     <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <TituloPantalla icono={ClipboardList}>Órdenes de carga</TituloPantalla>
+      <div className="mb-4">
         {/* El listado se imprime desde reportes (`listado-ordenes`), que exige
             rango: desde aca el boton salia con la pantalla recien abierta y
             mandaba las 4.337 ordenes al papel. El icono de la fila queda: es
             UNA orden, una hoja. */}
-        <Button onClick={() => abrir(null)}><Plus className="size-4" /> Nueva</Button>
+        <TituloPantalla
+          icono={ClipboardList}
+          acciones={<Button onClick={() => abrir(null)}><Plus className="size-4" /> Nueva</Button>}
+        >
+          Órdenes de carga
+        </TituloPantalla>
       </div>
 
       <FiltrosOrdenes valor={filtros} opciones={opciones} alCambiar={setFiltros} />
@@ -453,7 +458,7 @@ export default function Ordenes() {
             {/* Una orden anulada no viaja: no se le emite carta de porte. */}
             {detalle && detalle.estado !== 'anulada' && (
               <Button variant="outline" onClick={() => setEmitiendo(detalle)}>
-                <FileCheck className="size-4" /> Emitir carta de porte
+                <IconoIndicador concepto="cartasDePorte" /> Emitir carta de porte
               </Button>
             )}
             {detalle && (

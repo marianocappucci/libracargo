@@ -10,7 +10,7 @@
  */
 import { EstadoDeOrden } from '@/components/EstadoDeOrden'
 import { DataTable } from 'libra-ui/data-table'
-import { AlertTriangle, ArrowRight, BookOpen, ClipboardList, LayoutDashboard, Receipt, Wallet } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
@@ -23,31 +23,14 @@ import { mensajeDeError } from '@/components/AbmMaestro'
 import { irA } from '@/navegacion'
 import { formatearImporte } from '@/components/esquema-orden'
 import { sumarImportes } from '@/api/comprobantes'
+import { TarjetaIndicador } from 'libra-ui/TarjetaIndicador'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 import { formatearFecha } from '@/components/esquema-orden'
 import { primerDiaDelMesISO } from 'libra-ui/fechas'
+import { ICONOS_LC } from '@/iconos'
 
 /** El primer día del mes en curso, en hora de Argentina. */
 const primerDiaDelMes = primerDiaDelMesISO
-
-function Tarjeta({ titulo, valor, detalle, a, icono: Icono }: {
-  titulo: string; valor: string; detalle: string
-  a?: string; icono: typeof Wallet
-}) {
-  const cuerpo = (
-    <>
-      <div className="text-muted-foreground flex items-center gap-2 text-xs">
-        <Icono className="size-4" /> {titulo}
-      </div>
-      <p className="mt-1 text-2xl font-semibold tabular-nums">{valor}</p>
-      {/* El período va SIEMPRE: un número sin su universo no se puede leer. */}
-      <p className="text-muted-foreground mt-1 text-xs">{detalle}</p>
-    </>
-  )
-  return a
-    ? <Link to={a} className="hover:bg-accent rounded border p-4 transition-colors">{cuerpo}</Link>
-    : <div className="rounded border p-4">{cuerpo}</div>
-}
 
 export default function Inicio() {
   const navegar = useNavigate()
@@ -85,7 +68,7 @@ export default function Inicio() {
 
   return (
     <div className="p-6">
-      <TituloPantalla icono={LayoutDashboard}>LibraCargo</TituloPantalla>
+      <TituloPantalla icono={ICONOS_LC.dashboard}>LibraCargo</TituloPantalla>
       <p className="text-muted-foreground mt-1 text-sm">
         Cómo viene {mesLegible}. Los saldos son de hoy y no tienen período.
       </p>
@@ -98,31 +81,33 @@ export default function Inicio() {
 
       {mes && historico && (
         <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Tarjeta titulo="Órdenes del mes" icono={ClipboardList} a="/ordenes"
-                   valor={String(mes.ordenes)}
-                   detalle={`${historico.ordenes} en total`} />
-          <Tarjeta titulo="Facturado en el mes" icono={Receipt} a="/comprobantes"
-                   valor={formatearImporte(mes.facturado)}
-                   detalle={`${mes.comprobantes} comprobante(s) en ${mesLegible}`} />
-          <Tarjeta titulo="Cobrado en el mes" icono={Wallet} a="/caja"
-                   valor={formatearImporte(mes.cobrado)}
-                   detalle={`pagado ${formatearImporte(mes.pagado)}`} />
-          <Tarjeta titulo="Pendientes de facturar" icono={AlertTriangle}
-                   a="/reportes/pendientes-de-facturar"
-                   valor={String(historico.ordenes_pendientes)}
-                   detalle="órdenes sin comprobante, de todo el histórico" />
-          <Tarjeta titulo="Saldo de clientes" icono={BookOpen} a="/reportes/saldos"
-                   valor={formatearImporte(porRol('cliente'))}
-                   detalle={`${saldos.filter((s) => s.rol === 'cliente').length} cuentas con saldo`} />
-          <Tarjeta titulo="Saldo de fleteros" icono={BookOpen} a="/reportes/saldos"
-                   valor={formatearImporte(porRol('fletero'))}
-                   detalle={`${saldos.filter((s) => s.rol === 'fletero').length} cuentas con saldo`} />
-          <Tarjeta titulo="Saldo de proveedores" icono={BookOpen} a="/reportes/saldos"
-                   valor={formatearImporte(porRol('proveedor'))}
-                   detalle={`${saldos.filter((s) => s.rol === 'proveedor').length} cuentas con saldo`} />
-          <Tarjeta titulo="Comisión del mes" icono={ClipboardList} a="/reportes/por-fletero"
-                   valor={formatearImporte(mes.comision)}
-                   detalle="de las órdenes del mes" />
+          <TarjetaIndicador etiqueta="Órdenes del mes" concepto="ordenesDeCarga" a="/ordenes"
+                            valor={String(mes.ordenes)}
+                            ayuda={`${historico.ordenes} en total`} />
+          <TarjetaIndicador etiqueta="Facturado en el mes" concepto="facturado" a="/comprobantes"
+                            valor={formatearImporte(mes.facturado)}
+                            ayuda={`${mes.comprobantes} comprobante(s) en ${mesLegible}`} />
+          <TarjetaIndicador etiqueta="Cobrado en el mes" concepto="cobros" a="/caja"
+                            valor={formatearImporte(mes.cobrado)}
+                            ayuda={`pagado ${formatearImporte(mes.pagado)}`} />
+          <TarjetaIndicador etiqueta="Pendientes de facturar" concepto="comprobantesAFacturar"
+                            a="/reportes/pendientes-de-facturar"
+                            valor={String(historico.ordenes_pendientes)}
+                            ayuda="órdenes sin comprobante, de todo el histórico" />
+          <TarjetaIndicador etiqueta="Saldo de clientes" concepto="clientes" a="/reportes/saldos"
+                            valor={formatearImporte(porRol('cliente'))}
+                            ayuda={`${saldos.filter((s) => s.rol === 'cliente').length} cuentas con saldo`} />
+          <TarjetaIndicador etiqueta="Saldo de fleteros" concepto="fleteros" a="/reportes/saldos"
+                            valor={formatearImporte(porRol('fletero'))}
+                            ayuda={`${saldos.filter((s) => s.rol === 'fletero').length} cuentas con saldo`} />
+          {/* `producto`: en LibraCargo el camión es de los fleteros y Proveedores lleva `Store` (ADR-035). */}
+          <TarjetaIndicador etiqueta="Saldo de proveedores" concepto="proveedores" producto="libracargo"
+                            a="/reportes/saldos"
+                            valor={formatearImporte(porRol('proveedor'))}
+                            ayuda={`${saldos.filter((s) => s.rol === 'proveedor').length} cuentas con saldo`} />
+          <TarjetaIndicador etiqueta="Comisión del mes" concepto="comisiones" a="/reportes/por-fletero"
+                            valor={formatearImporte(mes.comision)}
+                            ayuda="de las órdenes del mes" />
         </div>
       )}
 

@@ -84,4 +84,20 @@ describe('el dashboard', () => {
     // y trae tono, o sea que no pasa por ausencia del atributo.
     expect(screen.getByText('pendiente')).toHaveAttribute('data-tono')
   })
+
+  it('🔴 los indicadores son TarjetaIndicador con el concepto del catálogo, y el saldo de proveedores lleva Store (excepción de LibraCargo)', async () => {
+    responder([])
+    render(<MemoryRouter><Inicio /></MemoryRouter>)
+
+    await screen.findByText('Órdenes del mes')
+    const conceptos = Array.from(document.querySelectorAll('[data-slot="tarjeta-indicador"]'))
+      .map((t) => t.getAttribute('data-concepto'))
+    expect(conceptos).toEqual([
+      'ordenesDeCarga', 'facturado', 'cobros', 'comprobantesAFacturar', 'clientes', 'fleteros', 'proveedores', 'comisiones',
+    ])
+    const dibujo = (etiqueta: string) => screen.getByText(etiqueta).closest('[data-slot="tarjeta-indicador"]')
+      ?.querySelector('[data-slot="icono-tile"] svg')?.getAttribute('class')
+    expect(dibujo('Saldo de proveedores')).toContain('lucide-store')
+    expect(dibujo('Saldo de fleteros')).toContain('lucide-truck')
+  })
 })

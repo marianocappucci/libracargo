@@ -9,8 +9,9 @@
  */
 import { BadgeEstado } from 'libra-ui/badge-estado'
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
+import { INDICADORES } from 'libra-ui/iconos-indicador'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
-import { Download, FileCheck, FileDown, Link2, RefreshCw } from 'lucide-react'
+import { Download, FileDown, Link2, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { MouseEvent } from 'react'
 import { Link } from 'react-router-dom'
@@ -218,16 +219,22 @@ export default function CartasDePorte() {
 
   return (
     <div className="p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <TituloPantalla icono={FileCheck}>Cartas de porte</TituloPantalla>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={actualizarAbiertas} disabled={actualizandoTodas}>
-            <RefreshCw className="size-4" /> {actualizandoTodas ? 'Actualizando…' : 'Actualizar abiertas'}
-          </Button>
-          <Button onClick={() => setTrayendo(true)}>
-            <Download className="size-4" /> Traer de ARCA
-          </Button>
-        </div>
+      <div className="mb-4">
+        <TituloPantalla
+          icono={INDICADORES.cartasDePorte}
+          acciones={(
+            <>
+              <Button variant="outline" onClick={actualizarAbiertas} disabled={actualizandoTodas}>
+                <RefreshCw className="size-4" /> {actualizandoTodas ? 'Actualizando…' : 'Actualizar abiertas'}
+              </Button>
+              <Button onClick={() => setTrayendo(true)}>
+                <Download className="size-4" /> Traer de ARCA
+              </Button>
+            </>
+          )}
+        >
+          Cartas de porte
+        </TituloPantalla>
       </div>
 
       <p className="text-muted-foreground mb-4 text-sm">

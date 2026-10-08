@@ -217,14 +217,20 @@ export default function Caja() {
 
   return (
     <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <TituloPantalla icono={ICONOS_LC.caja}>Caja</TituloPantalla>
+      <div className="mb-4">
         {/* El listado se imprime desde reportes (`listado-caja`), que exige
             rango. Y de paso deja de estar el truco de `desplazamiento > 0 ? []`:
             aca la hoja pedia UNA tanda y lo que no entraba se perdia callado. */}
-        <Button onClick={() => abrir(null)}>
-          <Plus className="size-4" /> Nuevo movimiento
-        </Button>
+        <TituloPantalla
+          icono={ICONOS_LC.caja}
+          acciones={(
+            <Button onClick={() => abrir(null)}>
+              <Plus className="size-4" /> Nuevo movimiento
+            </Button>
+          )}
+        >
+          Caja
+        </TituloPantalla>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
