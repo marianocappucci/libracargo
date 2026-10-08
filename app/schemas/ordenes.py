@@ -74,6 +74,9 @@ class CamposDeOrden(BaseModel):
     kg_bruto_descarga: int | None = Field(default=None, ge=0)
     kg_tara_descarga: int | None = Field(default=None, ge=0)
     kg_neto_descarga: int | None = Field(default=None, ge=0)
+    #: Los km del viaje y la tarifa por tonelada pactada (ADR-038). Se proponen desde el tarifario; varían por viaje.
+    km: int | None = Field(default=None, ge=1, le=99999)
+    tarifa_tonelada: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
 
 class OrdenIn(CamposDeOrden):
     """Lo que se acepta al crear o modificar. Acá sí van las reglas."""

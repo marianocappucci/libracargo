@@ -355,6 +355,10 @@ class OrdenCarga(Base, Auditable, Anotable):
     kg_bruto_descarga: Mapped[int | None] = mapped_column(Integer, nullable=True)
     kg_tara_descarga: Mapped[int | None] = mapped_column(Integer, nullable=True)
     kg_neto_descarga: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Los km del viaje y la tarifa por tonelada pactada para este viaje (ADR-038). La tarifa se propone desde el
+    #: tarifario de referencia y varía por viaje; **todavía no liquida**: `tarifa` sigue siendo el importe.
+    km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tarifa_tonelada: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
 
     # FK real, no el número de factura copiado a mano como hacía el legado. Desde
     # la revisión `0016` apunta a `facturas` del motor, donde vive el comprobante.
@@ -396,6 +400,8 @@ class OrdenCarga(Base, Auditable, Anotable):
             " AND COALESCE(kg_neto_descarga, 0) >= 0",
             name="ck_ordenes_kilos_no_negativos",
         ),
+        CheckConstraint("COALESCE(km, 1) >= 1 AND COALESCE(tarifa_tonelada, 0) >= 0",
+                        name="ck_ordenes_km_y_tarifa_tonelada"),
         Index("ix_ordenes_fecha", "fecha"),
         Index("ix_ordenes_cliente_fecha", "cliente_id", "fecha"),
         Index("ix_ordenes_fletero_fecha", "fletero_id", "fecha"),

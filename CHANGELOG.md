@@ -3,6 +3,14 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — El tarifario de referencia, y km y tarifa por tonelada en la orden
+
+- **Tarifario de referencia** (ADR-038): la tabla de tarifas por tonelada para cada kilómetro, con su vigencia y el valor de estadía. Se carga desde un CSV `km;tarifa` en Configuración (sólo un administrador) y las ediciones anteriores se conservan.
+- **La orden suma km y tarifa por tonelada.** Al cargar los km, se muestra la tarifa de referencia del tarifario que regía en la fecha de la orden, y la tarifa se calcula con un **porcentaje sobre esa referencia**. El sistema propone el porcentaje del último viaje del cliente, porque varía por viaje. **No cambia el importe** que se factura.
+- **API**: `GET /api/tarifario`, `GET /api/tarifario/{id}/filas`, `GET /api/tarifario/referencia?km=&fecha=`, `GET /api/tarifario/sugerencia?cliente_id=` y `POST /api/tarifario` (admin). `km` y `tarifa_tonelada` en `/api/ordenes`.
+- **Migración `0023`**: dos tablas nuevas, vacías, y dos columnas vacías en la orden.
+- **Pin**: libracore v1.144.0 (emisión de la Carta de Porte en el motor, que se usa en la fase 4).
+
 ## [Unreleased] — La orden con etapas, kilos y la foto del ticket
 
 - **Etapa del viaje** en la orden (ADR-037): Asignada, Cargada, En viaje, Descargada y Cerrada. Va **aparte del estado de facturación**: una orden facturada se ve como «Liquidada». Se cambia desde la orden, también si ya está facturada, y por ahora sólo informa: no frena la facturación. Hay filtro por etapa en el listado.

@@ -59,6 +59,7 @@ from app.routers import (
     pre_facturas,
     reportes,
     salud,
+    tarifario,
 )
 from app.routers import auth as auth_router
 
@@ -340,6 +341,7 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
         app.include_router(router)
     app.include_router(ordenes.router)
     app.include_router(cartas_porte.router)
+    app.include_router(tarifario.router)
     app.include_router(cuentas.router)
     # Gastos de proveedor: el bloque que el legado llamaba COMPROBANTES
     # PROVEEDORES. Deja dos asientos -proveedor al debe, fletero al haber-

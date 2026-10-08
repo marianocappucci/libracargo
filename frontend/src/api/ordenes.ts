@@ -51,6 +51,9 @@ export type Orden = {
   kg_bruto_descarga: number | null
   kg_tara_descarga: number | null
   kg_neto_descarga: number | null
+  /** Los km del viaje y la tarifa por tonelada pactada (ADR-038). Varían por viaje; no cambian el importe de la orden. */
+  km: number | null
+  tarifa_tonelada: string | null
   comprobante_id: number | null
   observaciones: string | null
   /** Lo que el legado tenia en  cuando no era un numero
