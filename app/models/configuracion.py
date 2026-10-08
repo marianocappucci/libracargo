@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import CheckConstraint, Enum, Integer, LargeBinary, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Enum, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Auditable, Base
@@ -64,6 +64,11 @@ class ConfiguracionEmpresa(Base, Auditable):
     logo: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     logo_tipo: Mapped[str | None] = mapped_column(String(60), nullable=True)
     logo_nombre: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    #: 🔴 Emitir Cartas de Porte **reales** (producción) por delegación (ADR-043). Apagado por omisión: lo prende un
+    #: administrador a propósito. En homologación no hace falta.
+    cpe_emision_habilitada: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                                         server_default="false")
 
     __table_args__ = (
         CheckConstraint("id = 1", name="ck_configuracion_una_sola_fila"),

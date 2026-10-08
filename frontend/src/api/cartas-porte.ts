@@ -55,6 +55,9 @@ export type CartaPorte = {
   orden_carga_id: number | null
   /** En la vista previa: el `id` con que ya está guardada, si lo está. */
   guardada_id: number | null
+  /** `true` si la emitió este sistema (ADR-043) y no sólo la trajo de ARCA: sólo esas se anulan desde acá. Si el
+   *  backend no lo manda, queda `undefined` y la pantalla no ofrece anular. */
+  emitida?: boolean
 }
 
 export type Ambiente = 'produccion' | 'homologacion'
@@ -66,6 +69,74 @@ export type Representados = { ambiente: Ambiente; cuits: Representado[] }
 export type ResultadoDeTraer = { ctg: number; id: number | null; error: string | null }
 
 export type ResumenDeActualizar = { actualizadas: number; errores: { ctg: number; error: string }[] }
+
+// ── Emitir desde la orden (ADR-043) ──────────────────────────────────────
+
+export type EstadoDeEmision = {
+  /** `null` si no hay certificado de «CTG y Carta de Porte» cargado. */
+  ambiente: Ambiente | null
+  habilitada: boolean
+  puede_emitir: boolean
+}
+
+export type OpcionDeArca = { codigo: number; nombre: string }
+export type Planta = { numero: number; cod_provincia: number; cod_localidad: number }
+
+export type OrigenPropuesto = {
+  tipo: 'campo' | 'planta'
+  cod_provincia?: number | null
+  cod_localidad?: number | null
+  planta?: number | null
+  renspa?: string | null
+}
+
+export type DestinoPropuesto = {
+  cuit?: string | null
+  cod_provincia?: number | null
+  cod_localidad?: number | null
+  planta?: number | null
+  es_campo?: boolean
+}
+
+export type TransportePropuesto = {
+  cuit_transportista: string | null
+  dominios: string[]
+  /** ISO con zona (`…-03:00`); la propuesta lo manda vacío porque la partida la decide quien emite. */
+  fecha_hora_partida: string | null
+  km: number | null
+  cuit_chofer: string | null
+  cuit_pagador_flete: string | null
+  /** Decimal como texto, por tonelada. */
+  tarifa: string | null
+  mercaderia_fumigada: boolean
+  cuit_intermediario_flete?: string | null
+}
+
+export type Propuesta = {
+  orden_id: number
+  cuit_titular: string
+  sucursal: number
+  origen: OrigenPropuesto
+  cod_grano: number | null
+  cosecha: number | null
+  peso_bruto: number | null
+  peso_tara: number | null
+  destino: DestinoPropuesto
+  cuit_destinatario: string | null
+  intervinientes: Record<string, string | null>
+  cuit_remitente_comercial_productor: string | null
+  transporte: TransportePropuesto
+  observaciones: string | null
+  /** Se completó con lo último emitido para ese titular. */
+  de_plantilla: boolean
+  /** Lo que no se pudo completar y hay que cargar, ya dicho en castellano. */
+  faltantes: string[]
+}
+
+/** Lo que se manda a emitir: la propuesta, editada. Sin `orden_id`, `faltantes` ni `de_plantilla`, que no son datos. */
+export type DatosDeEmision = Omit<Propuesta, 'orden_id' | 'faltantes' | 'de_plantilla'>
+
+export type Enlace = { url: string; vence: string }
 
 /** El tope de CTG por pedido, el mismo del backend. */
 export const MAX_CTGS = 50
@@ -94,6 +165,33 @@ export const cartasPorte = {
     api.put<CartaPorte>(`/api/cartas-porte/${id}/orden`, { orden_carga_id: ordenCargaId }),
   /** El PDF que devolvió ARCA: se abre en otra pestaña, la sesión viaja en la cookie. */
   urlDelPdf: (id: number) => `/api/cartas-porte/${id}/pdf`,
+
+  // ── Emitir (ADR-043) ──
+  /** En qué ambiente se emitiría y si la emisión real está habilitada. */
+  estadoDeEmision: () => api.get<EstadoDeEmision>('/api/cartas-porte/emision/estado'),
+  /** Sólo un administrador. */
+  habilitarEmision: (habilitada: boolean) =>
+    api.put<EstadoDeEmision>('/api/cartas-porte/emision/habilitada', { habilitada }),
+  propuesta: (ordenId: number, cuitTitular: string) =>
+    api.get<Propuesta>(`/api/cartas-porte/emision/propuesta?orden_id=${ordenId}&cuit_titular=${cuitTitular}`),
+  /** 🔴 Emite una Carta de Porte en ARCA. No se reintenta sola ni desde la pantalla ante un 502/500: ver el asistente. */
+  emitir: (ordenId: number, confirmo: boolean, datos: DatosDeEmision) =>
+    api.post<CartaPorte>('/api/cartas-porte/emision/emitir', { orden_id: ordenId, confirmo, datos }),
+  /** Los catálogos de ARCA se piden en nombre del titular. */
+  granos: (cuitTitular: string) =>
+    api.get<OpcionDeArca[]>(`/api/cartas-porte/catalogos/granos?cuit_titular=${cuitTitular}`),
+  provincias: (cuitTitular: string) =>
+    api.get<OpcionDeArca[]>(`/api/cartas-porte/catalogos/provincias?cuit_titular=${cuitTitular}`),
+  localidades: (cuitTitular: string, provincia: number) =>
+    api.get<OpcionDeArca[]>(`/api/cartas-porte/catalogos/localidades?cuit_titular=${cuitTitular}&provincia=${provincia}`),
+  /** Las plantas inscriptas de ese CUIT (el del destino). */
+  plantas: (cuitTitular: string, cuit: string) =>
+    api.get<Planta[]>(`/api/cartas-porte/catalogos/plantas?cuit_titular=${cuitTitular}&cuit=${cuit}`),
+  /** Sólo un administrador, y sólo las emitidas desde acá. */
+  anular: (id: number, observaciones?: string) =>
+    api.post<CartaPorte>(`/api/cartas-porte/${id}/anular`, observaciones ? { observaciones } : {}),
+  /** Un enlace firmado al PDF, que vence a los 7 días: para mandárselo al chofer, que no tiene usuario. */
+  enlace: (id: number) => api.get<Enlace>(`/api/cartas-porte/${id}/enlace`),
 }
 
 // ── Estado ────────────────────────────────────────────────────────────────
@@ -186,3 +284,22 @@ export function formatearInstante(valor: string | null | undefined): string {
 export function formatearDiaDelInstante(valor: string | null | undefined): string {
   return valor ? formatearInstante(valor).slice(0, 10) : '—'
 }
+
+// ── Texto para compartir ──────────────────────────────────────────────────
+
+/** Lo que se le manda al chofer: `Carta de porte 00001-00072413 · CTG 10123456781 · Origen → Destino · 29.500 kg ·
+ *  320 km. PDF: https://…`. Lo que no se sabe se omite en vez de dejar un hueco. */
+export function textoParaCompartir(
+  carta: Pick<CartaPorte, 'numero' | 'nro_ctg' | 'peso_neto' | 'km'>, origen: string, destino: string, url: string,
+): string {
+  const tramo = origen && destino ? `${origen} → ${destino}` : origen || destino
+  const partes = [
+    `Carta de porte ${carta.numero}`, `CTG ${carta.nro_ctg}`, tramo,
+    carta.peso_neto != null ? `${formatearKilos(carta.peso_neto)} kg` : '',
+    carta.km != null ? `${carta.km} km` : '',
+  ].filter(Boolean)
+  return `${partes.join(' · ')}. PDF: ${url}`
+}
+
+/** El enlace de WhatsApp con el texto ya escrito: se abre y la persona elige a quién mandárselo. */
+export const enlaceDeWhatsApp = (texto: string) => `https://wa.me/?text=${encodeURIComponent(texto)}`

@@ -3,6 +3,15 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Emitir la Carta de Porte desde la orden
+
+- **«Emitir carta de porte» en la orden** (ADR-043): a nombre del titular que delegó (por ejemplo, Agropecuaria Pereiro), con los datos ya cargados desde la orden (chofer, dominios, fletero, cliente, kilos, km y tarifa por tonelada) y desde **lo último emitido para ese titular** (origen, grano, cosecha, destino, planta). Muestra lo que falta completar, pide una confirmación explícita para emitir una carta real y devuelve el **CTG y el PDF**.
+- **«Compartir por WhatsApp»**: un enlace al PDF que el chofer abre sin usuario, firmado y válido por 7 días.
+- **Anular** una carta emitida desde acá (sólo un administrador).
+- **Traba de seguridad**: en producción, la emisión real arranca **apagada** y la prende un administrador.
+- **API**: `/api/cartas-porte/emision/estado`, `/emision/habilitada` (admin), `/emision/propuesta`, `/emision/emitir`, `/catalogos/granos|provincias|localidades|plantas`, `/{id}/anular` (admin), `/{id}/enlace` y `/api/publico/cpe/{id}/{vence}/{firma}.pdf`.
+- **Migración `0027`**: `cartas_porte.emitida`, la traba de emisión (apagada) y la tabla `plantillas_cpe`.
+
 ## [Unreleased] — Localidades del resto del Mercosur; el tarifario en la demo
 
 - **El buscador de localidades suma Brasil, Chile, Paraguay, Bolivia y Uruguay** (ADR-042): 6.621 lugares de GeoNames, con Argentina siempre primero. Cada localidad muestra su país, y un paraje puede ser de afuera.
