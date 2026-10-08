@@ -14,6 +14,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 configure({ asyncUtilTimeout: 5000 })
 // Y por lo mismo, el tiempo total de cada test: en el CI varios tests del flete pasan los 5 s por defecto de vitest.
 vi.setConfig({ testTimeout: 20_000 })
+// Y por lo mismo, el tiempo total de cada test: en el CI varios tests del flete pasan los 5 s por defecto de vitest.
+vi.setConfig({ testTimeout: 20_000 })
 
 const get = vi.fn()
 const put = vi.fn()
