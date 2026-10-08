@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { VALORES_DE_ETAPA } from '@/api/ordenes'
+import { aDecimal, conDosDecimales } from '@/lib/tarifa'
 
 /** El esquema del formulario de orden.
  *
@@ -20,6 +21,26 @@ const kilos = z.preprocess(
   z.coerce.number({ error: 'los kilos tienen que ser un número' })
     .int('los kilos son un número entero')
     .min(0, 'los kilos no pueden ser negativos')
+    .nullable(),
+)
+
+/** Los km del viaje: vacío es «no se sabe» (`null`). Entero de 1 a 99999, como en el backend. */
+const kmDelViaje = z.preprocess(
+  (v) => (v === '' || v == null || (typeof v === 'number' && Number.isNaN(v)) ? null : v),
+  z.coerce.number({ error: 'los km tienen que ser un número' })
+    .int('los km son un número entero')
+    .min(1, 'los km son 1 o más')
+    .max(99999, 'los km no pueden pasar de 99999')
+    .nullable(),
+)
+
+/** La tarifa por tonelada pactada: vacío es `null`; si no, TEXTO con dos decimales (`19724.7` → `19724.70`), nunca
+ *  un `number`. Acepta la coma (`19724,73`) porque así se escribe. */
+const tarifaPorTonelada = z.preprocess(
+  (v) => (v == null || (typeof v === 'string' && v.trim() === '') ? null : String(v)),
+  z.string()
+    .refine((v) => aDecimal(v) !== null, 'importe inválido')
+    .transform((v) => conDosDecimales(aDecimal(v) as string))
     .nullable(),
 )
 
@@ -65,6 +86,8 @@ export const esquemaOrden = z
     kg_bruto_descarga: kilos,
     kg_tara_descarga: kilos,
     kg_neto_descarga: kilos,
+    km: kmDelViaje,
+    tarifa_tonelada: tarifaPorTonelada,
   })
   .refine((d) => d.origen_id !== d.destino_id, {
     message: 'el origen y el destino no pueden ser el mismo lugar',
