@@ -399,3 +399,55 @@ describe('Configuración sin Terceros, Choferes ni Vehículos', () => {
     expect(screen.getByRole('heading', { name: 'Vehículos', hidden: true })).toBeInTheDocument()
   })
 })
+
+describe('Entidades · la línea de Carta de porte en la ficha del cliente (ADR-044)', () => {
+  const titularDe = (extra: Record<string, unknown>) => ({
+    id: 4, cuit: '30111111118', razon_social: 'Agro Norte SA', emite: 'nosotros', activo: true, notas: null,
+    delegacion: 'delegado', tercero: { id: 1, razon_social: 'Agro Norte SA' }, tiene_plantilla: false, motivo: null,
+    ...extra,
+  })
+  /** El servidor contesta `null` si el cliente no es titular. */
+  function conTitular(valor: unknown) {
+    const base = get.getMockImplementation()!
+    get.mockImplementation((ruta: string) => ruta === '/api/cartas-porte/titulares/de-tercero/1'
+      ? Promise.resolve(valor) : base(ruta))
+  }
+
+  it.each([
+    [{ delegacion: 'delegado' }, 'Carta de porte: delegó a nosotros ✓'],
+    [{ delegacion: 'pendiente' }, 'Carta de porte: pendiente'],
+    [{ emite: 'titular', delegacion: 'no_aplica' }, 'Carta de porte: emite él'],
+  ])('🔑 un cliente titular dice cómo está (%o) y lleva a su titular', async (extra, texto) => {
+    conTitular(titularDe(extra))
+    abrir('/entidades?pestana=clientes&ver=1')
+    const dialogo = await screen.findByRole('dialog')
+    expect(await within(dialogo).findByText(new RegExp(texto))).toBeInTheDocument()
+    expect(within(dialogo).getByRole('link', { name: 'Ver titular' }))
+      .toHaveAttribute('href', '/cartas-porte?pestana=titulares&ver=4')
+    expect(get).toHaveBeenCalledWith('/api/cartas-porte/titulares/de-tercero/1')
+  })
+
+  it('un cliente que no es titular no muestra nada', async () => {
+    conTitular(null)
+    abrir('/entidades?pestana=clientes&ver=1')
+    const dialogo = await screen.findByRole('dialog')
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/cartas-porte/titulares/de-tercero/1'))
+    expect(within(dialogo).queryByText(/Carta de porte:/)).toBeNull()
+  })
+
+  it('si la consulta falla, la ficha sigue sin la línea', async () => {
+    const base = get.getMockImplementation()!
+    get.mockImplementation((ruta: string) => ruta.startsWith('/api/cartas-porte/')
+      ? Promise.reject(new Error('sin red')) : base(ruta))
+    abrir('/entidades?pestana=clientes&ver=1')
+    const dialogo = await screen.findByRole('dialog')
+    expect(within(dialogo).getByLabelText('Razón social')).toHaveValue('Agro Norte SA')
+    expect(within(dialogo).queryByText(/Carta de porte:/)).toBeNull()
+  })
+
+  it('un fletero o un proveedor no la piden: la línea es de los clientes', async () => {
+    abrir('/entidades?pestana=proveedores&ver=3')
+    await screen.findByRole('dialog')
+    expect(get.mock.calls.some(([r]) => String(r).includes('/titulares/de-tercero/'))).toBe(false)
+  })
+})

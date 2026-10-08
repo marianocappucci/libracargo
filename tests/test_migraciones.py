@@ -153,7 +153,8 @@ def test_upgrade_downgrade_upgrade(base_limpia):
         # Y a 19 con la `0022` (`ordenes_adjuntos`, ADR-037).
         # Y a 21 con la `0023` (`tarifarios` y `tarifas_referencia`, ADR-038).
         # Y a 22 con la `0027` (`plantillas_cpe`, ADR-043).
-        assert tablas - del_motor == 22
+        # Y a 23 con la `0028` (`titulares_cpe`, ADR-044).
+        assert tablas - del_motor == 23
         eng.dispose()
     finally:
         if original:
@@ -587,6 +588,56 @@ def test_la_0025_vincula_lo_que_coincide_una_sola_vez(base_limpia):
         assert filas["Suipacha"] == "06784020|Buenos Aires", "una sola coincidencia: vinculada y con provincia"
         assert filas["San Pedro"] == "-|-", "está en varias provincias: no se adivina"
         assert filas["Campo"] == "-|-", "no está en el catálogo"
+        eng.dispose()
+    finally:
+        if original:
+            os.environ["DATABASE_URL"] = original
+
+
+def test_la_0028_carga_como_titulares_a_los_que_ya_tienen_plantilla(base_limpia):
+    """ADR-044: quien ya emitió a su nombre desde este sistema (tiene plantilla) queda como titular `nosotros`,
+    vinculado a su entidad por los dígitos del CUIT. Es dato de la instancia: en una base sin plantillas no inserta
+    nada, y la cadena sube, baja y vuelve a subir."""
+    original = os.environ.get("DATABASE_URL")
+    try:
+        cfg = _alembic(base_limpia)
+        command.upgrade(cfg, "0027")
+        eng = create_engine(base_limpia)
+        with eng.begin() as con:
+            con.execute(text(
+                "INSERT INTO terceros "
+                "(razon_social, cuit, condicion_iva, es_cliente, es_fletero, es_proveedor, activo) "
+                "VALUES ('Fletero Homónimo', '30-11111111-2', 'consumidor_final', false, true, false, true), "
+                "('Agro Con Plantilla SA', '30-11111111-2', 'consumidor_final', true, false, false, true)"))
+            con.execute(text(
+                "INSERT INTO plantillas_cpe (cuit_titular, datos) VALUES "
+                "('30111111112', '{}'::jsonb), ('30222222223', '{}'::jsonb)"))
+        command.upgrade(cfg, "head")
+        with eng.connect() as con:
+            filas = {c: (rs, emite, activo, tercero) for c, rs, emite, activo, tercero in con.execute(text(
+                "SELECT t.cuit, t.razon_social, t.emite, t.activo, x.razon_social "
+                "FROM titulares_cpe t LEFT JOIN terceros x ON x.id = t.tercero_id")).all()}
+        assert filas == {
+            # Con dos entidades del mismo CUIT gana el cliente.
+            "30111111112": ("Agro Con Plantilla SA", "nosotros", True, "Agro Con Plantilla SA"),
+            # Sin entidad: el nombre provisorio es el CUIT, para corregirlo en la pantalla.
+            "30222222223": ("30222222223", "nosotros", True, None),
+        }
+        command.downgrade(cfg, "0027")
+        command.upgrade(cfg, "head")
+        eng.dispose()
+    finally:
+        if original:
+            os.environ["DATABASE_URL"] = original
+
+
+def test_la_0028_en_una_base_sin_plantillas_no_inserta_ningun_titular(base_limpia):
+    original = os.environ.get("DATABASE_URL")
+    try:
+        command.upgrade(_alembic(base_limpia), "head")
+        eng = create_engine(base_limpia)
+        with eng.connect() as con:
+            assert con.execute(text("SELECT count(*) FROM titulares_cpe")).scalar_one() == 0
         eng.dispose()
     finally:
         if original:

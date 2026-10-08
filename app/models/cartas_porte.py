@@ -18,6 +18,7 @@ from decimal import Decimal
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -27,6 +28,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -115,3 +117,37 @@ class PlantillaCpe(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(),
                                                  onupdate=func.now())
     updated_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+#: Quién emite la Carta de Porte de un titular (ADR-044): este sistema, por la delegación del titular en ARCA, o él.
+EMITE_NOSOTROS = "nosotros"
+EMITE_TITULAR = "titular"
+
+
+class TitularCpe(Base, Auditable):
+    """Un titular de Carta de Porte: el cliente (o no) a cuyo nombre se emite, o que emite por su cuenta (ADR-044).
+
+    Es **libreta de direcciones y no permiso**: que un titular esté cargado no le da a este sistema ninguna facultad.
+    La delegación es de ARCA y se lee del ticket de WSAA de `wscpe` en cada consulta; acá no se guarda ni se tilda a
+    mano. Lo que sí se guarda es lo que ARCA no sabe: a quién corresponde, quién emite y sus datos habituales.
+
+    `id` y no el CUIT como clave: la auditoría (`entidad_id`) es un entero de 32 bits y un CUIT no entra.
+    """
+
+    __tablename__ = "titulares_cpe"
+    __table_args__ = (
+        CheckConstraint(f"emite IN ('{EMITE_NOSOTROS}', '{EMITE_TITULAR}')", name="ck_titulares_cpe_emite"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: Once dígitos, sin guiones: lo mismo que `cuitRepresentada` de ARCA y que `plantillas_cpe.cuit_titular`.
+    cuit: Mapped[str] = mapped_column(String(11), nullable=False, unique=True)
+    razon_social: Mapped[str] = mapped_column(String(120), nullable=False)
+    #: La entidad de Entidades (ADR-040) con ese CUIT, si existe. Se completa sola al cargar y se puede cambiar.
+    tercero_id: Mapped[int | None] = mapped_column(
+        ForeignKey("terceros.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    emite: Mapped[str] = mapped_column(String(10), nullable=False, default=EMITE_NOSOTROS,
+                                       server_default=EMITE_NOSOTROS)
+    activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    notas: Mapped[str | None] = mapped_column(Text, nullable=True)

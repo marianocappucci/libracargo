@@ -5,7 +5,7 @@
  *  mismos que valida `SolicitudCpe.problemas()` de `libracore` (para que no se entere recién ARCA); si una regla cambia
  *  allá, el servidor sigue siendo el que manda y su 422 se muestra tal cual.
  */
-import type { DatosDeEmision, Propuesta } from '@/api/cartas-porte'
+import type { DatosDeEmision, DatosDePlantilla, Propuesta } from '@/api/cartas-porte'
 import { enmascararCuit } from '@/api/cartas-porte'
 
 /** Los intervinientes opcionales, con el nombre del WSDL de ARCA (`IntervinientesSolicitud`) y como se leen. */
@@ -175,6 +175,23 @@ export const netoDe = (b: Pick<Borrador, 'pesoBruto' | 'pesoTara'>): number | nu
   return Number(b.pesoBruto) - Number(b.pesoTara)
 }
 
+// Las reglas de formato que comparten el asistente de emitir y la plantilla de un titular (`PlantillaDeTitular`): una
+// sola definición de qué es un CUIT, una cosecha o unos kilómetros válidos. Devuelven el mensaje, o `undefined` si sirve.
+// Un valor vacío no es asunto de estas reglas: «obligatorio» lo decide cada pantalla.
+
+/** Un CUIT escrito: once dígitos (con o sin guiones). */
+export const reglaDeCuit = (valor: string): string | undefined =>
+  digitos(valor).length === 11 ? undefined : 'Un CUIT tiene 11 dígitos'
+
+export const reglaDeCosecha = (valor: string): string | undefined =>
+  /^\d{4}$/.test(valor) ? undefined : 'Cuatro cifras (2526 = 2025/2026)'
+
+export const reglaDeKm = (valor: string): string | undefined =>
+  /^\d+$/.test(valor) && Number(valor) >= 1 && Number(valor) <= 99999 ? undefined : 'Los kilómetros van de 1 a 99.999'
+
+export const reglaDeObservaciones = (valor: string): string | undefined =>
+  valor.length > 2000 ? 'Hasta 2.000 caracteres' : undefined
+
 /** Los problemas de cada campo, por su nombre; un campo sin problema no aparece. Los mensajes son lo que se lee debajo
  *  del campo: «Obligatorio» cuando está vacío, y la regla cuando está mal. */
 export function problemasDe(b: Borrador): Record<string, string> {
@@ -185,7 +202,8 @@ export function problemasDe(b: Borrador): Record<string, string> {
   }
   const cuit = (campo: string, valor: string, obligatorio = true) => {
     if (valor.trim() === '') { if (obligatorio) p[campo] = 'Obligatorio'; return }
-    if (digitos(valor).length !== 11) p[campo] = 'Un CUIT tiene 11 dígitos'
+    const mensaje = reglaDeCuit(valor)
+    if (mensaje) p[campo] = mensaje
   }
 
   falta('origenProvincia', b.origenProvincia)
@@ -193,7 +211,7 @@ export function problemasDe(b: Borrador): Record<string, string> {
   if (b.origenTipo === 'planta') falta('origenPlanta', b.origenPlanta)
 
   falta('codGrano', b.codGrano)
-  if (!falta('cosecha', b.cosecha) && !/^\d{4}$/.test(b.cosecha)) p.cosecha = 'Cuatro cifras (2526 = 2025/2026)'
+  if (!falta('cosecha', b.cosecha)) { const m = reglaDeCosecha(b.cosecha); if (m) p.cosecha = m }
   for (const [campo, valor, nombre] of [['pesoBruto', b.pesoBruto, 'bruto'], ['pesoTara', b.pesoTara, 'tara']] as const) {
     if (falta(campo, valor)) continue
     if (!/^\d+$/.test(valor) || Number(valor) < 1 || Number(valor) > 88000) {
@@ -214,9 +232,7 @@ export function problemasDe(b: Borrador): Record<string, string> {
   if (dominios.length === 0) p.dominios = 'Obligatorio: al menos uno'
   else if (dominios.some((d) => d.length < 6 || d.length > 7)) p.dominios = 'Un dominio tiene 6 o 7 caracteres'
   falta('partida', b.partida)
-  if (!falta('km', b.km) && (!/^\d+$/.test(b.km) || Number(b.km) < 1 || Number(b.km) > 99999)) {
-    p.km = 'Los kilómetros van de 1 a 99.999'
-  }
+  if (!falta('km', b.km)) { const m = reglaDeKm(b.km); if (m) p.km = m }
   cuit('cuitChofer', b.cuitChofer)
   cuit('cuitPagador', b.cuitPagador)
   cuit('cuitIntermediario', b.cuitIntermediario, false)
@@ -226,6 +242,99 @@ export function problemasDe(b: Borrador): Record<string, string> {
   }
   for (const { clave } of INTERVINIENTES) cuit(`interviniente:${clave}`, b.intervinientes[clave] ?? '', false)
   cuit('remitenteProductor', b.remitenteProductor, false)
-  if (b.observaciones.length > 2000) p.observaciones = 'Hasta 2.000 caracteres'
+  const obs = reglaDeObservaciones(b.observaciones)
+  if (obs) p.observaciones = obs
   return p
+}
+
+// ── La plantilla de un titular ────────────────────────────────────────────
+//
+// Lo que `propuesta()` del backend lee de `plantillas_cpe` (`CAMPOS_DE_PLANTILLA`): el origen, el grano, la cosecha, el
+// destino, los intervinientes y lo habitual del transporte. Mismas claves que `datosDe` manda al emitir, mismas reglas
+// de formato; lo único distinto es que acá **nada es obligatorio**: una plantilla puede ser parcial y lo que falte lo
+// completa quien emite.
+
+export type BorradorDePlantilla = Pick<Borrador,
+  'sucursal' | 'origenTipo' | 'origenProvincia' | 'origenLocalidad' | 'origenPlanta' | 'origenRenspa' | 'codGrano'
+  | 'cosecha' | 'destinoCuit' | 'destinoProvincia' | 'destinoLocalidad' | 'destinoPlanta' | 'destinoEsCampo'
+  | 'cuitDestinatario' | 'km' | 'fumigada' | 'intervinientes' | 'remitenteProductor' | 'observaciones'>
+
+export function borradorDePlantilla(d: DatosDePlantilla): BorradorDePlantilla {
+  const interv: Record<string, string> = {}
+  for (const { clave } of INTERVINIENTES) interv[clave] = cuitTexto(d.intervinientes?.[clave])
+  return {
+    sucursal: d.sucursal || 1,
+    origenTipo: d.origen?.tipo === 'planta' ? 'planta' : 'campo',
+    origenProvincia: texto(d.origen?.cod_provincia),
+    origenLocalidad: texto(d.origen?.cod_localidad),
+    origenPlanta: texto(d.origen?.planta),
+    origenRenspa: texto(d.origen?.renspa),
+    codGrano: texto(d.cod_grano),
+    cosecha: texto(d.cosecha),
+    destinoCuit: cuitTexto(d.destino?.cuit),
+    destinoProvincia: texto(d.destino?.cod_provincia),
+    destinoLocalidad: texto(d.destino?.cod_localidad),
+    destinoPlanta: texto(d.destino?.planta),
+    destinoEsCampo: Boolean(d.destino?.es_campo),
+    cuitDestinatario: cuitTexto(d.cuit_destinatario),
+    km: texto(d.km),
+    fumigada: Boolean(d.mercaderia_fumigada),
+    intervinientes: interv,
+    remitenteProductor: cuitTexto(d.cuit_remitente_comercial_productor),
+    observaciones: texto(d.observaciones),
+  }
+}
+
+/** Los problemas de formato de lo que se escribió; lo vacío no es un problema. Mismos nombres de campo que `problemasDe`. */
+export function problemasDePlantilla(b: BorradorDePlantilla): Record<string, string> {
+  const p: Record<string, string> = {}
+  const si = (campo: string, valor: string, regla: (v: string) => string | undefined) => {
+    if (valor.trim() === '') return
+    const m = regla(valor)
+    if (m) p[campo] = m
+  }
+  si('cosecha', b.cosecha, reglaDeCosecha)
+  si('km', b.km, reglaDeKm)
+  for (const campo of ['destinoCuit', 'cuitDestinatario', 'remitenteProductor'] as const) si(campo, b[campo], reglaDeCuit)
+  for (const { clave } of INTERVINIENTES) si(`interviniente:${clave}`, b.intervinientes[clave] ?? '', reglaDeCuit)
+  si('observaciones', b.observaciones, (v) => reglaDeObservaciones(v))
+  return p
+}
+
+/** Lo que viaja a `PUT /titulares/:id/plantilla`. Lo vacío se omite: una clave ausente es «que lo complete quien emite». */
+export function datosDePlantilla(b: BorradorDePlantilla): DatosDePlantilla {
+  const numero = (v: string) => (v.trim() === '' ? null : Number(v))
+  const d: DatosDePlantilla = {}
+  const poner = <K extends keyof DatosDePlantilla>(clave: K, valor: DatosDePlantilla[K] | null) => {
+    if (valor !== null && valor !== undefined && valor !== '') d[clave] = valor
+  }
+  poner('sucursal', b.sucursal && b.sucursal !== 1 ? b.sucursal : null)
+  const origen = b.origenTipo === 'planta'
+    ? { tipo: 'planta' as const, cod_provincia: numero(b.origenProvincia), cod_localidad: numero(b.origenLocalidad),
+        planta: numero(b.origenPlanta) }
+    : { tipo: 'campo' as const, cod_provincia: numero(b.origenProvincia), cod_localidad: numero(b.origenLocalidad),
+        renspa: b.origenRenspa.trim() || null }
+  const hayOrigen = origen.cod_provincia !== null || origen.cod_localidad !== null
+    || ('planta' in origen && origen.planta !== null) || ('renspa' in origen && origen.renspa !== null)
+  if (hayOrigen || b.origenTipo === 'planta') d.origen = origen
+  poner('cod_grano', numero(b.codGrano))
+  poner('cosecha', numero(b.cosecha))
+  const destino = {
+    cuit: cuitODigitos(b.destinoCuit), cod_provincia: numero(b.destinoProvincia),
+    cod_localidad: numero(b.destinoLocalidad), planta: numero(b.destinoPlanta), es_campo: b.destinoEsCampo,
+  }
+  if (destino.cuit !== null || destino.cod_provincia !== null || destino.cod_localidad !== null
+      || destino.planta !== null || destino.es_campo) d.destino = destino
+  poner('cuit_destinatario', cuitODigitos(b.cuitDestinatario))
+  const intervinientes: Record<string, string | null> = {}
+  for (const { clave } of INTERVINIENTES) {
+    const c = digitos(b.intervinientes[clave] ?? '')
+    if (c) intervinientes[clave] = c
+  }
+  if (Object.keys(intervinientes).length > 0) d.intervinientes = intervinientes
+  poner('cuit_remitente_comercial_productor', cuitODigitos(b.remitenteProductor))
+  if (b.fumigada) d.mercaderia_fumigada = true
+  poner('km', numero(b.km))
+  poner('observaciones', b.observaciones.trim() || null)
+  return d
 }

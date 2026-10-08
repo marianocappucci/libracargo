@@ -43,6 +43,8 @@ export const irA = {
     const query = params.toString()
     return query ? `/entidades?${query}` : '/entidades'
   },
+  /** «Cartas de porte» (ADR-036) en la pestaña «Titulares» (ADR-044) y, con `ver`, con la ficha de ese titular abierta. */
+  titulares: (ver?: number) => (ver !== undefined ? `/cartas-porte?pestana=titulares&ver=${ver}` : '/cartas-porte?pestana=titulares'),
   /** «Vehículos», una entrada propia del menú (antes una sección de Configuración). Con `ver`, con la ficha de esa fila abierta. */
   vehiculos: (ver?: number) => (ver !== undefined ? `/vehiculos?ver=${ver}` : '/vehiculos'),
 }
@@ -56,6 +58,17 @@ export type PestanaDeEntidades = (typeof PESTANAS_DE_ENTIDADES)[number]
 /** La pestaña que pide un query; cualquier cosa que no sea una conocida cae en Clientes. */
 export function pestanaDeEntidades(valor: string | null): PestanaDeEntidades {
   return PESTANAS_DE_ENTIDADES.find((p) => p === valor) ?? 'clientes'
+}
+
+/** Las dos pestañas de «Cartas de porte»: el listado de las cartas y los titulares a cuyo nombre se emiten (ADR-044). La
+ *  del listado es la de la ruta pelada, así que `/cartas-porte` y los enlaces de siempre caen ahí; sólo la otra lleva
+ *  parámetro (`?pestana=titulares`). */
+export const PESTANAS_DE_CARTAS_DE_PORTE = ['cartas', 'titulares'] as const
+export type PestanaDeCartasDePorte = (typeof PESTANAS_DE_CARTAS_DE_PORTE)[number]
+
+/** La pestaña que pide un query; cualquier cosa que no sea una conocida cae en el listado. */
+export function pestanaDeCartasDePorte(valor: string | null): PestanaDeCartasDePorte {
+  return PESTANAS_DE_CARTAS_DE_PORTE.find((p) => p === valor) ?? 'cartas'
 }
 
 /** Las secciones de Configuración que se mudaron a Entidades, y a qué pestaña. Un enlace viejo
@@ -122,6 +135,8 @@ export function destinoDelLog(entidad: string, entidadId: number | null): string
     if (entidad === 'pre_factura') return irA.preFactura(entidadId)
     if (entidad === 'movimiento_caja') return irA.caja(entidadId)
     if (entidad === 'gasto_de_proveedor') return irA.gasto(entidadId)
+    // El titular de cartas de porte y su plantilla llevan a su ficha (el id de la plantilla es el del titular).
+    if (entidad === 'titular_cpe' || entidad === 'plantilla_cpe') return irA.titulares(entidadId)
   }
   if (entidad === 'configuracion') return '/configuracion'
   // Terceros y choferes ya no son pantallas sueltas ni secciones de Configuración: viven en «Entidades». Un tercero no dice

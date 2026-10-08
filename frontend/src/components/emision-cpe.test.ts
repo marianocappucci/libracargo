@@ -1,10 +1,11 @@
 /** La lógica de «Emitir carta de porte» que no es pantalla: el borrador, lo que se manda y los rangos. */
 import { describe, expect, it } from 'vitest'
 
-import type { Propuesta } from '@/api/cartas-porte'
+import type { DatosDePlantilla, Propuesta } from '@/api/cartas-porte'
 import { enlaceDeWhatsApp, textoParaCompartir } from '@/api/cartas-porte'
 import {
-  borradorDe, datosDe, netoDe, partidaAIso, partidaPorDefecto, problemasDe, relojDeArgentina,
+  borradorDe, borradorDePlantilla, datosDe, datosDePlantilla, netoDe, partidaAIso, partidaPorDefecto, problemasDe,
+  problemasDePlantilla, relojDeArgentina,
 } from './emision-cpe'
 
 const PROPUESTA: Propuesta = {
@@ -132,5 +133,73 @@ describe('el texto para compartir', () => {
 
   it('el enlace de WhatsApp lleva el texto codificado', () => {
     expect(enlaceDeWhatsApp('a b&c · é')).toBe(`https://wa.me/?text=${encodeURIComponent('a b&c · é')}`)
+  })
+})
+
+describe('la plantilla de un titular (ADR-044)', () => {
+  /** Lo que `emitir` deja guardado: las claves de `CAMPOS_DE_PLANTILLA` del servidor. */
+  const GUARDADA: DatosDePlantilla = {
+    sucursal: 2,
+    origen: { tipo: 'planta', cod_provincia: 12, cod_localidad: 3456, planta: 41 },
+    cod_grano: 15, cosecha: 2526,
+    destino: { cuit: '30555555558', cod_provincia: 20, cod_localidad: 777, planta: 9, es_campo: true },
+    cuit_destinatario: '30555555558',
+    intervinientes: { cuitCorredorVentaPrimaria: '30111111118' },
+    cuit_remitente_comercial_productor: '20123456786',
+    mercaderia_fumigada: true, km: 320, observaciones: 'Descarga de 6 a 14',
+  }
+
+  it('🔑 va y vuelve sin perder nada: del servidor al borrador y del borrador al servidor', () => {
+    expect(datosDePlantilla(borradorDePlantilla(GUARDADA))).toEqual(GUARDADA)
+  })
+
+  it('🔑 las claves son exactamente las que el servidor lee de la plantilla (CAMPOS_DE_PLANTILLA)', () => {
+    // Mismo listado que `emision_cpe.CAMPOS_DE_PLANTILLA` del backend; si allá cambia, acá cae el rojo.
+    const delServidor = ['sucursal', 'origen', 'cod_grano', 'cosecha', 'destino', 'cuit_destinatario', 'intervinientes',
+      'cuit_remitente_comercial_productor', 'mercaderia_fumigada', 'km', 'observaciones']
+    expect(Object.keys(datosDePlantilla(borradorDePlantilla(GUARDADA))).sort()).toEqual([...delServidor].sort())
+  })
+
+  it('las claves de lo que se manda al emitir incluyen todas las de la plantilla (salvo las del viaje)', () => {
+    const emitido = Object.keys(datosDe(borradorDe(PROPUESTA), '30222222223'))
+    for (const clave of Object.keys(GUARDADA)) {
+      expect([...emitido, 'mercaderia_fumigada', 'km'], clave).toContain(clave)
+    }
+  })
+
+  it('una plantilla vacía queda vacía: lo que no se cargó no se manda', () => {
+    expect(datosDePlantilla(borradorDePlantilla({}))).toEqual({})
+  })
+
+  it('la sucursal 1 es la de siempre y no se guarda; otra sí', () => {
+    expect(datosDePlantilla(borradorDePlantilla({ sucursal: 1 }))).toEqual({})
+    expect(datosDePlantilla(borradorDePlantilla({ sucursal: 3 }))).toEqual({ sucursal: 3 })
+  })
+
+  it('un origen en planta guarda su planta; en campo, su RENSPA', () => {
+    expect(datosDePlantilla(borradorDePlantilla({ origen: { tipo: 'planta', cod_provincia: 1, cod_localidad: 2, planta: 7 } })))
+      .toEqual({ origen: { tipo: 'planta', cod_provincia: 1, cod_localidad: 2, planta: 7 } })
+    expect(datosDePlantilla(borradorDePlantilla({ origen: { tipo: 'campo', renspa: '01.001' } })))
+      .toEqual({ origen: { tipo: 'campo', cod_provincia: null, cod_localidad: null, renspa: '01.001' } })
+  })
+
+  it('🔑 las reglas son las del asistente: mismos mensajes para los mismos errores', () => {
+    const mala = borradorDePlantilla({
+      cosecha: 252, km: 100000, cuit_destinatario: '123', observaciones: 'x'.repeat(2001),
+      intervinientes: { cuitMercadoATermino: '20123' },
+    })
+    const delAsistente = problemasDe({
+      ...borradorDe(PROPUESTA), cosecha: mala.cosecha, km: mala.km, cuitDestinatario: mala.cuitDestinatario,
+      observaciones: mala.observaciones, intervinientes: { ...borradorDe(PROPUESTA).intervinientes, ...mala.intervinientes },
+    })
+    const delEditor = problemasDePlantilla(mala)
+    for (const campo of ['cosecha', 'km', 'cuitDestinatario', 'observaciones', 'interviniente:cuitMercadoATermino']) {
+      expect(delEditor[campo], campo).toBeDefined()
+      expect(delEditor[campo], campo).toBe(delAsistente[campo])
+    }
+  })
+
+  it('nada es obligatorio: una plantilla vacía no tiene problemas', () => {
+    expect(problemasDePlantilla(borradorDePlantilla({}))).toEqual({})
   })
 })

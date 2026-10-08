@@ -138,6 +138,89 @@ export type DatosDeEmision = Omit<Propuesta, 'orden_id' | 'faltantes' | 'de_plan
 
 export type Enlace = { url: string; vence: string }
 
+// ── Titulares (ADR-044) ──────────────────────────────────────────────────
+
+/** Quién emite la carta de porte de un titular: este sistema (por la delegación del titular en ARCA) o él. */
+export type QuienEmite = 'nosotros' | 'titular'
+
+/** Lo que ARCA dice de la delegación de un titular, leído del ticket de `wscpe` y nunca tildado a mano:
+ *  `delegado` (está en el ticket), `pendiente` (cargado y ARCA todavía no lo trae), `sin_verificar` (no hay certificado
+ *  o ARCA no contestó) y `no_aplica` (emite él: no hay delegación que mirar). */
+export type Delegacion = 'delegado' | 'pendiente' | 'sin_verificar' | 'no_aplica'
+
+export type EntidadVinculada = { id: number; razon_social: string }
+
+export type Titular = {
+  id: number
+  /** Once dígitos, sin guiones. */
+  cuit: string
+  razon_social: string
+  emite: QuienEmite
+  activo: boolean
+  notas: string | null
+  delegacion: Delegacion
+  /** La entidad de Entidades con que se vincula (la elegida o la que tiene su CUIT), o `null`. */
+  tercero: EntidadVinculada | null
+  tiene_plantilla: boolean
+}
+
+/** Un CUIT que el ticket de ARCA trae y no está cargado: «Delegado sin cargar». */
+export type TitularSinCargar = { cuit: string; tercero: EntidadVinculada | null }
+
+export type ListadoDeTitulares = {
+  /** `null` si no hay certificado de `wscpe` cargado. */
+  ambiente: Ambiente | null
+  /** `false`: no se pudo leer el ticket de ARCA; `motivo` dice por qué y los estados vienen `sin_verificar`. */
+  verificado: boolean
+  motivo: string | null
+  /** Un CUIT por el que el ticket deja operar: los catálogos de ARCA se piden con él cuando el titular no está delegado. */
+  cuit_para_catalogos: string | null
+  titulares: Titular[]
+  sin_cargar: TitularSinCargar[]
+}
+
+export type DatosDeTitular = {
+  cuit: string
+  razon_social?: string | null
+  tercero_id?: number | null
+  emite: QuienEmite
+  activo: boolean
+  notas?: string | null
+}
+
+export type EdicionDeTitular = Omit<DatosDeTitular, 'cuit' | 'razon_social'> & { razon_social: string }
+
+/** Lo que `propuesta()` lee de la plantilla del titular; mismas claves que `DatosDeEmision`. Todo es opcional. */
+export type DatosDePlantilla = {
+  sucursal?: number
+  origen?: OrigenPropuesto
+  cod_grano?: number
+  cosecha?: number
+  destino?: DestinoPropuesto
+  cuit_destinatario?: string
+  intervinientes?: Record<string, string | null>
+  cuit_remitente_comercial_productor?: string
+  mercaderia_fumigada?: boolean
+  km?: number
+  observaciones?: string
+}
+
+export type PlantillaGuardada = { datos: DatosDePlantilla; existe: boolean; actualizada: string | null }
+
+/** El titular de una entidad con el estado de su delegación, o `null` si no es titular. `motivo`: por qué no se verificó. */
+export type TitularDeEntidad = Titular & { motivo: string | null }
+
+/** Del certificado de `wscpe` cargado: lo que el titular necesita para delegarnos. */
+export type InstruccionesDeDelegacion = {
+  disponible: boolean
+  ambiente: Ambiente | null
+  /** Nombre del computador fiscal (el CN del certificado). */
+  alias: string | null
+  /** CUIT del representante (el del certificado), once dígitos. */
+  cuit_representante: string | null
+  motivo: string | null
+}
+
 /** El tope de CTG por pedido, el mismo del backend. */
 export const MAX_CTGS = 50
 
@@ -192,6 +275,25 @@ export const cartasPorte = {
     api.post<CartaPorte>(`/api/cartas-porte/${id}/anular`, observaciones ? { observaciones } : {}),
   /** Un enlace firmado al PDF, que vence a los 7 días: para mandárselo al chofer, que no tiene usuario. */
   enlace: (id: number) => api.get<Enlace>(`/api/cartas-porte/${id}/enlace`),
+
+  // ── Titulares (ADR-044) ──
+  /** Siempre 200: sin certificado o con ARCA caída vuelve `verificado: false` y el motivo. */
+  titulares: () => api.get<ListadoDeTitulares>('/api/cartas-porte/titulares'),
+  /** Sólo un administrador. 409 si el CUIT ya está cargado. */
+  crearTitular: (datos: DatosDeTitular) => api.post<Titular>('/api/cartas-porte/titulares', datos),
+  editarTitular: (id: number, datos: EdicionDeTitular) =>
+    api.put<Titular>(`/api/cartas-porte/titulares/${id}`, datos),
+  /** Saca al titular de la lista; su plantilla queda. */
+  borrarTitular: (id: number) => api.del<void>(`/api/cartas-porte/titulares/${id}`),
+  plantilla: (id: number) => api.get<PlantillaGuardada>(`/api/cartas-porte/titulares/${id}/plantilla`),
+  guardarPlantilla: (id: number, datos: DatosDePlantilla) =>
+    api.put<PlantillaGuardada>(`/api/cartas-porte/titulares/${id}/plantilla`, { datos }),
+  borrarPlantilla: (id: number) => api.del<void>(`/api/cartas-porte/titulares/${id}/plantilla`),
+  instruccionesDeDelegacion: () =>
+    api.get<InstruccionesDeDelegacion>('/api/cartas-porte/titulares/instrucciones'),
+  /** Para la ficha del cliente: su titular, o `null`. */
+  titularDeEntidad: (terceroId: number) =>
+    api.get<TitularDeEntidad | null>(`/api/cartas-porte/titulares/de-tercero/${terceroId}`),
 }
 
 // ── Estado ────────────────────────────────────────────────────────────────
@@ -303,3 +405,48 @@ export function textoParaCompartir(
 
 /** El enlace de WhatsApp con el texto ya escrito: se abre y la persona elige a quién mandárselo. */
 export const enlaceDeWhatsApp = (texto: string) => `https://wa.me/?text=${encodeURIComponent(texto)}`
+
+// ── Titulares: cómo se leen ───────────────────────────────────────────────
+
+/** El texto de la pastilla de cada estado de delegación. */
+export function etiquetaDeDelegacion(d: Delegacion, emite: QuienEmite = 'nosotros'): string {
+  if (d === 'delegado') return 'Delegado ✓'
+  if (d === 'pendiente') return 'Pendiente'
+  if (d === 'sin_verificar') return 'Sin verificar'
+  return emite === 'titular' ? 'Emite él' : '—'
+}
+
+export function tonoDeDelegacion(d: Delegacion): 'neutro' | 'curso' | 'atencion' | 'ok' | 'negativo' {
+  if (d === 'delegado') return 'ok'
+  if (d === 'pendiente') return 'atencion'
+  return 'neutro'
+}
+
+export const ETIQUETA_DE_QUIEN_EMITE: Record<QuienEmite, string> = { nosotros: 'Nosotros', titular: 'El titular' }
+
+/** La línea de la ficha del cliente: «Carta de porte: delegó a nosotros ✓ / emite él / pendiente». */
+export function lineaDeCartaDePorte(t: Pick<Titular, 'emite' | 'delegacion' | 'activo'>): string {
+  const base = t.emite === 'titular' ? 'emite él'
+    : t.delegacion === 'delegado' ? 'delegó a nosotros ✓'
+      : t.delegacion === 'pendiente' ? 'pendiente (ARCA todavía no informa su delegación)'
+        : 'emitimos nosotros (sin verificar en ARCA)'
+  return t.activo ? base : `${base} · dado de baja`
+}
+
+// ── Instrucciones de delegación ───────────────────────────────────────────
+
+/** El paso a paso para que un titular nos delegue `wscpe`, armado con los datos del certificado cargado. Nada de esto
+ *  está escrito a mano: el CUIT del representante y el alias (el computador fiscal) salen del .crt. */
+export function textoDeInstrucciones(
+  i: Pick<InstruccionesDeDelegacion, 'alias' | 'cuit_representante' | 'ambiente'>, titular?: string,
+): string {
+  const quien = titular ? `en representación de ${titular}` : 'en representación del titular'
+  const alias = i.alias ?? ''
+  const aviso = alias.endsWith('homo') ? '' : ' (no el que termina en «homo»)'
+  return [
+    `Para que podamos emitir tus cartas de porte, entrá a ARCA con tu clave fiscal y delegá el servicio:`,
+    `Administrador de Relaciones de Clave Fiscal, actuando ${quien} → Nueva Relación → Servicio: Buscar → ARCA → `
+    + `WebServices → wscpe (Carta de Porte Electrónica) → Representante: Buscar → CUIT ${formatearCuit(i.cuit_representante)} `
+    + `→ en Computador Fiscal elegir ${alias}${aviso} → Confirmar dos veces.`,
+  ].join('\n')
+}
