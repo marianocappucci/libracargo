@@ -344,7 +344,7 @@ describe('Tarifario · cargar una edición', () => {
     expect(screen.queryByRole('form', { name: 'Cargar una edición' })).toBeNull()
     expect(screen.getByText('Las ediciones las carga un administrador.')).toBeInTheDocument()
     // Pero sí puede ver la tabla de una edición.
-    fireEvent.click(screen.getByRole('button', { name: 'Ver la tabla del 10-04-2026' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver la tabla del 10-04-2026' }))
     expect(await screen.findByRole('region', { name: 'Tabla del 10-04-2026' })).toBeInTheDocument()
   })
 })
