@@ -31,6 +31,7 @@ from datetime import date
 from decimal import Decimal
 
 from libracore import pre_facturas as dominio
+from libracore.db import arca_config
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -268,7 +269,8 @@ def pre_factura_de(sesion: Session, pre_factura_id: int) -> dict:
 
 
 def crear(sesion: Session, actual: dict, *, cliente_id: int, tipo: TipoComprobante,
-          fecha: date, vencimiento: date | None, orden_ids: list[int], observaciones: str = "") -> dict:
+          fecha: date, vencimiento: date | None, orden_ids: list[int], observaciones: str = "",
+          cuenta: str | None = None) -> dict:
     """Genera la pre factura de las órdenes y las reserva. No hace `commit`."""
     cliente = _tercero(sesion, cliente_id)
     validar_tipo_y_fechas(tipo, fecha, vencimiento, cliente)
@@ -281,8 +283,10 @@ def crear(sesion: Session, actual: dict, *, cliente_id: int, tipo: TipoComproban
             # producto son `terceros`. El tercero va en `pre_facturas_cargo`.
             cliente_cuit=cliente.cuit or "", cliente_domicilio=_domicilio(cliente),
             conn=_conexion_del_motor(sesion),
+            # La cuenta de cobro de la FCE la resuelve y la valida el motor (ADR-040 de libracore).
+            fce_cbu=cuenta or None,
             **_campos_del_motor(sesion, tipo, fecha, vencimiento, observaciones, ordenes))
-    except ValueError as e:  # incluye `EmisorDesconocido`
+    except ValueError as e:  # incluye `EmisorDesconocido` y una cuenta que no está cargada
         sesion.rollback()
         raise Rechazo(422, str(e)) from None
     sesion.add(PreFacturaCargo(
@@ -295,7 +299,7 @@ def crear(sesion: Session, actual: dict, *, cliente_id: int, tipo: TipoComproban
 
 def editar(sesion: Session, actual: dict, pre_factura_id: int, *,
            tipo: TipoComprobante, fecha: date, vencimiento: date | None, orden_ids: list[int],
-           observaciones: str = "") -> dict:
+           observaciones: str = "", cuenta: str | None = None) -> dict:
     """Reemplaza las órdenes y cambia tipo y fechas de una pre factura abierta.
 
     Si estaba enviada o aceptada vuelve a pendiente (el cliente aceptó **otros** datos), salvo que no haya
@@ -317,6 +321,8 @@ def editar(sesion: Session, actual: dict, pre_factura_id: int, *,
             # El cliente va como foto: al editar se refresca, así lo que se vuelve a mandar es lo de hoy.
             cliente_razon=cliente.razon_social, cliente_cuit=cliente.cuit or "",
             cliente_domicilio=_domicilio(cliente),
+            # `None` no toca la cuenta elegida; `""` vuelve a la predeterminada (convención del motor).
+            **({"fce_cbu": cuenta} if cuenta is not None else {}),
             **_campos_del_motor(sesion, tipo, fecha, vencimiento, observaciones, ordenes))
     except dominio.TransicionInvalida as e:
         sesion.rollback()
@@ -429,6 +435,13 @@ def facturar(sesion: Session, actual: dict, pre_factura_id: int, *, fecha: date 
     except emision_arca.ArcaRechazo as e:
         raise Rechazo(502, f"ARCA no pudo dar el numero: {e}") from None
     punto_venta = emisor.punto_venta
+    # En qué cuenta se cobra la FCE: la que se eligió en la pre factura o, si no, la predeterminada de la
+    # configuración con que se numeró. Una que se sacó de la configuración después de elegirla se dice acá,
+    # antes de pedirle el CAE.
+    try:
+        cuenta_de_cobro = arca_config.cbu_para_fce(cfg_arca, pf.get("fce_cbu")) if es_fce else ""
+    except ValueError as e:
+        raise Rechazo(422, f"{e} Editá la pre factura y elegí otra cuenta.") from None
 
     # Lo crea el motor en `facturas`, en esta misma transacción (ADR-030): hace falta el id para las
     # órdenes y para el movimiento de cuenta, pero no hay `commit` hasta el final. Con uno acá, un fallo
@@ -442,9 +455,9 @@ def facturar(sesion: Session, actual: dict, pre_factura_id: int, *, fecha: date 
             # En el ambiente de la configuración con la que se numeró.
             ambiente=cfg_arca["ambiente"],
             fch_vto_pago=vencimiento,
-            # La FCE sale con el CBU y la modalidad de la configuración de hoy, y quedan en el
-            # comprobante aunque la configuración cambie después.
-            fce_cbu=(cfg_arca.get("fce_cbu") or None) if es_fce else None,
+            # La FCE sale con la cuenta elegida en la pre factura (o la predeterminada de hoy) y la
+            # modalidad de la configuración, y quedan en el comprobante aunque la configuración cambie.
+            fce_cbu=cuenta_de_cobro or None,
             fce_transmision=((cfg_arca.get("fce_transmision") or "").upper() or None) if es_fce else None,
         )
     except (comprobantes.NumeroRepetido, emision_arca.ArcaAmbiguo) as e:
@@ -523,6 +536,7 @@ def enriquecer(sesion: Session, filas: list[dict]) -> list[dict]:
     - `total` como texto con dos decimales, como los importes del resto de la API.
     """
     ids = [f["id"] for f in filas]
+    conn = _conexion_del_motor(sesion)
     cargos = {c.pre_factura_id: c for c in sesion.scalars(
         select(PreFacturaCargo).where(PreFacturaCargo.pre_factura_id.in_(ids)))} if ids else {}
     salida = []
@@ -533,6 +547,8 @@ def enriquecer(sesion: Session, filas: list[dict]) -> list[dict]:
             "cliente_id": cargo.cliente_id if cargo else None,
             "orden_ids": [i["orden_id"] for i in f["items"] if i.get("orden_id") is not None],
             "total": f"{Decimal(str(f['total'])):.2f}",
+            # Dónde se cobra una FCE: la elegida o la predeterminada (`fce_cbu` en `None` dice que no se eligió).
+            "fce_cuenta": arca_config.cuenta_de_cobro(f, conn=conn),
         })
     return salida
 

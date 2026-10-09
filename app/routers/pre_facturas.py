@@ -104,7 +104,7 @@ def construir_router():
             pf = servicio.crear(
                 sesion, actual, cliente_id=datos.cliente_id,
                 tipo=datos.tipo, fecha=datos.fecha, vencimiento=datos.fecha_vencimiento_pago,
-                orden_ids=datos.orden_ids, observaciones=datos.observaciones)
+                orden_ids=datos.orden_ids, observaciones=datos.observaciones, cuenta=datos.fce_cbu)
             sesion.commit()
         except servicio.Rechazo as e:
             sesion.rollback()
@@ -122,7 +122,7 @@ def construir_router():
             pf = servicio.editar(
                 sesion, actual, pre_factura_id, tipo=datos.tipo,
                 fecha=datos.fecha, vencimiento=datos.fecha_vencimiento_pago, orden_ids=datos.orden_ids,
-                observaciones=datos.observaciones)
+                observaciones=datos.observaciones, cuenta=datos.fce_cbu)
             sesion.commit()
         except servicio.Rechazo as e:
             sesion.rollback()

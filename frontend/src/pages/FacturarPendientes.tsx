@@ -23,8 +23,8 @@ import type { ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
-import type { AvisoFce } from '@/api/comprobantes'
-import { comprobantes, sumarImportes } from '@/api/comprobantes'
+import type { AvisoFce, CuentasFce } from '@/api/comprobantes'
+import { comprobantes, etiquetaDeCuenta, sumarImportes } from '@/api/comprobantes'
 import type { Opciones, Orden } from '@/api/ordenes'
 import { cargarOpciones, ordenes as apiOrdenes } from '@/api/ordenes'
 import type { PreFactura } from '@/api/pre-facturas'
@@ -43,6 +43,8 @@ type Borrador = {
   tipo: string
   /** Sólo la FCE lo lleva, y ARCA la rechaza sin él. */
   vencimiento: string
+  /** Sólo la FCE: el CBU de la cuenta donde se cobra (libracore ADR-040). `''` es la predeterminada. */
+  cuenta: string
 }
 
 /** Una fecha `AAAA-MM-DD` más `dias`, por componentes: ni zona horaria ni `toISOString`. */
@@ -60,7 +62,7 @@ const esFce = (tipo: string) => tipo.startsWith('fce_')
 // comprobante cargado de noche nacía con la fecha de mañana.
 const VACIO: Borrador = {
   fecha: hoyEnArgentina(),
-  tipo: 'factura_a', vencimiento: '',
+  tipo: 'factura_a', vencimiento: '', cuenta: '',
 }
 
 function Campo({ id, etiqueta, valor, alCambiar, tipo = 'text' }: {
@@ -131,6 +133,7 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
         setBorrador({
           fecha: p.fecha_sugerida,
           tipo: tipoDe(p) ?? 'factura_a', vencimiento: p.fecha_vencimiento_pago ?? '',
+          cuenta: p.fce_cbu ?? '',
         })
         setElegidas(p.orden_ids)
       })
@@ -196,6 +199,23 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
   }, [clienteNumero, fce, totalPrevio, borrador.fecha])
   const correspondeFce = !fce && avisoFce?.disponible === true && avisoFce.corresponde === true
 
+  // ── En qué cuenta se cobra la FCE (libracore ADR-040) ────────────────────
+  // Las cuentas son de la empresa y no cambian con el cliente: se piden una vez, cuando hace falta elegir.
+  const [cuentasFce, setCuentasFce] = useState<CuentasFce | null>(null)
+  useEffect(() => {
+    if (!fce || cuentasFce) return
+    let vigente = true
+    comprobantes.fceCuentas()
+      // Una respuesta sin lista (un servidor viejo) es «no hay cuentas», no un error de pantalla.
+      .then((r) => {
+        if (vigente) setCuentasFce(r && Array.isArray(r.cuentas) ? r : { cuentas: [], predeterminada: '', transmision: '' })
+      })
+      .catch(() => { if (vigente) setCuentasFce({ cuentas: [], predeterminada: '', transmision: '' }) })
+    return () => { vigente = false }
+  }, [fce, cuentasFce])
+  // Sin elegir, la predeterminada: lo que se ve es lo que va a salir.
+  const cuentaElegida = borrador.cuenta || cuentasFce?.predeterminada || ''
+
   const alternar = (id: number) => setElegidas((previas) => (
     previas.includes(id) ? previas.filter((i) => i !== id) : [...previas, id]
   ))
@@ -240,8 +260,10 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
       const datos = {
         fecha: borrador.fecha,
         tipo: borrador.tipo,
-        // Sólo la FCE lleva vencimiento de pago; `undefined` no viaja en el JSON.
+        // Sólo la FCE lleva vencimiento de pago y cuenta de cobro; `undefined` no viaja en el JSON. La cuenta
+        // va siempre que es FCE: `''` vuelve a la predeterminada.
         fecha_vencimiento_pago: fce ? borrador.vencimiento : undefined,
+        fce_cbu: fce ? borrador.cuenta : undefined,
         orden_ids: aFacturar.map((o) => o.id),
       }
       const hecha = editandoId != null
@@ -365,6 +387,20 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
                    valor={borrador.vencimiento}
                    alCambiar={(v) => set({ vencimiento: v })} />
           )}
+          {fce && cuentasFce && (cuentasFce.cuentas.length > 0 ? (
+            // Se busca escribiendo el alias o el CBU: la etiqueta lleva los dos.
+            <Elegir id="n-cuenta" etiqueta="Cobrar en" vacio="La predeterminada" valor={cuentaElegida}
+                    opciones={cuentasFce.cuentas.map((c) => ({
+                      id: c.cbu,
+                      etiqueta: c.cbu === cuentasFce.predeterminada
+                        ? `${etiquetaDeCuenta(c)} (predeterminada)` : etiquetaDeCuenta(c),
+                    }))}
+                    alCambiar={(v) => set({ cuenta: v === cuentasFce.predeterminada ? '' : v })} />
+          ) : (
+            <p role="status" className="text-muted-foreground self-end text-sm md:col-span-3">
+              No hay cuentas para cobrar la factura de crédito: cargalas en Configuración → ARCA.
+            </p>
+          ))}
         </div>
       </section>
 

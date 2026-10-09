@@ -215,6 +215,15 @@ export default function PreFactura() {
           {pf.fecha_vencimiento_pago && (
             <p>Vence el pago el {formatearFecha(pf.fecha_vencimiento_pago)}</p>
           )}
+          {pf.fce_cuenta && (
+            // Dónde se cobra la FCE (libracore ADR-040): la elegida o, si no se eligió, la predeterminada.
+            <p>
+              Se cobra en el CBU {pf.fce_cuenta.cbu}
+              {pf.fce_cuenta.alias ? ` (alias ${pf.fce_cuenta.alias})` : ''}
+              {pf.fce_cuenta.etiqueta ? ` · ${pf.fce_cuenta.etiqueta}` : ''}
+              {pf.fce_cbu ? '' : ' · predeterminada'}
+            </p>
+          )}
         </div>
         <div>
           <p className="text-muted-foreground text-xs">Total</p>
