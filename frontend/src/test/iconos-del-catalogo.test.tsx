@@ -140,14 +140,14 @@ describe('el menú usa el catálogo', () => {
     expect(item!.icon).toBe(iconoDelIndicador('cartasDePorte', 'libracargo'))
   })
 
-  it('🔴 la carta de porte se dibuja igual en el menú, el título, el botón de la orden y el asistente de emisión (ninguno importa FileCheck/FileBadge de lucide)', () => {
-    for (const ruta of ['components/Layout.tsx', 'pages/CartasDePorte.tsx', 'pages/Ordenes.tsx', 'components/EmitirCartaDePorte.tsx']) {
+  it('🔴 la carta de porte se dibuja igual en el menú, los títulos, el botón de la orden y las páginas de emitir y de la plantilla (ninguno importa FileCheck/FileBadge de lucide)', () => {
+    const paginas = ['pages/CartasDePorte.tsx', 'pages/EmitirCartaDePorte.tsx', 'pages/PlantillaDeTitular.tsx']
+    for (const ruta of ['components/Layout.tsx', 'pages/Ordenes.tsx', 'components/EmitirCartaDePorte.tsx', ...paginas]) {
       const importaDeLucide = [...leer(ruta).matchAll(/import\s*\{([^}]*)\}\s*from\s*'lucide-react'/g)].flatMap((m) => m[1].split(',').map((x) => x.trim()))
       expect(importaDeLucide.filter((x) => /^File(Check|Badge)\b/.test(x)), ruta).toEqual([])
     }
-    expect(leer('pages/CartasDePorte.tsx')).toContain('icono={INDICADORES.cartasDePorte}')
+    for (const ruta of paginas) expect(leer(ruta), ruta).toContain('icono={INDICADORES.cartasDePorte}')
     expect(leer('pages/Ordenes.tsx')).toContain('<IconoIndicador concepto="cartasDePorte"')
-    expect(leer('components/EmitirCartaDePorte.tsx')).toContain('<IconoIndicador concepto="cartasDePorte"')
   })
 })
 

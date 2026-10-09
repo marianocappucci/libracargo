@@ -10,7 +10,11 @@
  *  🔑 **En producción, un recuadro y un «Confirmo» obligatorio**: sin el check no se puede enviar (y el servidor
  *  tampoco lo acepta). En homologación se avisa que es de prueba.
  *
- *  🔑 **Un solo envío.** Mientras se envía el botón está deshabilitado y el cierre bloqueado. Si el servidor contesta un
+ *  🔑 **Una página y no un diálogo** (pedido del humano, 2026-10-09): es un formulario largo y un documento fiscal, y en un
+ *  modal quedaba apretado. Vive en `/cartas-porte/emitir/:ordenId` (`pages/EmitirCartaDePorte.tsx`); «Cancelar» y
+ *  «Cerrar» vuelven a la orden.
+ *
+ *  🔑 **Un solo envío.** Mientras se envía el botón está deshabilitado y salir de la página pide confirmación. Si el servidor contesta un
  *  502 (ARCA no contestó: puede haberla emitido) o un 500 («SE EMITIÓ… no la vuelvas a emitir»), o si la conexión se
  *  corta sin respuesta, el asistente pasa a un estado final en rojo **sin botón de reintento**: emitir de nuevo sería
  *  duplicar una carta de porte real. Lo único que se ofrece es ir a verificar en «Cartas de porte».
@@ -18,7 +22,6 @@
  *  Los textos de error del servidor se muestran siempre tal cual: son los que dicen qué hacer.
  */
 import { ApiError } from 'libra-ui/api-client'
-import { IconoIndicador } from 'libra-ui/IconoIndicador'
 import { TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -42,9 +45,6 @@ import {
 } from '@/components/emision-cpe'
 import type { Orden } from '@/api/ordenes'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 
@@ -122,6 +122,15 @@ function Asistente({ orden, alCerrar, alEmitida }: {
   const [errorDeEnvio, setErrorDeEnvio] = useState<string | null>(null)
   const [incierto, setIncierto] = useState<string | null>(null)
   const [emitida, setEmitida] = useState<CartaPorte | null>(null)
+
+  // Mientras se envía, cerrar o recargar la pestaña pide confirmación: irse no frena el pedido, y no se sabría si ARCA la
+  // emitió.
+  useEffect(() => {
+    if (!enviando) return
+    const avisar = (e: BeforeUnloadEvent) => { e.preventDefault() }
+    window.addEventListener('beforeunload', avisar)
+    return () => window.removeEventListener('beforeunload', avisar)
+  }, [enviando])
 
   // Al abrir (y al reintentar): por quién se puede emitir y si se puede emitir. Dos pedidos aparte: el estado es de este
   // sistema y se tiene que poder leer aunque ARCA no conteste a la lista de titulares.
@@ -601,7 +610,7 @@ function Asistente({ orden, alCerrar, alEmitida }: {
     pie = (
       <>
         <Button variant="ghost" onClick={alCerrar}>Cerrar</Button>
-        <Button asChild variant="outline"><Link to="/cartas-porte" onClick={alCerrar}>Ir a Cartas de porte</Link></Button>
+        <Button asChild variant="outline"><Link to="/cartas-porte">Ir a Cartas de porte</Link></Button>
       </>
     )
   } else {
@@ -610,17 +619,7 @@ function Asistente({ orden, alCerrar, alEmitida }: {
   }
 
   return (
-    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl" showCloseButton={!enviando}
-                   onInteractOutside={(e) => e.preventDefault()}
-                   onEscapeKeyDown={(e) => { if (enviando) e.preventDefault() }}>
-      <DialogHeader>
-        <DialogTitle className="flex items-center gap-2">
-          <IconoIndicador concepto="cartasDePorte" className="size-5" /> Emitir carta de porte · Orden Nº {String(orden.id).padStart(8, '0')}
-        </DialogTitle>
-        <DialogDescription className="sr-only">
-          Asistente para emitir la carta de porte electrónica de esta orden en ARCA.
-        </DialogDescription>
-      </DialogHeader>
+    <div className="grid gap-4">
       {paso !== 'incierto' && (
         <ol aria-label="Pasos" className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
           {PASOS.map(({ paso: p, etiqueta }, i) => (
@@ -632,22 +631,18 @@ function Asistente({ orden, alCerrar, alEmitida }: {
         </ol>
       )}
       {cuerpo}
-      <DialogFooter className="items-center">{pie}</DialogFooter>
-    </DialogContent>
+      <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-end">{pie}</div>
+    </div>
   )
 }
 
-export function EmitirCartaDePorte({ orden, abierto, alCambiar, alEmitida }: {
+/** El asistente, sin título: el título y la carga de la orden son de la página. `alSalir` es lo que hacen «Cancelar» y
+ *  «Cerrar» (volver a la orden). */
+export function EmitirCartaDePorte({ orden, alSalir, alEmitida }: {
   orden: Orden
-  abierto: boolean
-  alCambiar: (abierto: boolean) => void
+  alSalir: () => void
   /** Se llama con la carta emitida, por si la pantalla de atrás quiere refrescarse. */
   alEmitida?: (carta: CartaPorte) => void
 }) {
-  return (
-    <Dialog open={abierto} onOpenChange={alCambiar}>
-      {/* El contenido de un diálogo cerrado no se monta: cada apertura arranca limpia, con el titular sin elegir. */}
-      {abierto && <Asistente orden={orden} alCerrar={() => alCambiar(false)} alEmitida={alEmitida} />}
-    </Dialog>
-  )
+  return <Asistente orden={orden} alCerrar={alSalir} alEmitida={alEmitida} />
 }

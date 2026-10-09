@@ -110,7 +110,7 @@ async function error(status: number, detail: string) {
 function abrir() {
   render(
     <MemoryRouter>
-      <EmitirCartaDePorte orden={ORDEN} abierto alCambiar={() => {}} />
+      <EmitirCartaDePorte orden={ORDEN} alSalir={() => {}} />
     </MemoryRouter>)
 }
 

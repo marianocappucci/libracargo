@@ -18,7 +18,6 @@ import { listarPorRol } from '@/api/maestros'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { Elegir } from '@/components/Elegir'
 import { InstruccionesDeDelegacion } from '@/components/InstruccionesDeDelegacion'
-import { PlantillaDeTitular } from '@/components/PlantillaDeTitular'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import {
@@ -51,11 +50,10 @@ function explicacion(t: Titular, motivo: string | null): string {
   return `No se pudo verificar en ARCA${motivo ? `: ${motivo}` : '.'}`
 }
 
-function Formulario({ titular, partida, esAdmin, cuitParaCatalogos, motivo, alCerrar, alCambiar }: {
+function Formulario({ titular, partida, esAdmin, motivo, alCerrar, alCambiar }: {
   titular: Titular | null
   partida: PartidaDelAlta | null
   esAdmin: boolean
-  cuitParaCatalogos: string | null
   motivo: string | null
   alCerrar: () => void
   alCambiar: () => void
@@ -230,8 +228,23 @@ function Formulario({ titular, partida, esAdmin, cuitParaCatalogos, motivo, alCe
       )}
 
       {titular && titular.emite === 'nosotros' && (
-        <PlantillaDeTitular titular={titular} cuitParaCatalogos={cuitParaCatalogos} puedeEditar={esAdmin}
-                            alCambiar={alCambiar} />
+        // La plantilla es un formulario largo: tiene su propia página, y acá sólo se dice si hay y se lleva ahí.
+        <section aria-label="Datos habituales para emitir"
+                 className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-4">
+          <div>
+            <h3 className="text-sm font-semibold">Datos habituales para emitir</h3>
+            <p className="text-muted-foreground text-xs">
+              {titular.tiene_plantilla
+                ? '«Emitir carta de porte» arranca con los que están guardados.'
+                : 'Todavía no hay: se guardan solos con la primera carta que se emita a su nombre, o se cargan antes.'}
+            </p>
+          </div>
+          <Button asChild variant="outline">
+            <Link to={irA.plantillaDeTitular(titular.id)}>
+              {esAdmin ? (titular.tiene_plantilla ? 'Ver y editar' : 'Cargar') : 'Ver'}
+            </Link>
+          </Button>
+        </section>
       )}
       {titular && titular.emite === 'titular' && (
         <p className="text-muted-foreground text-sm">
@@ -253,7 +266,6 @@ export function FichaDeTitular({ abierto, alCambiarAbierto, ...resto }: {
   titular: Titular | null
   partida: PartidaDelAlta | null
   esAdmin: boolean
-  cuitParaCatalogos: string | null
   motivo: string | null
   alCambiar: () => void
 }) {
