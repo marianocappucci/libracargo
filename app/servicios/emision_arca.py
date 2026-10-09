@@ -320,12 +320,13 @@ async def pedir_cae(
     }
     es_fce = comprobante.tipo in TIPOS_FCE
     if es_fce:
-        # Del motor: el vencimiento viaja en el comprobante y el CBU y la modalidad
-        # en la configuración. Si falta alguno, `arca_wsfe` falla con un mensaje que
-        # dice qué cargar, y llega a la pantalla tal cual.
+        # Del motor: el vencimiento y el CBU viajan en el comprobante (el CBU es el que se
+        # eligió al facturar: con varias cuentas, el de la configuración puede ser otro,
+        # libracore ADR-040) y la modalidad en la configuración. Si falta alguno,
+        # `arca_wsfe` falla con un mensaje que dice qué cargar, y llega a la pantalla tal cual.
         factura.update({
             "fch_vto_pago": comprobante.fch_vto_pago.isoformat(),
-            "fce_cbu": cfg.get("fce_cbu") or "",
+            "fce_cbu": comprobante.fce_cbu or cfg.get("fce_cbu") or "",
             "fce_transmision": cfg.get("fce_transmision") or "",
         })
     if nota is not None:

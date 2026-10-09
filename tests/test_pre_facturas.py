@@ -694,6 +694,89 @@ def test_facturar_una_fce_sale_con_vencimiento_cbu_y_modalidad(cliente, datos, e
     assert pedido["fch_vto_pago"] == "2099-02-01"
 
 
+# ── 4b. En qué cuenta se cobra la FCE (libracore ADR-040) ───────────────────
+
+CBU_NACION = "0110599520000001234567"
+CBU_GALICIA = "0070999030004001234567"
+
+
+def _dos_cuentas(cliente):
+    """La empresa cobra en dos cuentas; la de Galicia es la predeterminada."""
+    r = cliente.put("/api/arca", json={
+        "empresa": "agencia", "cuit": CUIT_EMISOR, "punto_venta": 1, "ambiente": "produccion", "alias": "",
+        "fce_cbus": [{"cbu": CBU_NACION, "alias": "agencia.nacion", "etiqueta": "Nación"},
+                     {"cbu": CBU_GALICIA, "alias": "agencia.galicia", "etiqueta": "Galicia"}],
+        "fce_cbu": CBU_GALICIA, "fce_transmision": "SCA"})
+    assert r.status_code == 200, r.text
+
+
+def test_las_cuentas_para_cobrar_una_fce_y_la_predeterminada(cliente):
+    _dos_cuentas(cliente)
+    r = cliente.get("/api/comprobantes/fce/cuentas").json()
+    assert [c["alias"] for c in r["cuentas"]] == ["agencia.nacion", "agencia.galicia"]
+    assert r["predeterminada"] == CBU_GALICIA
+    assert r["transmision"] == "SCA"
+
+
+def test_una_fce_elegida_por_alias_se_factura_en_esa_cuenta_y_no_en_la_predeterminada(cliente, datos, emisor):
+    _dos_cuentas(cliente)
+    a = orden(cliente, datos, "5000.00")
+    pf = _crear(cliente, datos, [a], tipo="fce_a", fecha="2099-01-01", vencimiento="2099-02-01",
+                cuenta="agencia.nacion")
+    assert pf["fce_cbu"] == CBU_NACION, "se guarda el CBU aunque se elija por alias"
+    assert pf["fce_cuenta"] == {"cbu": CBU_NACION, "alias": "agencia.nacion", "etiqueta": "Nación"}
+
+    r = cliente.post(f"/api/pre-facturas/{pf['id']}/facturar", json={"fecha": "2099-01-01"})
+    assert r.status_code == 201, r.text
+    assert r.json()["fce_cbu"] == CBU_NACION
+    pedido = next(p[1] for p in emisor if p[0] == "cae")
+    assert pedido["fce_cbu"] == CBU_NACION, "a ARCA va el CBU elegido, no el de la configuración"
+
+
+def test_una_fce_sin_elegir_cuenta_sale_con_la_predeterminada(cliente, datos, emisor):
+    _dos_cuentas(cliente)
+    a = orden(cliente, datos, "5000.00")
+    pf = _crear(cliente, datos, [a], tipo="fce_a", fecha="2099-01-01", vencimiento="2099-02-01")
+    assert pf["fce_cbu"] is None
+    assert pf["fce_cuenta"]["cbu"] == CBU_GALICIA, "se muestra dónde se va a cobrar"
+
+    r = cliente.post(f"/api/pre-facturas/{pf['id']}/facturar", json={"fecha": "2099-01-01"})
+    assert r.status_code == 201, r.text
+    assert r.json()["fce_cbu"] == CBU_GALICIA
+
+
+def test_una_cuenta_que_no_esta_cargada_no_se_acepta(cliente, datos):
+    _dos_cuentas(cliente)
+    a = orden(cliente, datos, "5000.00")
+    r = pre_factura(cliente, datos, [a], tipo="fce_a", fecha="2099-01-01", vencimiento="2099-02-01",
+                    cuenta="2850590940090418135201")
+    assert r.status_code == 422
+    assert "no está entre los cargados" in r.text
+    assert _reservadas(cliente) == [], "no quedó nada reservado"
+
+
+def test_editar_cambia_la_cuenta_y_vacio_vuelve_a_la_predeterminada(cliente, datos):
+    _dos_cuentas(cliente)
+    a = orden(cliente, datos, "5000.00")
+    pf = _crear(cliente, datos, [a], tipo="fce_a", fecha="2099-01-01", vencimiento="2099-02-01")
+    cuerpo = {"tipo": "fce_a", "fecha": "2099-01-01", "fecha_vencimiento_pago": "2099-02-01",
+              "orden_ids": [a["id"]]}
+
+    r = cliente.put(f"/api/pre-facturas/{pf['id']}", json=cuerpo | {"fce_cbu": CBU_NACION})
+    assert r.status_code == 200, r.text
+    assert r.json()["fce_cbu"] == CBU_NACION
+    r = cliente.put(f"/api/pre-facturas/{pf['id']}", json=cuerpo | {"fce_cbu": ""})
+    assert r.json()["fce_cbu"] is None
+    assert r.json()["fce_cuenta"]["cbu"] == CBU_GALICIA
+
+
+def test_una_factura_comun_no_lleva_cuenta_aunque_se_mande(cliente, datos):
+    _dos_cuentas(cliente)
+    a = orden(cliente, datos, "1000.00")
+    pf = _crear(cliente, datos, [a], cuenta="agencia.nacion")
+    assert pf["fce_cbu"] is None and pf["fce_cuenta"] is None
+
+
 # ── 5. Ya no hay registro a mano ────────────────────────────────────────────
 
 

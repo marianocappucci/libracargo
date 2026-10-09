@@ -20,6 +20,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from libracore import arca_wsfecred
+from libracore.db import arca_config
 from libracore.notas_de_credito import NotaNoPermitida
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -115,6 +116,24 @@ def listar(
         .limit(limite).offset(desplazamiento)
     )
     return list(sesion.scalars(consulta))
+
+
+@router.get("/fce/cuentas")
+def fce_cuentas(sesion: Session = Depends(obtener_sesion)):
+    """En qué cuentas puede cobrar una FCE la empresa (libracore ADR-040): para elegir una al armar la pre factura.
+
+    `cuentas` es `[{cbu, alias, etiqueta}]` y `predeterminada` el CBU que sale si no se elige otra. Sin configuración
+    de ARCA, o con más de una que no se sabe cuál es, la lista viene vacía: la pantalla dice que no se puede.
+    """
+    try:
+        cfg = emision_arca.configuracion_activa(sesion)
+    except emision_arca.ArcaAmbiguo:
+        cfg = None
+    return {
+        "cuentas": arca_config.cbus_fce(cfg),
+        "predeterminada": arca_config.cbu_para_fce(cfg, None),
+        "transmision": ((cfg or {}).get("fce_transmision") or "").upper(),
+    }
 
 
 @router.get("/fce/corresponde")

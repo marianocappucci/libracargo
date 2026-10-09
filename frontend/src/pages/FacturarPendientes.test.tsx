@@ -38,8 +38,19 @@ function responder(ordenes: unknown[] = [], propias: unknown[] = []) {
     if (ruta.startsWith('/api/ordenes') && ruta.includes('pre_factura_id=')) return Promise.resolve(propias)
     if (ruta.startsWith('/api/ordenes')) return Promise.resolve(ordenes)
     if (ruta.startsWith('/api/terceros')) return Promise.resolve(TERCEROS)
+    if (ruta === '/api/comprobantes/fce/cuentas') return Promise.resolve(CUENTAS)
     return Promise.resolve([])
   })
+}
+
+/** Las cuentas de la empresa para cobrar una FCE (libracore ADR-040); Galicia es la predeterminada. */
+const CUENTAS = {
+  cuentas: [
+    { cbu: '0110599520000001234567', alias: 'agencia.nacion', etiqueta: 'Nación' },
+    { cbu: '0070999030004001234567', alias: 'agencia.galicia', etiqueta: 'Galicia' },
+  ],
+  predeterminada: '0070999030004001234567',
+  transmision: 'SCA',
 }
 
 function orden(id: number, extra: Record<string, unknown> = {}) {
@@ -226,6 +237,37 @@ describe('Facturar pendientes', () => {
     expect(cuerpo).toMatchObject({
       tipo: 'fce_a', fecha_vencimiento_pago: '2026-10-01', orden_ids: [1],
     })
+  })
+
+  it('una FCE muestra en qué cuenta se cobra: arranca en la predeterminada y no la manda', async () => {
+    await elegirFce('2026-08-15')
+    const cuenta = await screen.findByLabelText('Cobrar en')
+    expect(cuenta).toHaveValue('agencia.galicia · CBU 0070999030004001234567 · Galicia (predeterminada)')
+    expect(opcionesDe(cuenta)).toContain('agencia.nacion · CBU 0110599520000001234567 · Nación')
+    fireEvent.click(screen.getByText('Generar pre factura'))
+    await waitFor(() => expect(post).toHaveBeenCalled())
+    expect(post.mock.calls[0][1]).toMatchObject({ fce_cbu: '' })
+  })
+
+  it('una FCE puede cobrarse en otra cuenta, reconocida por su alias', async () => {
+    await elegirFce('2026-08-15')
+    await elegirEnBuscable(await screen.findByLabelText('Cobrar en'), /^agencia\.nacion · /)
+    fireEvent.click(screen.getByText('Generar pre factura'))
+    await waitFor(() => expect(post).toHaveBeenCalled())
+    expect(post.mock.calls[0][1]).toMatchObject({ tipo: 'fce_a', fce_cbu: '0110599520000001234567' })
+  })
+
+  it('una factura común no pide cuenta ni la manda', async () => {
+    responder([orden(1)])
+    post.mockResolvedValue({ id: 9 })
+    await abrir()
+    await waitFor(() => expect(casilla(1)).toBeInTheDocument())
+    fireEvent.click(casilla(1))
+    expect(screen.queryByLabelText('Cobrar en')).toBeNull()
+    fireEvent.click(screen.getByText('Generar pre factura'))
+    await waitFor(() => expect(post).toHaveBeenCalled())
+    // `undefined` no viaja: lo que importa es el JSON que sale.
+    expect(JSON.parse(JSON.stringify(post.mock.calls[0][1]))).not.toHaveProperty('fce_cbu')
   })
 
   it('sin vencimiento de pago una FCE no se puede facturar', async () => {
