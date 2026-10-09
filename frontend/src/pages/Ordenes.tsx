@@ -7,7 +7,7 @@ import { Ban, ClipboardList, Eye, Pencil, Plus, Printer } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { UseFormReturn } from 'react-hook-form'
 import { useForm } from 'react-hook-form'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import type { Filtros, Opciones, Orden } from '@/api/ordenes'
 import { ETAPAS, cargarOpciones, ordenes as api } from '@/api/ordenes'
@@ -18,7 +18,6 @@ import { aOpcionLocalidad } from '@/api/localidades'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { AdjuntosDeOrden } from '@/components/AdjuntosDeOrden'
 import { CambiarEtapa } from '@/components/CambiarEtapa'
-import { EmitirCartaDePorte } from '@/components/EmitirCartaDePorte'
 import { ElegirLocalidad } from '@/components/ElegirLocalidad'
 import { SeccionFlete } from '@/components/FleteDeOrden'
 import { KilosDelDetalle, SeccionKilos } from '@/components/KilosDeOrden'
@@ -33,6 +32,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { irA } from '@/navegacion'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
 type Form = UseFormReturn<EntradaOrden, unknown, DatosOrden>
@@ -148,8 +148,6 @@ export default function Ordenes() {
   const [abierto, setAbierto] = useState(false)
   const [editando, setEditando] = useState<Orden | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // La orden de la que se está emitiendo la carta de porte (ADR-043). Aparte del detalle: el asistente se abre encima.
-  const [emitiendo, setEmitiendo] = useState<Orden | null>(null)
 
   const form = useForm<EntradaOrden, unknown, DatosOrden>({
     resolver: zodResolver(esquemaOrden),
@@ -457,8 +455,11 @@ export default function Ordenes() {
           <DialogFooter>
             {/* Una orden anulada no viaja: no se le emite carta de porte. */}
             {detalle && detalle.estado !== 'anulada' && (
-              <Button variant="outline" onClick={() => setEmitiendo(detalle)}>
-                <IconoIndicador concepto="cartasDePorte" /> Emitir carta de porte
+              // Una página propia (ADR-043): volver de ahí reabre este detalle.
+              <Button asChild variant="outline">
+                <Link to={irA.emitirCartaDePorte(detalle.id)}>
+                  <IconoIndicador concepto="cartasDePorte" /> Emitir carta de porte
+                </Link>
               </Button>
             )}
             {detalle && (
@@ -470,10 +471,6 @@ export default function Ordenes() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {emitiendo && (
-        <EmitirCartaDePorte orden={emitiendo} abierto alCambiar={(v) => { if (!v) setEmitiendo(null) }} />
-      )}
 
       {aImprimir && (
         <OrdenImpresa orden={aImprimir} opciones={opciones} empresa={empresa} />

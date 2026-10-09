@@ -8,12 +8,14 @@ import Caja from '@/pages/Caja'
 import CartasDePorte from '@/pages/CartasDePorte'
 import ComprobantesSeccion from '@/pages/ComprobantesSeccion'
 import EditarPreFactura from '@/pages/EditarPreFactura'
+import EmitirCartaDePorte from '@/pages/EmitirCartaDePorte'
 import FacturarPendientes from '@/pages/FacturarPendientes'
 import Configuracion from '@/pages/Configuracion'
 import CuentaCorriente from '@/pages/CuentaCorriente'
 import Login from '@/pages/Login'
 import { ForgotPassword, ResetPassword } from '@/pages/PasswordReset'
 import Logs from '@/pages/Logs'
+import PlantillaDeTitular from '@/pages/PlantillaDeTitular'
 import Ordenes from '@/pages/Ordenes'
 import PreFactura from '@/pages/PreFactura'
 import PreFacturas from '@/pages/PreFacturas'
@@ -67,6 +69,10 @@ export default function App() {
                 <Route path="/" element={<Inicio />} />
                 <Route path="/ordenes" element={<Ordenes />} />
                 <Route path="/cartas-porte" element={<CartasDePorte />} />
+                {/* Formularios largos, en página propia y no en un diálogo (2026-10-09). Cuelgan de /cartas-porte: el menú
+                    marca esa entrada. */}
+                <Route path="/cartas-porte/emitir/:ordenId" element={<EmitirCartaDePorte />} />
+                <Route path="/cartas-porte/titulares/:id/plantilla" element={<PlantillaDeTitular />} />
                 <Route path="/cuentas" element={<CuentaCorriente />} />
                 <Route path="/caja" element={<Caja />} />
                 {/* Una entrada de menú, dos pestañas (`?seccion=`): Clientes —la ruta pelada— y Proveedores. */}

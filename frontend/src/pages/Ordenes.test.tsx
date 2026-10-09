@@ -9,7 +9,6 @@ import { configure, fireEvent, render, screen, waitFor, within } from '@testing-
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { opcionesDe } from '@/test/buscable'
 
 // La sección «Flete» consulta la referencia con una espera de 250 ms antes de pedirla: en el CI, con este archivo
 // tardando ~50 s, el segundo por defecto de `waitFor` no alcanza y el test falla por tiempo, no por lógica.
@@ -795,28 +794,22 @@ describe('Órdenes · emitir la carta de porte desde el detalle (ADR-043)', () =
     })
   }
 
-  it('«Emitir carta de porte» abre el asistente de esa orden, con el titular sin elegir', async () => {
+  it('«Emitir carta de porte» lleva a la página de emitir de esa orden (no abre un diálogo encima)', async () => {
     responder([orden(7)])
     conEmision()
     abrir()
     const detalle = await verDetalle('R-7')
-    fireEvent.click(within(detalle).getByRole('button', { name: 'Emitir carta de porte' }))
-
-    expect(await screen.findByText('Emitir carta de porte · Orden Nº 00000007')).toBeInTheDocument()
-    const titular = await screen.findByLabelText('A nombre de')
-    await waitFor(() => expect(opcionesDe(titular)).toContain('Agropecuaria Los Talas'))
-    // Sin elegir: el campo muestra la opción vacía («Elegir…»), no un titular.
-    expect(titular).toHaveValue('Elegir…')
-    expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled()
+    expect(within(detalle).getByRole('link', { name: 'Emitir carta de porte' }))
+      .toHaveAttribute('href', '/cartas-porte/emitir/7')
   })
 
   it('una orden anulada no ofrece emitir la carta de porte', async () => {
     responder([orden(8, { estado: 'anulada' }), orden(9)])
     abrir()
     let detalle = await verDetalle('R-8')
-    expect(within(detalle).queryByRole('button', { name: 'Emitir carta de porte' })).toBeNull()
+    expect(within(detalle).queryByRole('link', { name: 'Emitir carta de porte' })).toBeNull()
     fireEvent.click(within(detalle).getByRole('button', { name: 'Cerrar' }))
     detalle = await verDetalle('R-9')
-    expect(within(detalle).getByRole('button', { name: 'Emitir carta de porte' })).toBeInTheDocument()
+    expect(within(detalle).getByRole('link', { name: 'Emitir carta de porte' })).toBeInTheDocument()
   })
 })

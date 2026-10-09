@@ -3,6 +3,9 @@
  *  «Emitir carta de porte» la llena sola con lo último emitido a nombre del titular; acá se puede mirar y corregir antes de
  *  la primera carta, o cuando algo cambia (otra planta, otro grano, otro corredor).
  *
+ *  Vive en su propia página (`pages/PlantillaDeTitular.tsx`, desde el 2026-10-09): en la ficha del titular, que es un
+ *  diálogo, el formulario quedaba apretado. El título de la página dice de qué se trata; acá va la explicación.
+ *
  *  🔑 **Mismas claves, mismas reglas y mismos campos que el asistente.** El borrador, el formato válido de cada dato y los
  *  campos son los de `emision-cpe.ts` y `campos-cpe.tsx`; lo que se guarda es lo que `propuesta()` del servidor lee de la
  *  plantilla. La diferencia es una sola: acá **nada es obligatorio**, porque una plantilla puede ser parcial y lo que
@@ -163,8 +166,7 @@ export function PlantillaDeTitular({ titular, cuitParaCatalogos, puedeEditar, al
   return (
     <section aria-label="Datos habituales para emitir" className="grid gap-3">
       <div>
-        <h3 className="text-sm font-semibold">Datos habituales para emitir</h3>
-        <p className="text-muted-foreground text-xs">
+        <p className="text-muted-foreground text-sm">
           «Emitir carta de porte» arranca con esto para {titular.razon_social}. Se actualiza solo con lo último que se
           emite a su nombre. Todo es opcional: el viaje (chofer, dominios, kilos, partida) se completa en cada carta.
           {guardada.existe && guardada.actualizada && ` Última actualización: ${formatearInstante(guardada.actualizada)}.`}

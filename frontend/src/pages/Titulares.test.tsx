@@ -202,15 +202,17 @@ describe('Titulares · la delegación se lee de ARCA', () => {
 })
 
 describe('Titulares · la ficha', () => {
-  it('abre al tocar una fila: explica el estado y trae la plantilla', async () => {
+  it('abre al tocar una fila: explica el estado y lleva a la página de la plantilla', async () => {
     abrir()
     fireEvent.click(await screen.findByText('Agro Pendiente SA'))
     const dialogo = await screen.findByRole('dialog')
     expect(within(dialogo).getByLabelText('Razón social')).toHaveValue('Agro Pendiente SA')
     expect(within(dialogo).getByLabelText('CUIT')).toBeDisabled()
     expect(within(dialogo).getByText(/puede tardar hasta 12 horas/)).toBeInTheDocument()
-    expect(await within(dialogo).findByRole('region', { name: 'Datos habituales para emitir' })).toBeInTheDocument()
-    expect(get).toHaveBeenCalledWith(`${RUTA}/titulares/2/plantilla`)
+    const plantilla = await within(dialogo).findByRole('region', { name: 'Datos habituales para emitir' })
+    // El formulario es largo: vive en su página, y la ficha no lo pide.
+    expect(within(plantilla).getByRole('link')).toHaveAttribute('href', '/cartas-porte/titulares/2/plantilla')
+    expect(get).not.toHaveBeenCalledWith(`${RUTA}/titulares/2/plantilla`)
   })
 
   it('un titular «Pendiente» lleva las instrucciones de delegación con su nombre', async () => {
