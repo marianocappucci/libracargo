@@ -200,7 +200,7 @@ describe('Cartas de porte: pestañas y titulares (ADR-044)', () => {
 
   it('el log lleva el titular y su plantilla a la ficha del titular', () => {
     expect(destinoDelLog('titular_cpe', 3)).toBe('/cartas-porte?pestana=titulares&ver=3')
-    expect(destinoDelLog('plantilla_cpe', 3)).toBe('/cartas-porte?pestana=titulares&ver=3')
+    expect(destinoDelLog('plantilla_cpe', 3)).toBe('/cartas-porte/titulares/3/plantilla')
     expect(destinoDelLog('titular_cpe', null)).toBeNull()
   })
 })

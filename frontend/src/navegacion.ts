@@ -45,6 +45,10 @@ export const irA = {
   },
   /** «Cartas de porte» (ADR-036) en la pestaña «Titulares» (ADR-044) y, con `ver`, con la ficha de ese titular abierta. */
   titulares: (ver?: number) => (ver !== undefined ? `/cartas-porte?pestana=titulares&ver=${ver}` : '/cartas-porte?pestana=titulares'),
+  /** «Emitir carta de porte» de una orden (ADR-043): una página propia que cuelga de «Cartas de porte». */
+  emitirCartaDePorte: (ordenId: number) => `/cartas-porte/emitir/${ordenId}`,
+  /** Los datos habituales para emitir a nombre de un titular (ADR-044), en su propia página. */
+  plantillaDeTitular: (titularId: number) => `/cartas-porte/titulares/${titularId}/plantilla`,
   /** «Vehículos», una entrada propia del menú (antes una sección de Configuración). Con `ver`, con la ficha de esa fila abierta. */
   vehiculos: (ver?: number) => (ver !== undefined ? `/vehiculos?ver=${ver}` : '/vehiculos'),
 }
@@ -135,8 +139,10 @@ export function destinoDelLog(entidad: string, entidadId: number | null): string
     if (entidad === 'pre_factura') return irA.preFactura(entidadId)
     if (entidad === 'movimiento_caja') return irA.caja(entidadId)
     if (entidad === 'gasto_de_proveedor') return irA.gasto(entidadId)
-    // El titular de cartas de porte y su plantilla llevan a su ficha (el id de la plantilla es el del titular).
-    if (entidad === 'titular_cpe' || entidad === 'plantilla_cpe') return irA.titulares(entidadId)
+    // El titular de cartas de porte lleva a su ficha, y su plantilla a la página de la plantilla (el id de la plantilla
+    // es el del titular).
+    if (entidad === 'titular_cpe') return irA.titulares(entidadId)
+    if (entidad === 'plantilla_cpe') return irA.plantillaDeTitular(entidadId)
   }
   if (entidad === 'configuracion') return '/configuracion'
   // Terceros y choferes ya no son pantallas sueltas ni secciones de Configuración: viven en «Entidades». Un tercero no dice

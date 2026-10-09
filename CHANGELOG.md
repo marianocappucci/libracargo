@@ -3,6 +3,13 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Emitir carta de porte y los datos habituales del titular, en páginas propias
+
+- **«Emitir carta de porte» es una página** (`/cartas-porte/emitir/:ordenId`) y no un diálogo sobre el detalle de la orden: es un formulario largo y un documento fiscal. Los mismos cuatro pasos y las mismas trabas (ADR-043). «Cancelar» y «Cerrar» vuelven a la orden con su detalle abierto; mientras se envía, cerrar o recargar la pestaña pide confirmación. Un enlace pegado o un F5 traen la orden por su número, y una orden anulada no se emite aunque se llegue por un enlace.
+- **Los datos habituales de un titular son una página** (`/cartas-porte/titulares/:id/plantilla`): la ficha del titular dice si hay plantilla y lleva ahí («Cargar», «Ver y editar» o «Ver» para un operador). El formulario y lo que se guarda no cambian (ADR-044).
+- El registro de actividad lleva un cambio de `plantilla_cpe` a la página de la plantilla.
+- Sin cambios en la API ni migración.
+
 ## [Unreleased] — Titulares: la delegación en ARCA se mira también en los que emiten ellos
 
 - **Corrección de ADR-044**: un titular que «emite él» ya no figura como «no aplica». Para **consultar** sus cartas de porte por CTG hace falta que haya delegado `wscpe` a nuestro certificado, igual que para emitirlas (es el caso de Suitrans S.A.). La delegación habilita consultar y emitir; «quién emite» decide sólo si se le ofrece emitir.

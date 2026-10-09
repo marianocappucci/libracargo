@@ -182,7 +182,6 @@ export function Titulares() {
         titular={titular}
         partida={partida}
         esAdmin={esAdmin}
-        cuitParaCatalogos={listado?.cuit_para_catalogos ?? null}
         motivo={listado?.motivo ?? null}
         alCambiar={recargar}
       />
