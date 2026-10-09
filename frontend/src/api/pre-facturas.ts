@@ -1,6 +1,6 @@
 import { api } from 'libra-ui/api-client'
 
-import type { Comprobante, Ensayo, TipoComprobante } from '@/api/comprobantes'
+import type { Comprobante, CuentaFce, Ensayo, TipoComprobante } from '@/api/comprobantes'
 
 /** Los cinco estados de una pre factura, como los guarda el motor (ADR-030 de LibraCore). */
 export type EstadoPreFactura = 'pendiente' | 'enviado' | 'aceptado' | 'facturado' | 'descartado'
@@ -46,6 +46,10 @@ export type PreFactura = {
   tipo_comprobante: number | null
   fecha_sugerida: string
   fecha_vencimiento_pago: string | null
+  /** Sólo una FCE: el CBU de la cuenta elegida, o `null` si va la predeterminada. */
+  fce_cbu?: string | null
+  /** Sólo una FCE: dónde se cobra (la elegida o la predeterminada), o `null`. */
+  fce_cuenta?: CuentaFce | null
   observaciones: string
   items: ItemPreFactura[]
   orden_ids: number[]
@@ -74,6 +78,8 @@ export type DatosDePreFactura = {
   tipo: string
   fecha: string
   fecha_vencimiento_pago?: string
+  /** Sólo una FCE: el CBU o el alias de la cuenta; `''` es la predeterminada. */
+  fce_cbu?: string
   orden_ids: number[]
 }
 

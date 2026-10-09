@@ -3,6 +3,14 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — La factura de crédito se cobra en la cuenta que se elija (varios CBU con alias)
+
+- **Pedido del dueño de Suitrans:** «puede querer que le depositen en una u otra cuenta». Las cuentas se cargan en Configuración → ARCA (CBU, alias y nombre, con una predeterminada; libra-ui v0.132.0) y el motor las guarda (libracore v1.152.0, ADR-040, migración `0023`).
+- **«Facturar pendientes»:** con una factura de crédito aparece «Cobrar en», con la predeterminada marcada; se reconoce cada cuenta por su alias y su CBU. La pre factura guarda la elegida y muestra dónde se cobra.
+- **Al facturar** sale la cuenta de la pre factura (o la predeterminada). 🔴 **Corrección:** a ARCA iba siempre el CBU de la configuración aunque el comprobante guardara otro; ahora va el del comprobante.
+- **API:** `GET /api/comprobantes/fce/cuentas`; `fce_cbu` (CBU o alias) en crear y editar la pre factura, y `fce_cbu`/`fce_cuenta` en sus respuestas. Una cuenta que no está cargada es 422.
+- Configuración → Integraciones a todo el ancho (libra-ui v0.132.0).
+
 ## [Unreleased] — Emitir carta de porte y los datos habituales del titular, en páginas propias
 
 - **«Emitir carta de porte» es una página** (`/cartas-porte/emitir/:ordenId`) y no un diálogo sobre el detalle de la orden: es un formulario largo y un documento fiscal. Los mismos cuatro pasos y las mismas trabas (ADR-043). «Cancelar» y «Cerrar» vuelven a la orden con su detalle abierto; mientras se envía, cerrar o recargar la pestaña pide confirmación. Un enlace pegado o un F5 traen la orden por su número, y una orden anulada no se emite aunque se llegue por un enlace.

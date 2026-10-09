@@ -29,6 +29,9 @@ class PreFacturaEditarIn(BaseModel):
     fecha: date
     #: Sólo la FCE lo lleva, y toda FCE lo exige (lo valida `servicios.pre_facturas`).
     fecha_vencimiento_pago: date | None = None
+    #: Sólo la FCE: en qué cuenta se cobra, por su CBU **o su alias** (libracore ADR-040). `""` o ausente es la
+    #: predeterminada de la configuración de ARCA; una que no está cargada la rechaza el motor (422).
+    fce_cbu: str | None = Field(default=None, max_length=40)
     orden_ids: list[int] = Field(min_length=1)
     observaciones: str = Field(default="", max_length=500)
 

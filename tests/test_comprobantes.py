@@ -40,7 +40,7 @@ def orden(cliente, datos, tarifa, *, cliente_id=None, fecha="2026-08-10"):
 
 
 def pre_factura(cliente, datos, ordenes, *, tipo="factura_a", cliente_id=None,
-                fecha="2026-08-15", vencimiento=None):
+                fecha="2026-08-15", vencimiento=None, cuenta=None):
     """Genera la pre factura de las órdenes. Sin punto de venta ni número: no se tipean más (ADR-032)."""
     cuerpo = {
         "fecha": fecha,
@@ -49,6 +49,8 @@ def pre_factura(cliente, datos, ordenes, *, tipo="factura_a", cliente_id=None,
     }
     if vencimiento is not None:
         cuerpo["fecha_vencimiento_pago"] = vencimiento
+    if cuenta is not None:
+        cuerpo["fce_cbu"] = cuenta
     return cliente.post("/api/pre-facturas", json=cuerpo)
 
 

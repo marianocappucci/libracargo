@@ -70,6 +70,22 @@ export type AvisoFce = {
   fce_habilitada: boolean
 }
 
+/** Una cuenta donde se cobra una FCE (libracore ADR-040): se elige por su alias o por su CBU. */
+export type CuentaFce = { cbu: string; alias: string; etiqueta: string }
+
+/** Lo que contesta `GET /api/comprobantes/fce/cuentas`: las cuentas cargadas en Configuración → ARCA. */
+export type CuentasFce = {
+  cuentas: CuentaFce[]
+  /** El CBU que sale si no se elige otra; `''` si no hay ninguna. */
+  predeterminada: string
+  transmision: string
+}
+
+/** Cómo se muestra una cuenta para elegirla: el alias primero (es lo que se recuerda), el CBU y el nombre. */
+export function etiquetaDeCuenta(c: CuentaFce): string {
+  return [c.alias || 'sin alias', `CBU ${c.cbu}`, c.etiqueta].filter(Boolean).join(' · ')
+}
+
 export type SumaDeOrdenes = { cantidad: number; neto: string; iva: string; total: string }
 
 export type ComprobanteConOrdenes = {
@@ -156,6 +172,7 @@ export const comprobantes = {
   },
   // ¿A este comprobante le corresponde ser FCE? Lo contesta el registro de ARCA a través del motor. Es un
   // aviso: nunca falla por ARCA (`disponible: false` y el motivo).
+  fceCuentas: () => api.get<CuentasFce>('/api/comprobantes/fce/cuentas'),
   fceCorresponde: (p: { cliente_id: number; total: string; fecha: string }) =>
     api.get<AvisoFce>(`/api/comprobantes/fce/corresponde?${new URLSearchParams({
       cliente_id: String(p.cliente_id), total: p.total, fecha: p.fecha,
