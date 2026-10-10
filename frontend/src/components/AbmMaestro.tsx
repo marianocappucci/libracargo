@@ -50,7 +50,7 @@ export type Campo = {
   grupo?: string
 }
 
-/** Lo que recibe quien quiere dibujar el error de guardado a su manera (el CUIT repetido de Entidades). */
+/** Lo que recibe quien quiere dibujar el error de guardado a su manera (el CUIT repetido de Clientes, Proveedores y Fleteros). */
 export type ContextoDeConflicto<T extends Maestro> = {
   /** Qué se estaba editando, o `null` si era un alta. */
   editando: T | null
@@ -85,7 +85,7 @@ type Props<T extends Maestro> = {
   buscarEn: (fila: T) => (string | number | null | undefined)[]
   /** Valores iniciales de un alta. */
   defaults?: Partial<T>
-  /** `false` esconde el título: la pantalla que contiene al maestro (Entidades) ya tiene el suyo. Queda el botón «Nuevo». */
+  /** `false` esconde el título: la pantalla que contiene al maestro (Transporte, Clientes, Proveedores) ya tiene el suyo. Queda el botón «Nuevo». */
   encabezado?: boolean
   /** El nombre de una fila en singular, para el título del formulario («Editar fletero»). Sin él, el de la tabla. */
   singular?: string
@@ -360,7 +360,7 @@ export function AbmMaestro<T extends Maestro>({
   )
 
   return (
-    // Con título propio es una pantalla; sin él va metido en otra (una pestaña de Entidades). Ninguna de las dos pone relleno
+    // Con título propio es una pantalla; sin él va metido en otra (Clientes, Proveedores o una pestaña de Transporte). Ninguna de las dos pone relleno
     // propio: el `Layout` ya separa el contenido del borde y baja el título a la altura de la marca (ADR-040 del kit).
     <div>
       {encabezado ? (
@@ -369,7 +369,7 @@ export function AbmMaestro<T extends Maestro>({
           <div className="flex flex-wrap items-center justify-end gap-2">{acciones}</div>
         </div>
       ) : (
-        // Metido en otra pantalla (Entidades): los botones suben a la línea del título de ésta.
+        // Metido en otra pantalla (Transporte, Clientes, Proveedores): los botones suben a la línea del título de ésta.
         <AccionesDelTitulo>{acciones}</AccionesDelTitulo>
       )}
 

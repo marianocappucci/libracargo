@@ -1006,6 +1006,7 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 2. **`POST /api/terceros/{id}/roles/{rol}`** le suma un rol a una entidad y la reactiva si estaba de baja, con auditoría.
 3. **`?fletero_id=`** en `/api/choferes` y `/api/vehiculos`, para la ficha del fletero. El constructor de maestros gana dos costuras, `filtros` y `validar`, y los demás maestros no cambian. La búsqueda de choferes incluye el CUIT.
 4. **Pantalla «Entidades»** en el menú principal, con pestañas Clientes, Fleteros, Choferes y Proveedores. Terceros y Choferes salen de Configuración, y los enlaces viejos redirigen.
+   **Reemplazado en parte por ADR-045 (2026-10-10):** «Entidades» ya no existe como pantalla; Clientes y Proveedores tienen la suya y Fleteros y Choferes pasaron a «Transporte». El modelo (puntos 1 a 3) no cambia.
 
 **Consecuencias.**
 - **El duplicado que ya existe no se une solo**: los dos registros tienen órdenes y cuenta corriente de cada lado. Unificar entidades es una operación aparte, con su propio diseño.
@@ -1092,3 +1093,40 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 - Las pantallas que consumían `/representados` para el asistente ahora leen `/titulares`; «Traer de ARCA» sigue con `/representados`.
 - Una carta emitida a nombre de un titular que dejó de estar en el ticket sigue en `cartas_porte` con su CUIT: la libreta no es historial fiscal.
 - Pendiente: que el listado distinga a un titular que desapareció del ticket después de estar «delegado» (hoy vuelve a «pendiente»), y desvío/contingencia (ADR-043).
+
+## ADR-045 — «Entidades» se divide: Clientes y Proveedores en el menú principal, y «Transporte» con Fleteros, Choferes y Vehículos
+
+**Reemplaza en parte a ADR-040**, sólo en la pantalla (punto 4): el modelo —una entidad con roles, un CUIT una entidad, `POST /api/terceros/{id}/roles/{rol}`, `?fletero_id=`— sigue como estaba.
+
+**Contexto.** El dueño (2026-10-10): *«En entidades está clientes, fleteros, choferes y proveedores. Entidades se va a pasar a llamar Transporte y dentro va a tener fleteros y choferes en pestañas separadas y clientes y proveedores pasan al menú principal.»* Después sumó dos cosas: **Vehículos también va dentro de Transporte** (tenía su propia entrada de menú, `/vehiculos`, desde el 2026-10-08), y que **Transporte recuerde la última pestaña** que se abrió. Y descartó asociar los vehículos a los fleteros o a nadie en particular: a veces el vehículo es del chofer y no del fletero. Antes de esto las cuatro pestañas de «Entidades» eran la misma tabla `terceros` vista por rol (Clientes, Fleteros, Proveedores) más `choferes`, y los clientes y los proveedores se usan a diario por su cuenta mientras que fleteros, choferes y vehículos son lo mismo que se mira junta: quién transporta, con quién y en qué.
+
+**Decisión.**
+1. **Tres entradas del menú donde estaba «Entidades»**, en este orden: **Clientes** (`/clientes`), **Proveedores** (`/proveedores`) y **Transporte** (`/transporte`), entre «Cartas de porte» y «Cuenta corriente». El menú de LibraCargo es un solo grupo plano: no hay secciones que reacomodar. La entrada «Vehículos» sale del menú.
+2. **Clientes y Proveedores son pantallas propias, con lo mismo que tenían como pestaña**: la misma `TercerosPorRol` (el listado del rol, el alta con el rol marcado, las pastillas de los otros roles, el CUIT repetido que ofrece sumar el rol o ir a verlo, la línea de Carta de porte en la ficha del cliente de ADR-044), la ficha con `?ver=<id>` y el «Nuevo» en la línea del título. Sin pestañas.
+3. **«Transporte» tiene tres pestañas, en este orden: Fleteros, Choferes y Vehículos** (`?pestana=fleteros|choferes|vehiculos`; sin ella o con una desconocida, Fleteros). Es la mecánica de siempre: la URL es la fuente de verdad, cambiar de pestaña empuja una entrada al historial y descarta el resto del query, `?ver=` abre la ficha de esa fila y el «Nuevo» va en la línea del título. Vehículos es la misma pantalla de antes dentro de la pestaña (misma tabla, columnas, ficha y API): **no se asocia a fleteros ni a nadie** más de lo que ya estaba.
+4. **Transporte recuerda la última pestaña** abierta en ese navegador (`localStorage`, clave `libracargo.transporte.pestana`, con la forma del modo claro/oscuro del kit: valor validado, `try/catch` al leer y al escribir). Sólo vale con la ruta pelada (`/transporte`, lo que lleva el menú); **con `?pestana=` manda la URL** —un enlace, una redirección vieja, el atrás—. Un valor guardado que no es una pestaña, o un almacenamiento bloqueado o en modo privado, caen en Fleteros sin romper nada. Entrar sin pestaña **completa la URL** con la que se abrió (`replace`): si no, el botón de atrás volvería a `/transporte`, que abriría la «recordada», que ya sería la otra. Un `?ver=` sin pestaña no es de ninguna en particular y cae en Fleteros, no en la recordada: abriría la ficha de otra tabla.
+5. **Ningún enlace viejo se rompe.** Todos redirigen con `replace` (no quedan en el historial) y conservan la ficha:
+
+   | Enlace viejo | Destino |
+   |---|---|
+   | `/entidades`, `/entidades?pestana=clientes`, una pestaña desconocida o sólo `?ver=` | `/clientes` (con `ver`) |
+   | `/entidades?pestana=proveedores[&ver=N]` | `/proveedores[?ver=N]` |
+   | `/entidades?pestana=fleteros[&ver=N]` | `/transporte?pestana=fleteros[&ver=N]` |
+   | `/entidades?pestana=choferes[&ver=N]` | `/transporte?pestana=choferes[&ver=N]` |
+   | `/terceros` | `/clientes` |
+   | `/choferes` | `/transporte?pestana=choferes` |
+   | `/vehiculos[?ver=N…]` | `/transporte?pestana=vehiculos[&ver=N…]`, con **todo** el query que traía |
+   | `/configuracion?seccion=terceros[&ver=N]` | `/clientes[?ver=N]` |
+   | `/configuracion?seccion=choferes[&ver=N]` | `/transporte?pestana=choferes[&ver=N]` |
+   | `/configuracion?seccion=vehiculos[&ver=N]` | `/transporte?pestana=vehiculos[&ver=N]` |
+
+   Un `ver` que no es un id positivo se descarta. Los enlaces que arma la propia aplicación usan las rutas nuevas (`irA.clientes`, `irA.proveedores`, `irA.transporte`, `irA.vehiculos`, y `irA.entidad(tipo, ver)` para quien enlaza a una entidad sin saber en qué pantalla vive: la ficha del fletero, el «Ver …» del CUIT repetido, Titulares y el log de actividad).
+6. **Íconos.** Del catálogo de identidad de la familia con la excepción de este producto (`ICONOS_LC`, ADR-035): **Clientes** `Users`, **Proveedores** `Store`, y **Transporte** el camión (`Truck`, el concepto `fleteros`), porque lo que reúne es a los fleteros con sus choferes y sus vehículos y el catálogo no tiene un concepto «transporte». Dentro de la pantalla las pestañas son `Truck` (Fleteros, igual que en Cuenta corriente), `UserSquare` (Choferes) y `CarFront` (Vehículos, el que llevaba su entrada de menú): tres dibujos distintos. El título de cada pantalla lleva el ícono de su entrada del menú, como exige el guard de títulos.
+7. **Quién puede qué no cambia**: ni «Entidades» ni sus pestañas dependían de un rol, un módulo o una capacidad del menú (no hay `adminOnly` en ellas), y las pantallas nuevas tampoco. Lo que decide el servidor sobre cada recurso sigue siendo lo mismo.
+8. **El backend no cambia**: ni endpoints, ni tablas, ni la auditoría (`terceros`, `choferes`, `vehiculos` siguen siendo las entidades del log; el log lleva `terceros` a Clientes, `choferes` y `vehiculos` a su pestaña). Sólo el texto de una advertencia de la propuesta de Carta de Porte: «cargalo en Transporte → Choferes».
+
+**Consecuencias.**
+- Quien tenía abierta la pestaña de Entidades por un marcador cae en la pantalla de ese rol; el historial no guarda el rebote.
+- El nombre «Entidades» sigue siendo el del modelo en el código y en estos ADR (`terceros` con roles, `TipoDeEntidad`, `tests/test_entidades.py`), pero ya no es una pantalla ni una palabra de la interfaz.
+- La pestaña recordada es del navegador, no del usuario ni de la instancia: otro navegador abre en Fleteros.
+- Pendiente de decidir (no se hizo): una entidad que es a la vez fletero y proveedor sigue estando en Transporte → Fleteros y en Proveedores; son dos pantallas sobre una misma fila.

@@ -1,9 +1,9 @@
-/** Una pestaña de «Entidades» que es un rol: Clientes, Fleteros o Proveedores (ADR-040).
+/** El contenido de una pantalla que es un rol: Clientes, Proveedores o la pestaña Fleteros de Transporte (ADR-040, ADR-045).
  *
  *  Es la misma tabla `terceros` vista por rol: una persona o empresa que es fletero y proveedor está en las dos
  *  pestañas, es **una** fila, y en cada una se ven los otros roles que tiene como pastillas.
  *
- *  - **El alta marca el rol de la pestaña** de entrada (`defaults`). Los otros dos se tildan en la ficha.
+ *  - **El alta marca el rol de la pantalla** de entrada (`defaults`). Los otros dos se tildan en la ficha.
  *  - **CUIT repetido (409):** en vez del error pelado, el diálogo dice de quién es y ofrece sumarle el rol a la que
  *    ya existe (`POST /api/terceros/{id}/roles/{rol}`) o ir a verla. Cargarla de nuevo es lo que el modelo evita.
  *  - **La ficha del fletero** muestra sus choferes y sus vehículos (sólo lectura, con enlace).
@@ -20,20 +20,20 @@ import { AbmMaestro, mensajeDeError } from '@/components/AbmMaestro'
 import type { ContextoDeConflicto } from '@/components/AbmMaestro'
 import { LineaDeCartaDePorte } from '@/components/LineaDeCartaDePorte'
 import { Button } from '@/components/ui/button'
-import { irA, type PestanaDeEntidades } from '@/navegacion'
+import { irA, type TipoDeEntidad } from '@/navegacion'
 
 import { CAMPOS_TERCERO } from './definiciones'
 import { useFichaEnLaUrl } from './hooks'
 
-const ROLES: { rol: RolDeEntidad; columna: string; singular: string; pestana: PestanaDeEntidades }[] = [
-  { rol: 'cliente', columna: 'es_cliente', singular: 'Cliente', pestana: 'clientes' },
-  { rol: 'fletero', columna: 'es_fletero', singular: 'Fletero', pestana: 'fleteros' },
-  { rol: 'proveedor', columna: 'es_proveedor', singular: 'Proveedor', pestana: 'proveedores' },
+const ROLES: { rol: RolDeEntidad; columna: string; singular: string; tipo: TipoDeEntidad }[] = [
+  { rol: 'cliente', columna: 'es_cliente', singular: 'Cliente', tipo: 'clientes' },
+  { rol: 'fletero', columna: 'es_fletero', singular: 'Fletero', tipo: 'fleteros' },
+  { rol: 'proveedor', columna: 'es_proveedor', singular: 'Proveedor', tipo: 'proveedores' },
 ]
 
 const PLURAL: Record<RolDeEntidad, string> = { cliente: 'Clientes', fletero: 'Fleteros', proveedor: 'Proveedores' }
 
-/** Los otros roles de una fila, es decir los que NO son el de la pestaña. */
+/** Los otros roles de una fila, es decir los que NO son el de la pantalla. */
 const otrosRoles = (f: Maestro, rol: RolDeEntidad) =>
   ROLES.filter((r) => r.rol !== rol && f[r.columna])
 
@@ -43,7 +43,7 @@ export function TercerosPorRol({ rol }: { rol: RolDeEntidad }) {
   const propio = ROLES.find((r) => r.rol === rol)!
 
   return (
-    // `key`: al cambiar de pestaña es otra tabla, con otro listado y otros valores de alta.
+    // `key`: al cambiar de rol es otra tabla, con otro listado y otros valores de alta.
     <AbmMaestro<Maestro>
       key={rol}
       recurso="terceros"
@@ -60,7 +60,7 @@ export function TercerosPorRol({ rol }: { rol: RolDeEntidad }) {
         {
           id: 'roles',
           header: 'Roles',
-          // Sólo los OTROS: el de la pestaña ya se sabe, y repetirlo en todas las filas es ruido. El texto plano es
+          // Sólo los OTROS: el de la pantalla ya se sabe, y repetirlo en todas las filas es ruido. El texto plano es
           // para ordenar y buscar; lo que se ve son las pastillas.
           accessorFn: (f: Maestro) => otrosRoles(f, rol).map((r) => r.singular).join(', '),
           cell: ({ row }: { row: { original: Maestro } }) => (
@@ -75,7 +75,7 @@ export function TercerosPorRol({ rol }: { rol: RolDeEntidad }) {
       buscarEn={(f) => [f.razon_social as string, f.cuit as string,
                         formatearCuit(f.cuit as string | null),
                         f.localidad as string, f.contacto as string]}
-      // El alta ya trae el rol de la pestaña tildado. Cliente era el único antes; ahora es el de donde se está.
+      // El alta ya trae el rol de la pantalla tildado. Cliente era el único antes; ahora es el de donde se está.
       defaults={{ condicion_iva: 'consumidor_final', [propio.columna]: true } as Partial<Maestro>}
       abrirId={abrirId}
       alCerrarFicha={alCerrarFicha}
@@ -86,7 +86,7 @@ export function TercerosPorRol({ rol }: { rol: RolDeEntidad }) {
         const repetido = cuitRepetido(error)
         return repetido ? (
           <ConflictoDeCuit repetido={repetido} rol={rol} ctx={ctx}
-                           alVer={(pestana, id) => { ctx.cerrar(); navegar(irA.entidades(pestana, id)) }} />
+                           alVer={(tipo, id) => { ctx.cerrar(); navegar(irA.entidad(tipo, id)) }} />
         ) : null
       }}
     />
@@ -98,7 +98,7 @@ function ConflictoDeCuit({ repetido, rol, ctx, alVer }: {
   repetido: NonNullable<ReturnType<typeof cuitRepetido>>
   rol: RolDeEntidad
   ctx: ContextoDeConflicto<Maestro>
-  alVer: (pestana: PestanaDeEntidades, id: number) => void
+  alVer: (tipo: TipoDeEntidad, id: number) => void
 }) {
   const [error, setError] = useState<string | null>(null)
   const { existente } = repetido
@@ -106,8 +106,8 @@ function ConflictoDeCuit({ repetido, rol, ctx, alVer }: {
   // Sumar el rol sólo tiene sentido en un alta —en una edición el CUIT choca con OTRA fila y lo que corresponde es
   // corregirlo— y si la existente todavía no lo tiene.
   const puedeSumar = !ctx.editando && !existente.roles.includes(rol)
-  // La ficha se abre en una pestaña donde esa entidad esté: la de este rol si lo tiene, o la de su primer rol.
-  const pestanaDe = ROLES.find((r) => existente.roles.includes(r.rol) && r.rol === rol)
+  // La ficha se abre en una pantalla donde esa entidad esté: la de este rol si lo tiene, o la de su primer rol.
+  const destino = ROLES.find((r) => existente.roles.includes(r.rol) && r.rol === rol)
     ?? ROLES.find((r) => existente.roles.includes(r.rol))
     ?? ROLES.find((r) => r.rol === rol)!
 
@@ -135,7 +135,7 @@ function ConflictoDeCuit({ repetido, rol, ctx, alVer }: {
             Sumarle el rol de {rol}
           </Button>
         )}
-        <Button size="sm" variant="outline" onClick={() => alVer(pestanaDe.pestana, existente.id)}>
+        <Button size="sm" variant="outline" onClick={() => alVer(destino.tipo, existente.id)}>
           Ver {existente.razon_social}
         </Button>
       </div>
@@ -144,7 +144,7 @@ function ConflictoDeCuit({ repetido, rol, ctx, alVer }: {
 }
 
 /** Lo que cuelga de un fletero: sus choferes y sus vehículos, de sólo lectura. Se carga y se edita en su lugar
- *  (pestaña Choferes; menú Vehículos), a donde llevan los enlaces. */
+ *  (Transporte → Choferes y Vehículos), a donde llevan los enlaces. */
 function FichaDelFletero({ fleteroId }: { fleteroId: number }) {
   const [choferes, setChoferes] = useState<Maestro[] | null>(null)
   const [vehiculos, setVehiculos] = useState<Maestro[] | null>(null)
@@ -172,7 +172,7 @@ function FichaDelFletero({ fleteroId }: { fleteroId: number }) {
               {choferes.map((c) => (
                 <li key={c.id} className="flex flex-wrap items-center justify-between gap-2">
                   <Link className="underline underline-offset-2"
-                        to={irA.entidades('choferes', c.id)}>{String(c.nombre)}</Link>
+                        to={irA.transporte('choferes', c.id)}>{String(c.nombre)}</Link>
                   <span className="text-muted-foreground">
                     {[formatearCuit(c.cuit as string | null), c.dni ? `DNI ${c.dni}` : null,
                       c.activo ? null : 'Baja'].filter(Boolean).join(' · ')}

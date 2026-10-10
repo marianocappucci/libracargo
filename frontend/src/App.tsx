@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext'
 import Inicio from '@/pages/Inicio'
 import Caja from '@/pages/Caja'
 import CartasDePorte from '@/pages/CartasDePorte'
+import Clientes from '@/pages/Clientes'
 import ComprobantesSeccion from '@/pages/ComprobantesSeccion'
 import EditarPreFactura from '@/pages/EditarPreFactura'
 import EmitirCartaDePorte from '@/pages/EmitirCartaDePorte'
@@ -20,13 +21,13 @@ import Ordenes from '@/pages/Ordenes'
 import PreFactura from '@/pages/PreFactura'
 import PreFacturas from '@/pages/PreFacturas'
 import PreLiquidacionTransportistas from '@/pages/PreLiquidacionTransportistas'
+import Proveedores from '@/pages/Proveedores'
 import Reporte from '@/pages/Reporte'
 import ReportesIndice from '@/pages/ReportesIndice'
+import Transporte from '@/pages/Transporte'
 import Usuarios from '@/pages/Usuarios'
-import Entidades from '@/pages/Entidades'
-import Vehiculos from '@/pages/Vehiculos'
 import { Localidades, TiposCarga } from '@/pages/maestros'
-import { irA } from '@/navegacion'
+import { destinoDeEntidadesViejo, destinoDeVehiculosViejo, irA } from '@/navegacion'
 
 function Privado({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
@@ -48,6 +49,21 @@ function GastosAProveedores() {
     if (clave !== 'seccion') params.append(clave, valor)
   })
   return <Navigate to={`/comprobantes?${params}`} replace />
+}
+
+/** `/entidades` era la pantalla de clientes, fleteros, choferes y proveedores (ADR-040); hoy cada una vive en la suya (ADR-045).
+ *  Se redirige según la pestaña que pedía el enlace, conservando la ficha (`ver`): `/entidades?pestana=fleteros&ver=7` abre el 7
+ *  en Transporte → Fleteros. `replace`: el enlace viejo no queda en el historial, y atrás no vuelve a rebotar. */
+function EntidadesAlDestinoNuevo() {
+  const { search } = useLocation()
+  return <Navigate to={destinoDeEntidadesViejo(search)} replace />
+}
+
+/** `/vehiculos` era una entrada del menú; hoy es la pestaña Vehículos de Transporte (ADR-045). Se redirige conservando el query
+ *  entero, así `/vehiculos?ver=21` abre el 21 en su pestaña. `replace`, como las demás. */
+function VehiculosAlTransporte() {
+  const { search } = useLocation()
+  return <Navigate to={destinoDeVehiculosViejo(search)} replace />
 }
 
 export default function App() {
@@ -94,12 +110,16 @@ export default function App() {
                 <Route path="/usuarios" element={<Usuarios />} />
                 <Route path="/logs" element={<Logs />} />
                 <Route path="/configuracion" element={<Configuracion />} />
-                {/* Los terceros y los choferes ya no son pantallas sueltas: son pestañas de «Entidades» (ADR-040).
-                    Las rutas viejas se redirigen, que es lo que el log de actividad y los marcadores todavía usan. */}
-                <Route path="/entidades" element={<Entidades />} />
-                <Route path="/terceros" element={<Navigate to={irA.entidades('clientes')} replace />} />
-                <Route path="/choferes" element={<Navigate to={irA.entidades('choferes')} replace />} />
-                <Route path="/vehiculos" element={<Vehiculos />} />
+                {/* Clientes y Proveedores son entradas propias del menú, y Fleteros, Choferes y Vehículos las pestañas de
+                    Transporte (ADR-045). Antes eran las cuatro pestañas de «Entidades» (ADR-040): esa ruta y las más viejas
+                    (`/terceros`, `/choferes`, `/vehiculos`) se redirigen, que es lo que el log de actividad y los marcadores todavía usan. */}
+                <Route path="/clientes" element={<Clientes />} />
+                <Route path="/proveedores" element={<Proveedores />} />
+                <Route path="/transporte" element={<Transporte />} />
+                <Route path="/entidades" element={<EntidadesAlDestinoNuevo />} />
+                <Route path="/terceros" element={<Navigate to={irA.clientes()} replace />} />
+                <Route path="/choferes" element={<Navigate to={irA.transporte('choferes')} replace />} />
+                <Route path="/vehiculos" element={<VehiculosAlTransporte />} />
                 <Route path="/localidades" element={<Localidades />} />
                 <Route path="/tipos-carga" element={<TiposCarga />} />
               </Routes>

@@ -160,7 +160,7 @@ export type Titular = {
   activo: boolean
   notas: string | null
   delegacion: Delegacion
-  /** La entidad de Entidades con que se vincula (la elegida o la que tiene su CUIT), o `null`. */
+  /** El cliente (de Clientes) con que se vincula (la elegida o la que tiene su CUIT), o `null`. */
   tercero: EntidadVinculada | null
   tiene_plantilla: boolean
 }

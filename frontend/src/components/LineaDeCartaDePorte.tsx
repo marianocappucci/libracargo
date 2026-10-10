@@ -1,4 +1,4 @@
-/** En la ficha de un cliente (Entidades → Clientes): si es titular de cartas de porte, una línea que lo dice y lleva a él
+/** En la ficha de un cliente (Clientes): si es titular de cartas de porte, una línea que lo dice y lleva a él
  *  (ADR-044): «Carta de porte: delegó a nosotros ✓ / emite él · consulta habilitada ✓ / pendiente».
  *
  *  Es un agregado y no el contenido de la ficha: si el pedido falla, o el cliente no es titular, no se dibuja nada. El
