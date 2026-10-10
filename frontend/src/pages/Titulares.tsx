@@ -91,7 +91,7 @@ export function Titulares() {
           <div>
             <div className={t.activo ? undefined : 'text-muted-foreground line-through'}>{t.razon_social}</div>
             {t.tercero && (
-              <Link to={irA.entidades('clientes', t.tercero.id)} className="text-muted-foreground text-xs underline"
+              <Link to={irA.clientes(t.tercero.id)} className="text-muted-foreground text-xs underline"
                     onClick={(e) => e.stopPropagation()}>
                 Cliente: {t.tercero.razon_social}
               </Link>

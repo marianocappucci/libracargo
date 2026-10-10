@@ -3,6 +3,15 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — «Entidades» se divide: Clientes y Proveedores en el menú, y «Transporte» con Fleteros, Choferes y Vehículos
+
+- **Pedido del dueño:** «Entidades se va a pasar a llamar Transporte y dentro va a tener fleteros y choferes en pestañas separadas y clientes y proveedores pasan al menú principal»; y **Vehículos también va dentro de Transporte** (ADR-045, que reemplaza en parte a ADR-040).
+- **Menú:** donde estaba «Entidades» ahora hay tres entradas, **Clientes**, **Proveedores** y **Transporte**. «Vehículos» sale del menú.
+- **Clientes** (`/clientes`) y **Proveedores** (`/proveedores`) son pantallas propias, con lo mismo de antes: listado, alta, CUIT repetido, ficha y, en la del cliente, la línea de Carta de porte.
+- **Transporte** (`/transporte`) tiene tres pestañas: **Fleteros, Choferes y Vehículos** (`?pestana=`). Al entrar desde el menú **abre la última pestaña que se usó** en ese navegador; con un enlace con pestaña manda el enlace.
+- **Los enlaces viejos siguen andando** y llevan a la pantalla nueva conservando la ficha abierta: `/entidades?pestana=…`, `/terceros`, `/choferes`, `/vehiculos` y los de Configuración (`?seccion=terceros|choferes|vehiculos`).
+- Sin cambios en la API ni migración. La advertencia «el chofer no tiene CUIT» de la propuesta de carta de porte dice ahora «Transporte → Choferes».
+
 ## [Unreleased] — La factura de crédito se cobra en la cuenta que se elija (varios CBU con alias)
 
 - **Pedido del dueño de Suitrans:** «puede querer que le depositen en una u otra cuenta». Las cuentas se cargan en Configuración → ARCA (CBU, alias y nombre, con una predeterminada; libra-ui v0.132.0) y el motor las guarda (libracore v1.152.0, ADR-040, migración `0023`).

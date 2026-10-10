@@ -1,7 +1,7 @@
 /** Los botones de acción de una pantalla con pestañas, en la línea de su título, arriba a la derecha.
  *
- *  Pedido del dueño: en Entidades el «Nuevo» y en Comprobantes los de «Pre facturas» y «Facturar pendientes» quedaban
- *  debajo de las pestañas; en las demás pantallas (Órdenes, Caja, Cartas de porte) están a la altura del título.
+ *  Pedido del dueño: en Transporte (antes Entidades) el «Nuevo» y en Comprobantes los de «Pre facturas» y «Facturar pendientes»
+ *  quedaban debajo de las pestañas; en las demás pantallas (Órdenes, Caja, Cartas de porte) están a la altura del título.
  *
  *  El problema es que el botón es de la pestaña (cada una tiene su alta, su acceso) y el título es de la pantalla que
  *  las contiene. `TituloPantalla` del kit no tiene lugar para acciones, así que la pantalla arma la línea con

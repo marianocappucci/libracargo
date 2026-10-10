@@ -1,7 +1,7 @@
 /** Las pantallas de maestros que no son terceros.
  *
- * Los terceros (clientes, fleteros y proveedores) viven en «Entidades» (`TercerosPorRol`, ADR-040), y los choferes
- * son una de sus pestañas. Los vehículos tienen su entrada en el menú (`pages/Vehiculos.tsx`); las localidades y los tipos de
+ * Los terceros (clientes, fleteros y proveedores) viven en «Clientes», «Proveedores» y «Transporte» (`TercerosPorRol`, ADR-040 y ADR-045), y los
+ * choferes son una pestaña de «Transporte». Los vehículos son otra pestaña de «Transporte»; las localidades y los tipos de
  * carga quedan en Configuración.
  *
  * Cada una es la misma `AbmMaestro` con sus columnas y sus campos. Lo que se

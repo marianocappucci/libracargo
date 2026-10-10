@@ -270,7 +270,7 @@ describe('Emitir carta de porte · paso 2, los datos', () => {
         ...PROPUESTA, de_plantilla: true,
         peso_tara: null,
         transporte: { ...PROPUESTA.transporte, cuit_chofer: null },
-        faltantes: ['El chofer de la orden no tiene CUIT: cargalo en Entidades → Choferes.',
+        faltantes: ['El chofer de la orden no tiene CUIT: cargalo en Transporte → Choferes.',
                     'Faltan los kilos de carga (bruto y tara) en la orden.'],
       },
     })

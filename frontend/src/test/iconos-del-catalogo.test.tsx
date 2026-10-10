@@ -39,15 +39,19 @@ vi.mock('@/context/AuthContext', () => ({
 
 const { default: App } = await import('@/App')
 const { default: CuentaCorriente } = await import('@/pages/CuentaCorriente')
-const { default: Entidades } = await import('@/pages/Entidades')
+const { default: Transporte } = await import('@/pages/Transporte')
 const { NAV_SECCIONES } = await import('@/components/Layout')
 
 const SRC = join(process.cwd(), 'src')
 const leer = (ruta: string) => readFileSync(join(SRC, ruta), 'utf8')
 
-/** Qué concepto del catálogo es cada entrada del menú que lo tiene. «Órdenes de carga» y «Entidades» son de este producto y no entran al catálogo de identidad; «Cartas de porte» sale del de indicadores (ADR-038). */
+/** Qué concepto del catálogo es cada entrada del menú que lo tiene. «Órdenes de carga» es de este producto y no entra al catálogo de identidad; «Cartas de porte» sale del de indicadores (ADR-038). «Transporte» (ADR-045) lleva el camión de los fleteros, que es del catálogo. */
 const MENU: Record<string, Concepto> = {
   '/': 'dashboard',
+  // ADR-045: las tres entradas que reemplazaron a «Entidades». Clientes y Proveedores son sus conceptos; Transporte reúne a los fleteros.
+  '/clientes': 'clientes',
+  '/proveedores': 'proveedores',
+  '/transporte': 'fleteros',
   '/cuentas': 'cuentaCorriente',
   '/caja': 'caja',
   '/comprobantes': 'comprobantes',
@@ -68,6 +72,9 @@ const TITULOS: Record<string, Concepto> = {
   CuentaCorriente: 'cuentaCorriente',
   Caja: 'caja',
   Logs: 'logDeActividad',
+  Clientes: 'clientes',
+  Proveedores: 'proveedores',
+  Transporte: 'fleteros',
   Reporte: 'reportes',
   ReportesIndice: 'reportes',
   PreLiquidacionTransportistas: 'reportes',
@@ -111,10 +118,10 @@ describe('el menú usa el catálogo', () => {
     }
   })
 
-  it('🔴 las entradas propias del producto (Órdenes de carga, Cartas de porte, Entidades y Vehículos) no usan el dibujo de un concepto del catálogo', () => {
+  it('🔴 las entradas propias del producto (Órdenes de carga y Cartas de porte) no usan el dibujo de un concepto del catálogo', () => {
     const delCatalogo = new Set(Object.values(iconosDe('libracargo')).map(nombre))
     const propias = [...iconosDelNav(leer('components/Layout.tsx'))].filter(([ruta]) => !(ruta in MENU))
-    expect(propias.map(([ruta]) => ruta)).toEqual(['/ordenes', '/cartas-porte', '/entidades', '/vehiculos'])
+    expect(propias.map(([ruta]) => ruta)).toEqual(['/ordenes', '/cartas-porte'])
     for (const [, icono] of propias) {
       const componente = componenteDeLaEntrada(icono)
       expect(componente, icono).toBeDefined()
@@ -122,12 +129,24 @@ describe('el menú usa el catálogo', () => {
     }
   })
 
-  it('🔴 «Vehículos» está en el menú principal, justo debajo de «Entidades», con CarFront (el camión es de los fleteros)', () => {
+  it('🔴 Clientes, Proveedores y Transporte ocupan el lugar de «Entidades», en ese orden, y «Entidades» y «Vehículos» ya no están (ADR-045)', () => {
     const items = NAV_SECCIONES.flatMap((s) => s.items)
-    const i = items.findIndex((x) => x.to === '/entidades')
-    expect(items[i + 1]).toMatchObject({ to: '/vehiculos', label: 'Vehículos', icon: lucide.CarFront })
-    expect(iconosDelNav(leer('components/Layout.tsx')).get('/vehiculos')).toBe('CarFront')
-    expect(leer('pages/Vehiculos.tsx')).toContain('icono={CarFront}')
+    const i = items.findIndex((x) => x.to === '/clientes')
+    expect(items.slice(i, i + 3).map((x) => [x.to, x.label])).toEqual([
+      ['/clientes', 'Clientes'], ['/proveedores', 'Proveedores'], ['/transporte', 'Transporte'],
+    ])
+    // Justo antes, Cartas de porte; justo después, Cuenta corriente.
+    expect(items[i - 1].to).toBe('/cartas-porte')
+    expect(items[i + 3].to).toBe('/cuentas')
+    expect(items.map((x) => x.to)).not.toContain('/entidades')
+    expect(items.map((x) => x.to)).not.toContain('/vehiculos')
+    expect(items.map((x) => x.label)).not.toContain('Entidades')
+    expect(items.map((x) => x.label)).not.toContain('Vehículos')
+    expect(iconosDelNav(leer('components/Layout.tsx')).has('/vehiculos')).toBe(false)
+  })
+
+  it('🔴 «Vehículos» es una pestaña de Transporte con CarFront (el camión es de los fleteros)', () => {
+    expect(leer('pages/Transporte.tsx')).toMatch(/vehiculos: \{ etiqueta: 'Vehículos', icono: CarFront \}/)
   })
 
   it('🔴 «Cartas de porte» sale del catálogo de indicadores: `INDICADORES.cartasDePorte` es FileBadge, no un FileCheck suelto', () => {
@@ -205,14 +224,13 @@ describe('Proveedores es Store y Fleteros es Truck, en lo que se dibuja', () => 
     expect(iconoDe(within(pestanas).getByRole('tab', { name: 'Proveedores' }))).toBe('lucide-store')
   })
 
-  it('🔴 Entidades: las pestañas repiten los íconos de Cuenta corriente, y Choferes no choca con ninguno', async () => {
-    render(<MemoryRouter initialEntries={['/entidades']}><Entidades /></MemoryRouter>)
+  it('🔴 Transporte: Fleteros repite el Truck de Cuenta corriente, y Choferes y Vehículos no chocan con ninguno', async () => {
+    render(<MemoryRouter initialEntries={['/transporte']}><Transporte /></MemoryRouter>)
     const pestanas = await screen.findByRole('tablist')
-    const dibujos = ['Clientes', 'Fleteros', 'Choferes', 'Proveedores']
+    const dibujos = ['Fleteros', 'Choferes', 'Vehículos']
       .map((n) => iconoDe(within(pestanas).getByRole('tab', { name: n })))
-    expect(dibujos.slice(0, 2)).toEqual(['lucide-users', 'lucide-truck'])
-    expect(dibujos[3]).toBe('lucide-store')
-    // Cuatro pestañas, cuatro dibujos: es lo que el catálogo exige dentro de un producto.
-    expect(new Set(dibujos).size).toBe(4)
+    expect(dibujos).toEqual(['lucide-truck', 'lucide-square-user', 'lucide-car-front'])
+    // Tres pestañas, tres dibujos: es lo que el catálogo exige dentro de un producto.
+    expect(new Set(dibujos).size).toBe(3)
   })
 })

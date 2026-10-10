@@ -1,6 +1,6 @@
 /** Cartas de porte: las que ARCA informa por cada viaje y los titulares a cuyo nombre se emiten (ADR-036, ADR-044).
  *
- *  Dos pestañas, como Entidades y Comprobantes:
+ *  Dos pestañas, como Transporte y Comprobantes:
  *
  *  - **Cartas** (la de siempre): el listado, traer de ARCA por CTG, actualizar, vincular a una orden, anular.
  *  - **Titulares**: los clientes que nos delegaron la emisión en ARCA y los que emiten ellos. Antes esto no existía en

@@ -34,14 +34,25 @@ export const irA = {
   /** La pantalla de facturar, con el cliente ya elegido si se sabe cual. */
   facturarPendientes: (clienteId?: number) =>
     clienteId ? `/comprobantes/facturar?cliente=${clienteId}` : '/comprobantes/facturar',
-  /** «Entidades» (ADR-040), en la pestaña que se pida y, con `ver`, con la ficha de esa fila abierta. Sin nada es la
-   *  ruta pelada, que cae en Clientes. */
-  entidades: (pestana?: PestanaDeEntidades, ver?: number) => {
+  /** «Clientes», una entrada propia del menú (ADR-045; era una pestaña de «Entidades»). Con `ver`, con la ficha de esa fila abierta. */
+  clientes: (ver?: number) => (ver !== undefined ? `/clientes?ver=${ver}` : '/clientes'),
+  /** «Proveedores», una entrada propia del menú (ADR-045; era una pestaña de «Entidades»). Con `ver`, con la ficha de esa fila abierta. */
+  proveedores: (ver?: number) => (ver !== undefined ? `/proveedores?ver=${ver}` : '/proveedores'),
+  /** «Transporte» (ADR-045; antes «Entidades»), en la pestaña que se pida y, con `ver`, con la ficha de esa fila abierta. Sin nada es
+   *  la ruta pelada, que cae en Fleteros. */
+  transporte: (pestana?: PestanaDeTransporte, ver?: number) => {
     const params = new URLSearchParams()
     if (pestana) params.set('pestana', pestana)
     if (ver !== undefined) params.set('ver', String(ver))
     const query = params.toString()
-    return query ? `/entidades?${query}` : '/entidades'
+    return query ? `/transporte?${query}` : '/transporte'
+  },
+  /** La pantalla de una entidad según de qué tipo sea: cliente y proveedor tienen la suya; fletero y chofer, una pestaña de Transporte. Es
+   *  lo que usa quien enlaza a una entidad sin saber en qué pantalla vive (la ficha del fletero, el CUIT repetido, los enlaces viejos). */
+  entidad: (tipo: TipoDeEntidad, ver?: number): string => {
+    if (tipo === 'clientes') return irA.clientes(ver)
+    if (tipo === 'proveedores') return irA.proveedores(ver)
+    return irA.transporte(tipo, ver)
   },
   /** «Cartas de porte» (ADR-036) en la pestaña «Titulares» (ADR-044) y, con `ver`, con la ficha de ese titular abierta. */
   titulares: (ver?: number) => (ver !== undefined ? `/cartas-porte?pestana=titulares&ver=${ver}` : '/cartas-porte?pestana=titulares'),
@@ -49,19 +60,51 @@ export const irA = {
   emitirCartaDePorte: (ordenId: number) => `/cartas-porte/emitir/${ordenId}`,
   /** Los datos habituales para emitir a nombre de un titular (ADR-044), en su propia página. */
   plantillaDeTitular: (titularId: number) => `/cartas-porte/titulares/${titularId}/plantilla`,
-  /** «Vehículos», una entrada propia del menú (antes una sección de Configuración). Con `ver`, con la ficha de esa fila abierta. */
-  vehiculos: (ver?: number) => (ver !== undefined ? `/vehiculos?ver=${ver}` : '/vehiculos'),
+  /** «Vehículos», la tercera pestaña de «Transporte» (ADR-045; antes una entrada propia del menú, y antes una sección de Configuración).
+   *  Con `ver`, con la ficha de esa fila abierta. */
+  vehiculos: (ver?: number): string => irA.transporte('vehiculos', ver),
 }
 
-/** Las cuatro pestañas de la entrada «Entidades» del menú (ADR-040). Tres son roles de una misma entidad —una
- *  persona o empresa puede ser a la vez cliente, fletero y proveedor— y la cuarta, Choferes, es otra tabla: la
- *  persona que conduce. La pestaña va en el query (`?pestana=`), como la sección de Comprobantes. */
-export const PESTANAS_DE_ENTIDADES = ['clientes', 'fleteros', 'choferes', 'proveedores'] as const
-export type PestanaDeEntidades = (typeof PESTANAS_DE_ENTIDADES)[number]
+/** Los cuatro tipos de entidad que hubo como pestañas de «Entidades» (ADR-040). Tres son roles de una misma entidad —una persona o
+ *  empresa puede ser a la vez cliente, fletero y proveedor— y la cuarta, Choferes, es otra tabla: la persona que conduce. Desde
+ *  ADR-045 «Entidades» ya no existe: clientes y proveedores tienen pantalla propia y fleteros y choferes son pestañas de «Transporte».
+ *  El tipo sigue siendo la forma de nombrar «qué es esta fila», y `irA.entidad` dice a qué pantalla lleva cada uno. */
+export const TIPOS_DE_ENTIDAD = ['clientes', 'fleteros', 'choferes', 'proveedores'] as const
+export type TipoDeEntidad = (typeof TIPOS_DE_ENTIDAD)[number]
 
-/** La pestaña que pide un query; cualquier cosa que no sea una conocida cae en Clientes. */
-export function pestanaDeEntidades(valor: string | null): PestanaDeEntidades {
-  return PESTANAS_DE_ENTIDADES.find((p) => p === valor) ?? 'clientes'
+/** Las tres pestañas de la entrada «Transporte» del menú (ADR-045), en este orden: Fleteros, Choferes y Vehículos. La pestaña va en el
+ *  query (`?pestana=`), como la sección de Comprobantes. */
+export const PESTANAS_DE_TRANSPORTE = ['fleteros', 'choferes', 'vehiculos'] as const
+export type PestanaDeTransporte = (typeof PESTANAS_DE_TRANSPORTE)[number]
+
+/** La pestaña que pide un query; cualquier cosa que no sea una conocida cae en Fleteros. */
+export function pestanaDeTransporte(valor: string | null): PestanaDeTransporte {
+  return PESTANAS_DE_TRANSPORTE.find((p) => p === valor) ?? 'fleteros'
+}
+
+/** A dónde lleva un enlace viejo a `/entidades` (ADR-040): la pantalla nueva de esa pestaña, con la ficha (`ver`) si traía una
+ *  válida. Sin pestaña, o con una desconocida, es Clientes, como era. Cualquier otro parámetro se descarta, que era lo que hacía
+ *  cambiar de pestaña. */
+export function destinoDeEntidadesViejo(search: string): string {
+  const params = new URLSearchParams(search)
+  const tipo = TIPOS_DE_ENTIDAD.find((t) => t === params.get('pestana')) ?? 'clientes'
+  return irA.entidad(tipo, verValido(params.get('ver')))
+}
+
+/** A dónde lleva un enlace viejo a `/vehiculos` (cuando era una entrada del menú, ADR-045): la pestaña Vehículos de Transporte, con
+ *  **todo** el query que traía (`ver` u otro) detrás. Si el enlace traía una `pestana` propia se descarta: la que manda es Vehículos. */
+export function destinoDeVehiculosViejo(search: string): string {
+  const params = new URLSearchParams({ pestana: 'vehiculos' })
+  new URLSearchParams(search).forEach((valor, clave) => {
+    if (clave !== 'pestana') params.append(clave, valor)
+  })
+  return `/transporte?${params}`
+}
+
+/** El `?ver=` como número, o `undefined` si falta o no es un id. */
+export function verValido(valor: string | null): number | undefined {
+  const ver = Number(valor)
+  return valor && Number.isInteger(ver) && ver > 0 ? ver : undefined
 }
 
 /** Las dos pestañas de «Cartas de porte»: el listado de las cartas y los titulares a cuyo nombre se emiten (ADR-044). La
@@ -75,9 +118,9 @@ export function pestanaDeCartasDePorte(valor: string | null): PestanaDeCartasDeP
   return PESTANAS_DE_CARTAS_DE_PORTE.find((p) => p === valor) ?? 'cartas'
 }
 
-/** Las secciones de Configuración que se mudaron a Entidades, y a qué pestaña. Un enlace viejo
- *  (`/configuracion?seccion=terceros`) se redirige con esto. */
-export const SECCIONES_MUDADAS_A_ENTIDADES: Readonly<Record<string, PestanaDeEntidades>> = {
+/** Las secciones de Configuración que se mudaron (primero a Entidades, ADR-040; hoy a Clientes y a Transporte, ADR-045), y de qué tipo
+ *  de entidad es cada una. Un enlace viejo (`/configuracion?seccion=terceros`) se redirige con esto, directo a la pantalla de hoy. */
+export const SECCIONES_MUDADAS_DE_CONFIGURACION: Readonly<Record<string, TipoDeEntidad>> = {
   terceros: 'clientes',
   choferes: 'choferes',
 }
@@ -145,10 +188,11 @@ export function destinoDelLog(entidad: string, entidadId: number | null): string
     if (entidad === 'plantilla_cpe') return irA.plantillaDeTitular(entidadId)
   }
   if (entidad === 'configuracion') return '/configuracion'
-  // Terceros y choferes ya no son pantallas sueltas ni secciones de Configuración: viven en «Entidades». Un tercero no dice
-  // en el log de qué rol era, así que se lo lleva a la entrada y no a una pestaña.
-  if (entidad === 'terceros') return irA.entidades()
-  if (entidad === 'choferes') return irA.entidades('choferes')
+  // Terceros y choferes ya no son pantallas sueltas ni secciones de Configuración. Un tercero no dice en el log de qué rol era, así
+  // que se lo lleva a Clientes y no a una pantalla que quizás no lo tenga; el chofer, a la pestaña Choferes de Transporte.
+  if (entidad === 'terceros') return irA.clientes()
+  if (entidad === 'choferes') return irA.transporte('choferes')
+  if (entidad === 'vehiculos') return irA.vehiculos()
   // Los maestros no tienen enlace profundo a una fila: la pantalla es un ABM
   // con buscador, y abrir el formulario de edición de algo que quizás ya se
   // borró seria peor que dejar al usuario en la lista.
