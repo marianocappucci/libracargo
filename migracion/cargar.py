@@ -32,7 +32,9 @@ from pathlib import Path
 import psycopg
 
 ESPEJO = Path(__file__).with_name("espejo.sql")
-IMAGEN_POR_DEFECTO = "mariadb:11.4"
+# Del espejo oficial de ECR y no de Docker Hub anónimo (`reglas/ci.md` del wiki, 2026-10-09): el CI la baja en cada
+# corrida, y el cupo anónimo de Docker Hub (`toomanyrequests`) ya trabó a toda la familia una vez. Misma imagen.
+IMAGEN_POR_DEFECTO = "public.ecr.aws/docker/library/mariadb:11.4"
 BASE_TEMPORAL = "legado"
 
 #: Marcas de doble encoding. Si aparecen **después** de decodificar, el dato ya
@@ -83,11 +85,26 @@ def levantar_mariadb(imagen: str = IMAGEN_POR_DEFECTO,
     #
     # Es la misma trampa que el párrafo de arriba, un nivel más adentro: la
     # sonda no podía fallar por lo único que el llamador necesita.
+    #
+    # 🔴 **Y la sonda va por TCP (`-h127.0.0.1 --protocol=tcp`), no por el
+    # socket.** El entrypoint de la imagen levanta un servidor TEMPORAL que sólo
+    # escucha en `/run/mysqld/mysqld.sock` (`port: 0`, sin red), crea ahí la base
+    # y el usuario, lo APAGA y recién entonces arranca el definitivo (con
+    # `port: 3306`). Medido contra mariadb:11.4 (logs del contenedor): temporal
+    # listo a los ~4 s del `run`, apagado a los ~8 s, definitivo a los ~10 s; en
+    # esos ~2 s no hay servidor. Una sonda por el socket puede pasar contra el temporal
+    # justo antes de que lo apaguen, y la restauración que viene después choca con
+    # el hueco: `ERROR 2002 (HY000): Can't connect to local server through socket
+    # '/run/mysqld/mysqld.sock' (2)`. Pasó en el CI el 2026-10-10 (libracargo#347,
+    # run 38081224361, un worker de xdist; al relanzar pasó). El temporal no
+    # escucha en TCP, así que una sonda TCP sólo contesta cuando el servidor
+    # definitivo ya está arriba.
     for _ in range(120):
         if _docker("inspect", "-f", "{{.State.Running}}", nombre).stdout.strip() != "true":
             registro = _docker("logs", "--tail", "20", nombre).stderr
             raise RuntimeError(f"MariaDB se murió al arrancar: {registro}")
         listo = _docker("exec", nombre, "mariadb", "-uroot", "-plegado-efimero",
+                        "-h127.0.0.1", "--protocol=tcp",
                         "-N", "-B", "-e", "SELECT 1", BASE_TEMPORAL)
         if listo.returncode == 0 and listo.stdout.strip() == "1":
             return nombre, puerto
