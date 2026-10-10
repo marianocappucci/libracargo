@@ -35,7 +35,7 @@ import { Navigate, useSearchParams } from 'react-router-dom'
 
 import { EmisionRealDeCpe } from '@/components/EmisionRealDeCpe'
 import { ICONOS_LC } from '@/iconos'
-import { irA, SECCIONES_MUDADAS_A_ENTIDADES } from '@/navegacion'
+import { irA, SECCIONES_MUDADAS_DE_CONFIGURACION, verValido } from '@/navegacion'
 import { FacturacionArca } from '@/pages/Arca'
 import { DatosDeLaEmpresa } from '@/pages/DatosDeLaEmpresa'
 import { Localidades, TiposCarga } from '@/pages/maestros'
@@ -71,7 +71,7 @@ const ConfiguracionDelKit = createConfiguracion({
   // Los maestros que quedan. Se cargan al arrancar y después se tocan poco, que es el
   // criterio por el que están en Configuración y no como ítems del menú
   // lateral con el mismo peso que las pantallas de todos los días. Terceros y Choferes ya no están:
-  // son «Entidades», una entrada propia del menú (ADR-040). Vehículos tampoco: tiene la suya, `/vehiculos`.
+  // son «Clientes» y «Transporte → Choferes», entradas propias del menú (ADR-040, ADR-045). Vehículos tampoco: es la tercera pestaña de «Transporte» (ADR-045).
   propias: [
     { clave: 'localidades', label: 'Localidades', icono: MapPin, contenido: <Localidades /> },
     { clave: 'tipos-carga', label: 'Tipos de carga', icono: Package, contenido: <TiposCarga /> },
@@ -81,23 +81,18 @@ const ConfiguracionDelKit = createConfiguracion({
   ],
 })
 
-/** Configuración, con los enlaces viejos a Terceros y Choferes redirigidos a «Entidades» (ADR-040) y el de Vehículos a
- *  `/vehiculos`.
+/** Configuración, con los enlaces viejos a Terceros y Choferes redirigidos a «Clientes» y a «Transporte → Choferes» (ADR-040, ADR-045) y
+ *  el de Vehículos a «Transporte → Vehículos».
  *
  *  `/configuracion?seccion=terceros`, `?seccion=choferes` y `?seccion=vehiculos` existían en marcadores, en el log y en los
  *  correos: sin la redirección el kit cae en su primera sección y quien llega no sabe adónde se fue lo que buscaba. Se
  *  conserva el `?ver=` (la ficha que se abría), y `replace`: el enlace viejo no queda en el historial. */
 export function Configuracion() {
   const [params] = useSearchParams()
-  if (params.get('seccion') === 'vehiculos') {
-    const ver = Number(params.get('ver'))
-    return <Navigate to={irA.vehiculos(Number.isInteger(ver) && ver > 0 ? ver : undefined)} replace />
-  }
-  const pestana = SECCIONES_MUDADAS_A_ENTIDADES[params.get('seccion') ?? '']
-  if (pestana) {
-    const ver = Number(params.get('ver'))
-    return <Navigate to={irA.entidades(pestana, Number.isInteger(ver) && ver > 0 ? ver : undefined)} replace />
-  }
+  const ver = verValido(params.get('ver'))
+  if (params.get('seccion') === 'vehiculos') return <Navigate to={irA.vehiculos(ver)} replace />
+  const tipo = SECCIONES_MUDADAS_DE_CONFIGURACION[params.get('seccion') ?? '']
+  if (tipo) return <Navigate to={irA.entidad(tipo, ver)} replace />
   return <ConfiguracionDelKit />
 }
 

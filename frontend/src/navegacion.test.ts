@@ -4,8 +4,9 @@ import { estaActivo } from 'libra-ui/Layout'
 import { describe, expect, it } from 'vitest'
 
 import {
-  MAESTROS_AUDITADOS, PESTANAS_DE_CARTAS_DE_PORTE, PESTANAS_DE_ENTIDADES, SECCIONES_MUDADAS_A_ENTIDADES, destinoDeFilaDeReporte, destinoDelLog, irA,
-  origenDelMovimiento, pestanaDeCartasDePorte, pestanaDeEntidades, RUTAS_DE_COMPROBANTES, seccionDe,
+  MAESTROS_AUDITADOS, PESTANAS_DE_CARTAS_DE_PORTE, PESTANAS_DE_TRANSPORTE, SECCIONES_MUDADAS_DE_CONFIGURACION, TIPOS_DE_ENTIDAD,
+  destinoDeEntidadesViejo, destinoDeFilaDeReporte, destinoDelLog, destinoDeVehiculosViejo, irA,
+  origenDelMovimiento, pestanaDeCartasDePorte, pestanaDeTransporte, RUTAS_DE_COMPROBANTES, seccionDe, verValido,
 } from './navegacion'
 
 function movimiento(extra: Record<string, unknown>) {
@@ -68,8 +69,10 @@ describe('destinoDelLog', () => {
     // base dice `localidades` y no `localidad`. Un mapa escrito en singular
     // habria compilado igual y no habria linkeado nada.
     expect(destinoDelLog('localidades', 3)).toBe('/localidades')
-    expect(destinoDelLog('terceros', 3)).toBe('/entidades')
-    expect(destinoDelLog('choferes', 3)).toBe('/entidades?pestana=choferes')
+    // Un tercero no dice de qué rol era: va a Clientes. Los choferes y los vehículos, a su pestaña de Transporte (ADR-045).
+    expect(destinoDelLog('terceros', 3)).toBe('/clientes')
+    expect(destinoDelLog('choferes', 3)).toBe('/transporte?pestana=choferes')
+    expect(destinoDelLog('vehiculos', 3)).toBe('/transporte?pestana=vehiculos')
     // La razón social se retiró (ADR-035): un asiento viejo del log ya no lleva a ninguna pantalla.
     expect(destinoDelLog('razones-sociales', 3)).toBeNull()
   })
@@ -153,35 +156,83 @@ describe('Comprobantes: secciones y menú', () => {
 })
 })
 
-describe('Entidades (ADR-040)', () => {
-  it('la pestaña sale del query, y lo desconocido cae en Clientes', () => {
-    expect(PESTANAS_DE_ENTIDADES).toEqual(['clientes', 'fleteros', 'choferes', 'proveedores'])
-    expect(pestanaDeEntidades('fleteros')).toBe('fleteros')
-    expect(pestanaDeEntidades('choferes')).toBe('choferes')
-    expect(pestanaDeEntidades(null)).toBe('clientes')
-    expect(pestanaDeEntidades('cualquier-cosa')).toBe('clientes')
+describe('Clientes, Proveedores y Transporte (ADR-045, que reemplaza en parte a ADR-040)', () => {
+  it('Transporte tiene tres pestañas, en orden; la pestaña sale del query y lo desconocido cae en Fleteros', () => {
+    expect(PESTANAS_DE_TRANSPORTE).toEqual(['fleteros', 'choferes', 'vehiculos'])
+    expect(pestanaDeTransporte('choferes')).toBe('choferes')
+    expect(pestanaDeTransporte('vehiculos')).toBe('vehiculos')
+    expect(pestanaDeTransporte(null)).toBe('fleteros')
+    expect(pestanaDeTransporte('cualquier-cosa')).toBe('fleteros')
+    // Clientes y Proveedores ya no son pestañas de nadie.
+    expect(pestanaDeTransporte('clientes')).toBe('fleteros')
+    expect(pestanaDeTransporte('proveedores')).toBe('fleteros')
   })
 
-  it('irA.entidades arma la pestaña y la ficha', () => {
-    expect(irA.entidades()).toBe('/entidades')
-    expect(irA.entidades('fleteros')).toBe('/entidades?pestana=fleteros')
-    expect(irA.entidades('choferes', 4)).toBe('/entidades?pestana=choferes&ver=4')
+  it('las rutas nuevas arman la pantalla y la ficha', () => {
+    expect(irA.clientes()).toBe('/clientes')
+    expect(irA.clientes(4)).toBe('/clientes?ver=4')
+    expect(irA.proveedores()).toBe('/proveedores')
+    expect(irA.proveedores(4)).toBe('/proveedores?ver=4')
+    expect(irA.transporte()).toBe('/transporte')
+    expect(irA.transporte('choferes')).toBe('/transporte?pestana=choferes')
+    expect(irA.transporte('fleteros', 4)).toBe('/transporte?pestana=fleteros&ver=4')
+    expect(irA.vehiculos()).toBe('/transporte?pestana=vehiculos')
+    expect(irA.vehiculos(21)).toBe('/transporte?pestana=vehiculos&ver=21')
   })
 
-  it('irA.vehiculos arma la ruta y la ficha', () => {
-    expect(irA.vehiculos()).toBe('/vehiculos')
-    expect(irA.vehiculos(21)).toBe('/vehiculos?ver=21')
+  it('🔴 ninguna ruta nueva se llama «entidades»: irA.entidad lleva cada tipo a SU pantalla', () => {
+    expect(TIPOS_DE_ENTIDAD).toEqual(['clientes', 'fleteros', 'choferes', 'proveedores'])
+    expect(irA.entidad('clientes', 1)).toBe('/clientes?ver=1')
+    expect(irA.entidad('proveedores', 3)).toBe('/proveedores?ver=3')
+    expect(irA.entidad('fleteros', 2)).toBe('/transporte?pestana=fleteros&ver=2')
+    expect(irA.entidad('choferes', 11)).toBe('/transporte?pestana=choferes&ver=11')
+    expect(irA.entidad('choferes')).toBe('/transporte?pestana=choferes')
+    for (const tipo of TIPOS_DE_ENTIDAD) expect(irA.entidad(tipo, 5), tipo).not.toContain('/entidades')
   })
 
-  it('🔑 las secciones que salieron de Configuración tienen su pestaña', () => {
-    expect(SECCIONES_MUDADAS_A_ENTIDADES).toEqual({ terceros: 'clientes', choferes: 'choferes' })
+  it('🔑 el enlace viejo a /entidades va a la pantalla nueva de su pestaña, conservando la ficha', () => {
+    expect(destinoDeEntidadesViejo('')).toBe('/clientes')
+    expect(destinoDeEntidadesViejo('?pestana=clientes')).toBe('/clientes')
+    expect(destinoDeEntidadesViejo('?pestana=clientes&ver=1')).toBe('/clientes?ver=1')
+    expect(destinoDeEntidadesViejo('?pestana=proveedores&ver=3')).toBe('/proveedores?ver=3')
+    expect(destinoDeEntidadesViejo('?pestana=fleteros')).toBe('/transporte?pestana=fleteros')
+    expect(destinoDeEntidadesViejo('?pestana=fleteros&ver=2')).toBe('/transporte?pestana=fleteros&ver=2')
+    expect(destinoDeEntidadesViejo('?pestana=choferes&ver=11')).toBe('/transporte?pestana=choferes&ver=11')
+    // Sin pestaña o con una desconocida era Clientes; un `ver` que no es un id se descarta.
+    expect(destinoDeEntidadesViejo('?ver=1')).toBe('/clientes?ver=1')
+    expect(destinoDeEntidadesViejo('?pestana=cualquier-cosa&ver=1')).toBe('/clientes?ver=1')
+    expect(destinoDeEntidadesViejo('?pestana=fleteros&ver=abc')).toBe('/transporte?pestana=fleteros')
+    expect(destinoDeEntidadesViejo('?pestana=fleteros&ver=0')).toBe('/transporte?pestana=fleteros')
   })
 
-  it('🔴 App.tsx tiene la ruta /entidades y redirige las viejas', () => {
+  it('🔑 el enlace viejo a /vehiculos va a la pestaña Vehículos conservando TODO el query', () => {
+    expect(destinoDeVehiculosViejo('')).toBe('/transporte?pestana=vehiculos')
+    expect(destinoDeVehiculosViejo('?ver=21')).toBe('/transporte?pestana=vehiculos&ver=21')
+    expect(destinoDeVehiculosViejo('?ver=21&otro=x')).toBe('/transporte?pestana=vehiculos&ver=21&otro=x')
+    // Una `pestana` que traiga el enlace no pisa a Vehículos.
+    expect(destinoDeVehiculosViejo('?pestana=choferes&ver=21')).toBe('/transporte?pestana=vehiculos&ver=21')
+  })
+
+  it('verValido sólo acepta un id entero positivo', () => {
+    expect(verValido('7')).toBe(7)
+    for (const malo of [null, '', '0', '-1', '1.5', 'abc']) expect(verValido(malo), String(malo)).toBeUndefined()
+  })
+
+  it('🔑 las secciones que salieron de Configuración apuntan al tipo de entidad, y de ahí a la pantalla de hoy', () => {
+    expect(SECCIONES_MUDADAS_DE_CONFIGURACION).toEqual({ terceros: 'clientes', choferes: 'choferes' })
+    expect(irA.entidad(SECCIONES_MUDADAS_DE_CONFIGURACION.terceros, 5)).toBe('/clientes?ver=5')
+    expect(irA.entidad(SECCIONES_MUDADAS_DE_CONFIGURACION.choferes, 5)).toBe('/transporte?pestana=choferes&ver=5')
+  })
+
+  it('🔴 App.tsx tiene las rutas nuevas, redirige las viejas y ya no tiene pantallas de Entidades ni de Vehículos', () => {
     const app = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8')
-    expect(app).toContain('path="/entidades"')
+    for (const ruta of ['/clientes', '/proveedores', '/transporte']) expect(app, ruta).toContain(`path="${ruta}"`)
+    expect(app).toContain('path="/entidades" element={<EntidadesAlDestinoNuevo />}')
+    expect(app).toContain('path="/vehiculos" element={<VehiculosAlTransporte />}')
     expect(app).toMatch(/path="\/terceros" element=\{<Navigate/)
     expect(app).toMatch(/path="\/choferes" element=\{<Navigate/)
+    expect(app).not.toContain("@/pages/Entidades")
+    expect(app).not.toContain("@/pages/Vehiculos")
   })
 })
 

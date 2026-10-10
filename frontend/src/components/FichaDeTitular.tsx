@@ -178,13 +178,13 @@ function Formulario({ titular, partida, esAdmin, motivo, alCerrar, alCambiar }: 
         </fieldset>
 
         <div className="sm:col-span-2">
-          <Elegir id="titular-entidad" etiqueta="Cliente de Entidades" vacio="El que tenga este CUIT"
+          <Elegir id="titular-entidad" etiqueta="Cliente" vacio="El que tenga este CUIT"
                   valor={terceroId} opciones={clientes} alCambiar={setTerceroId}
                   deshabilitado={!puedeEscribir} />
           {titular?.tercero && (
             <p className="text-muted-foreground mt-1 text-xs">
               Vinculado a{' '}
-              <Link className="underline underline-offset-2" to={irA.entidades('clientes', titular.tercero.id)}>
+              <Link className="underline underline-offset-2" to={irA.clientes(titular.tercero.id)}>
                 {titular.tercero.razon_social}
               </Link>.
             </p>

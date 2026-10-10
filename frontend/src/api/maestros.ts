@@ -65,8 +65,8 @@ export function cuitRepetido(e: unknown): CuitRepetido | null {
 export const sumarRol = (id: number, rol: RolDeEntidad) =>
   api.post<Maestro>(`/api/terceros/${id}/roles/${rol}`)
 
-/** Las entidades con un rol, bajas incluidas: es el listado de cada pestaña de Entidades. Sin tope, a diferencia del
- *  listado genérico (`/api/terceros`, 200 por página). */
+/** Las entidades con un rol, bajas incluidas: es el listado de Clientes, Proveedores y la pestaña Fleteros de Transporte. Sin tope, a
+ *  diferencia del listado genérico (`/api/terceros`, 200 por página). */
 export const listarPorRol = <T extends Maestro>(rol: RolDeEntidad) =>
   api.get<T[]>(`/api/terceros/rol/${rol}?solo_activos=false`)
 

@@ -230,7 +230,7 @@ def propuesta(sesion: Session, orden_id: int, cuit_titular: str) -> dict:
         "mercaderia_fumigada": bool(datos.get("mercaderia_fumigada", False)),
     }
     if not transporte["cuit_chofer"]:
-        faltantes.append("El chofer de la orden no tiene CUIT: cargalo en Entidades → Choferes.")
+        faltantes.append("El chofer de la orden no tiene CUIT: cargalo en Transporte → Choferes.")
     if not transporte["dominios"]:
         faltantes.append("La orden no tiene vehículo: hacen falta los dominios.")
     if not transporte["cuit_pagador_flete"]:

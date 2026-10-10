@@ -139,11 +139,11 @@ describe('Titulares · la delegación se lee de ARCA', () => {
     expect(within(fila('Agro Solo SA')).getByText('Emite él · falta delegar (para consultar)')).toBeInTheDocument()
     expect(within(fila('Agro Solo Consulta SA')).getByText('Emite él · consulta habilitada ✓')).toBeInTheDocument()
     expect(within(fila('Agro Delegado SA')).getByText('30-11111111-2')).toBeInTheDocument()
-    // Quién emite, y el vínculo con el cliente de Entidades.
+    // Quién emite, y el vínculo con el cliente de Clientes.
     expect(within(fila('Agro Delegado SA')).getByText('Nosotros')).toBeInTheDocument()
     expect(within(fila('Agro Solo SA')).getByText('El titular')).toBeInTheDocument()
     expect(within(fila('Agro Delegado SA')).getByRole('link', { name: /Cliente: Agro Delegado SA/ }))
-      .toHaveAttribute('href', '/entidades?pestana=clientes&ver=7')
+      .toHaveAttribute('href', '/clientes?ver=7')
   })
 
   it('explica que «Pendiente» se resuelve solo con el próximo ticket de ARCA (hasta 12 horas)', async () => {
