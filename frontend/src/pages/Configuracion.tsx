@@ -33,7 +33,6 @@ import { createConfiguracion } from 'libra-ui/Configuracion'
 import { MapPin, Package, Route, ShieldCheck } from 'lucide-react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 
-import { EmisionRealDeCpe } from '@/components/EmisionRealDeCpe'
 import { ICONOS_LC } from '@/iconos'
 import { irA, SECCIONES_MUDADAS_DE_CONFIGURACION, verValido } from '@/navegacion'
 import { FacturacionArca } from '@/pages/Arca'
@@ -57,14 +56,9 @@ const ConfiguracionDelKit = createConfiguracion({
       // con qué otro sistema habla este producto.
       {
         clave: 'arca', label: 'ARCA / AFIP', icono: ShieldCheck,
-        // La tarjeta compartida (certificados) y, debajo, el interruptor de la emisión real de cartas de porte
-        // (ADR-043), que sólo ven los administradores.
-        contenido: (
-          <div className="grid gap-6">
-            <FacturacionArca />
-            <EmisionRealDeCpe />
-          </div>
-        ),
+        // La tarjeta compartida, en pestañas (ADR-047 del kit). El interruptor de la emisión real de cartas de porte
+        // (ADR-043) va dentro de la pestaña «CTG y Carta de Porte» (`FacturacionArca`).
+        contenido: <FacturacionArca />,
       },
     ],
   },
