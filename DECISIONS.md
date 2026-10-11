@@ -1130,3 +1130,17 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 - El nombre «Entidades» sigue siendo el del modelo en el código y en estos ADR (`terceros` con roles, `TipoDeEntidad`, `tests/test_entidades.py`), pero ya no es una pantalla ni una palabra de la interfaz.
 - La pestaña recordada es del navegador, no del usuario ni de la instancia: otro navegador abre en Fleteros.
 - Pendiente de decidir (no se hizo): una entidad que es a la vez fletero y proveedor sigue estando en Transporte → Fleteros y en Proveedores; son dos pantallas sobre una misma fila.
+
+## ADR-046 — La imagen de MariaDB de la migración se baja una vez, con reintentos y con un espejo de reserva
+
+**Contexto.** El job `test` del CI cayó dos veces seguidas el 2026-10-10 a la noche (#351 y #352) con `Unable to find image 'public.ecr.aws/docker/library/mariadb:11.4' locally` y `toomanyrequests: Rate exceeded`; al relanzar pasó. Los tests de la migración levantan un MariaDB efímero con `docker run` (`migracion/cargar.py`), y `docker run` baja la imagen si falta **y no reintenta**: con xdist (`-n 4`), cada worker lo juega por separado contra un registro que corta las ráfagas. La familia ya resolvió lo mismo para PostgreSQL (la Action `postgres-ci` de libra-web-kit, v1.2.0: descarga con reintentos y `docker run --pull never`).
+
+**Decisión.**
+1. **Un paso del CI** (`Imagen de MariaDB de la migración`, antes del lint y de pytest) baja la imagen **una vez**: 4 intentos con espera creciente (5, 20 y 45 s). Si el ECR no cede, prueba la **misma imagen oficial** desde `mirror.gcr.io` y después desde Docker Hub (2 intentos cada una) y la **re-etiqueta** con el nombre que espera `cargar.py`; si ninguna cede, falla con el error. El nombre de la imagen se lee de `IMAGEN_POR_DEFECTO`: no hay dos fuentes.
+2. **`cargar.asegurar_imagen()`**: si la imagen ya está (`docker image inspect`), no toca la red; si no, `docker pull` con los mismos reintentos. `levantar_mariadb` la llama y corre con **`--pull=never`**. Cubre al que corre la suite en su máquina y a cualquier worker que llegue sin imagen; con el paso del CI, ninguno vuelve a pegarle al registro.
+3. **No se cachea la imagen** (`actions/cache` con `docker save`/`load`): ~110 MB comprimidos que se restaurarían en cada corrida para evitar una descarga que con reintentos y espejo ya no falla; y un caché mal invalidado es una imagen vieja que nadie ve. Se retoma si el espejo vuelve a fallar.
+
+**Consecuencias.**
+- Un límite de tasa transitorio cuesta unos segundos de espera en el paso, no un CI en rojo. El espejo sólo se usa si el ECR falla; el warning de GitHub deja el rastro.
+- La lógica de reintento de `cargar.py` se prueba sin Docker ni red (`tests/test_migracion_imagen.py`). El paso del workflow se probó con un `docker` falso para los cuatro caminos (ECR, `mirror.gcr.io`, Docker Hub, ninguno).
+- Pendiente de decidir: si más productos terminan levantando MariaDB, la descarga con espejo pasa a una Action compartida en libra-web-kit, como `postgres-ci`. Hoy es el único.
