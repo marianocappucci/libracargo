@@ -167,6 +167,44 @@ jobs:
           uv sync --locked --extra dev
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
+      # El MariaDB de los tests de la migracion (tests/test_migracion.py, migracion/cargar.py) sale de una imagen
+      # que `docker run` baja sola si falta -- y con xdist, una vez por worker. El 2026-10-10 el espejo de ECR
+      # corto la rafaga (`toomanyrequests: Rate exceeded`) y tiro dos CI seguidos (libracargo#351 y #352), que
+      # pasaron al relanzar: un limite de tasa transitorio. Aca se baja UNA vez, con reintentos y espera creciente
+      # (mismo criterio que la Action `postgres-ci` de libra-web-kit, v1.2.0), y si el ECR no cede se prueba un
+      # espejo de la MISMA imagen oficial y se la re-etiqueta con el nombre que espera `cargar.py`. Despues,
+      # `levantar_mariadb` corre con `--pull=never`: ningun worker vuelve a tocar el registro.
+      # El nombre de la imagen se lee de `cargar.py` para que no haya dos fuentes que se separen.
+      - name: Imagen de MariaDB de la migracion (una descarga, con reintentos y espejo)
+        if: steps.cambios.outputs.backend == 'true'
+        run: |
+          set -euo pipefail
+          IMAGEN=$(python -c "from migracion.cargar import IMAGEN_POR_DEFECTO as i; print(i)")
+          bajar() {  # bajar <imagen> <intentos>: espera creciente (5, 20, 45 s...) entre intentos
+            for intento in $(seq 1 "$2"); do
+              if docker pull -q "$1" >/dev/null 2>&1; then return 0; fi
+              if [ "$intento" = "$2" ]; then return 1; fi
+              pausa=$(( intento * intento * 5 ))
+              echo "::warning::no se pudo bajar $1 (intento $intento); reintento en ${pausa}s"
+              sleep "$pausa"
+            done
+          }
+          if bajar "$IMAGEN" 4; then
+            echo "Imagen $IMAGEN lista"
+          else
+            echo "::warning::$IMAGEN no cedio en 4 intentos; pruebo un espejo de la misma imagen"
+            ok=no
+            for espejo in "mirror.gcr.io/library/${IMAGEN##*/}" "docker.io/library/${IMAGEN##*/}"; do
+              if bajar "$espejo" 2; then
+                docker tag "$espejo" "$IMAGEN"
+                echo "Imagen $IMAGEN lista, desde $espejo"
+                ok=si; break
+              fi
+            done
+            if [ "$ok" != si ]; then echo "::error::no se pudo bajar $IMAGEN ni de ECR ni de los espejos"; exit 1; fi
+          fi
+          docker image inspect "$IMAGEN" --format '{{.Id}} {{.Size}}'
+
       - name: Lint
         if: steps.cambios.outputs.backend == 'true'
         run: ruff check .

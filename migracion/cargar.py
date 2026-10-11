@@ -36,6 +36,10 @@ ESPEJO = Path(__file__).with_name("espejo.sql")
 # corrida, y el cupo anónimo de Docker Hub (`toomanyrequests`) ya trabó a toda la familia una vez. Misma imagen.
 IMAGEN_POR_DEFECTO = "public.ecr.aws/docker/library/mariadb:11.4"
 BASE_TEMPORAL = "legado"
+#: Intentos de `docker pull` y pausa base (crece al cuadrado: 5, 20, 45 s). El espejo de ECR corta las ráfagas
+#: (`toomanyrequests: Rate exceeded`): los CI de libracargo#351 y #352 cayeron así el 2026-10-10.
+INTENTOS_DE_DESCARGA = 4
+PAUSA_DE_DESCARGA = 5
 
 #: Marcas de doble encoding. Si aparecen **después** de decodificar, el dato ya
 #: estaba roto en la base del legado y no lo rompió este paso.
@@ -47,6 +51,26 @@ def _docker(*args: str, entrada: bytes | None = None, texto: bool = True):
                           text=texto if entrada is None else False, check=False)
 
 
+def asegurar_imagen(imagen: str = IMAGEN_POR_DEFECTO) -> None:
+    """Deja la imagen en el Docker local; si ya está, no toca la red.
+
+    Un límite de tasa del registro es **transitorio**: un `docker run` que tiene que bajar la imagen lo
+    convierte en un error de la corrida (`no arrancó MariaDB: ... toomanyrequests`), y con xdist cada worker
+    lo juega por separado. Acá se baja con reintentos y espera creciente; el `run` de `levantar_mariadb`
+    va con `--pull=never`, así que ya no vuelve a pegarle al registro.
+    """
+    if _docker("image", "inspect", imagen).returncode == 0:
+        return
+    for intento in range(1, INTENTOS_DE_DESCARGA + 1):
+        r = _docker("pull", "-q", imagen)
+        if r.returncode == 0:
+            return
+        if intento == INTENTOS_DE_DESCARGA:
+            raise RuntimeError(
+                f"no se pudo bajar {imagen} en {INTENTOS_DE_DESCARGA} intentos: {r.stderr.strip()}")
+        time.sleep(intento * intento * PAUSA_DE_DESCARGA)
+
+
 def levantar_mariadb(imagen: str = IMAGEN_POR_DEFECTO,
                      nombre: str = "libracargo-legado") -> tuple[str, int]:
     """Arranca el MariaDB efímero y devuelve `(contenedor, puerto)`.
@@ -55,8 +79,9 @@ def levantar_mariadb(imagen: str = IMAGEN_POR_DEFECTO,
     con un puerto fijo, si algo más lo tiene tomado el `-p` puede fallar y
     terminaríamos midiendo la base de otro proceso.
     """
+    asegurar_imagen(imagen)
     _docker("rm", "-f", nombre)
-    r = _docker("run", "-d", "--name", nombre,
+    r = _docker("run", "-d", "--pull=never", "--name", nombre,
                 "-e", "MARIADB_ROOT_PASSWORD=legado-efimero",
                 "-e", f"MARIADB_DATABASE={BASE_TEMPORAL}",
                 "-p", "127.0.0.1::3306", imagen)
