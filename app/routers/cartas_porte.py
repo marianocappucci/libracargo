@@ -7,6 +7,7 @@ WSAA) son sincrónicos y bloquearían el loop de uvicorn. Lo asincrónico va con
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from libracore import arca_wscpe
+from libracore.cuit import solo_digitos
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -129,7 +130,7 @@ def consultar(datos: ConsultaIn, sesion: Session = Depends(obtener_sesion)):
         cpe, amb = servicio.consultar(datos.ctg, datos.cuit_representada)
     except servicio.Rechazo as e:
         raise _rechazo(e) from None
-    return _de_arca(sesion, cpe, servicio.digitos(datos.cuit_representada), amb)
+    return _de_arca(sesion, cpe, solo_digitos(datos.cuit_representada), amb)
 
 
 @router.post("", response_model=list[ResultadoTraer])

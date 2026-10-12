@@ -15,6 +15,7 @@ por dónde se busca, cómo se ordena— entra por parámetro.
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from libracore import geografia
+from libracore.cuit import solo_digitos
 from pydantic import BaseModel, Field
 from sqlalchemy import String, cast, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -188,10 +189,6 @@ def construir_router(
 _ROLES = {"cliente": "es_cliente", "fletero": "es_fletero", "proveedor": "es_proveedor"}
 
 
-def _digitos(cuit: str | None) -> str:
-    return "".join(c for c in (cuit or "") if c.isdigit())
-
-
 def _roles_de(t: Tercero) -> list[str]:
     return [rol for rol, columna in _ROLES.items() if getattr(t, columna)]
 
@@ -203,7 +200,7 @@ def _cuit_no_repetido(sesion: Session, obj: Tercero, id_actual: int | None) -> N
     Sólo cuenta un CUIT de 11 dígitos. El legado dejó CUIT de relleno («1») en 68 terceros de Suitrans: esos no
     identifican a nadie y no se comparan.
     """
-    cuit = _digitos(obj.cuit)
+    cuit = solo_digitos(obj.cuit)
     if len(cuit) != 11:
         return
     limpio = func.replace(func.replace(func.coalesce(Tercero.cuit, ""), "-", ""), ".", "")

@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Literal
 
 from libracore.arca_wsfe import cuit_con_verificador_valido
+from libracore.cuit import solo_digitos
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.servicios.emision_cpe import INTERVINIENTES
@@ -111,7 +112,7 @@ def _cuit_de_once(v):
     """Los once dígitos de un CUIT (acepta guiones). `None` y vacío pasan como ausencia."""
     if v is None or (isinstance(v, str) and not v.strip()):
         return None
-    d = "".join(c for c in str(v) if c.isdigit())
+    d = solo_digitos(v)
     if len(d) != 11 or not cuit_con_verificador_valido(d):
         raise ValueError("el CUIT tiene que tener 11 dígitos y un dígito verificador válido")
     return d

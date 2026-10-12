@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from libracore import arca_wscpe as w
+from libracore.cuit import solo_digitos
 from libracore.geografia import normalizar
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -43,7 +44,7 @@ from app.models import (
 from app.models.cartas_porte import EMITE_NOSOTROS, CartaPorte, PlantillaCpe, TitularCpe
 from app.servicios import auditoria
 from app.servicios import cartas_porte as cpe_servicio
-from app.servicios.cartas_porte import Rechazo, digitos
+from app.servicios.cartas_porte import Rechazo
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ def _llamar(corrutina):
 
 
 def _acceso(cuit_titular: str) -> tuple[str, str, dict]:
-    cuit = digitos(cuit_titular)
+    cuit = solo_digitos(cuit_titular)
     if len(cuit) != 11:
         raise Rechazo(422, "Elegí a nombre de qué titular se emite (11 dígitos).")
     amb = cpe_servicio._ambiente_o_rechazo()
@@ -141,7 +142,8 @@ def localidades_arca(cuit_titular: str, cod_provincia: int) -> dict[int, str]:
 
 def plantas(cuit_titular: str, cuit_planta: str) -> list[dict]:
     cuit, amb, t = _acceso(cuit_titular)
-    lista = _llamar(w.plantas(cuit, t["token"], t["sign"], cuit=digitos(cuit_planta), ambiente=amb))
+    planta = solo_digitos(cuit_planta)
+    lista = _llamar(w.plantas(cuit, t["token"], t["sign"], cuit=planta, ambiente=amb))
     return [{"numero": p.numero, "cod_provincia": p.cod_provincia, "cod_localidad": p.cod_localidad} for p in lista]
 
 
@@ -172,7 +174,7 @@ def codigos_de(cuit_titular: str, localidad: Localidad | None) -> dict | None:
 
 def _cuit_de(sesion: Session, tercero_id: int | None) -> str | None:
     t = sesion.get(Tercero, tercero_id) if tercero_id else None
-    c = digitos(t.cuit) if t else ""
+    c = solo_digitos(t.cuit) if t else ""
     return c if len(c) == 11 else None
 
 
@@ -191,7 +193,7 @@ def propuesta(sesion: Session, orden_id: int, cuit_titular: str) -> dict:
     orden = sesion.get(OrdenCarga, orden_id)
     if orden is None:
         raise Rechazo(404, f"no existe la orden {orden_id}")
-    cuit = digitos(cuit_titular)
+    cuit = solo_digitos(cuit_titular)
     plantilla = sesion.get(PlantillaCpe, cuit)
     datos = dict(plantilla.datos) if plantilla else {}
     faltantes: list[str] = []
@@ -220,7 +222,8 @@ def propuesta(sesion: Session, orden_id: int, cuit_titular: str) -> dict:
         faltantes.append(f"El destino «{destino_loc.nombre}» no se encontró en el catálogo de ARCA: elegilo.")
 
     transporte = {
-        "cuit_transportista": _cuit_de(sesion, fletero_id) or (digitos(cfg.cuit) if cfg and cfg.cuit else None),
+        "cuit_transportista": _cuit_de(sesion, fletero_id)
+        or (solo_digitos(cfg.cuit) if cfg and cfg.cuit else None),
         "dominios": [d for d in ((vehiculo.patente_chasis, vehiculo.patente_acoplado) if vehiculo else ()) if d],
         "fecha_hora_partida": None,
         "km": orden.km or datos.get("km"),
@@ -320,7 +323,7 @@ def emitir(sesion: Session, usuario: dict | None, orden_id: int, datos: dict, *,
         raise Rechazo(409, "La emisión de Cartas de Porte reales está apagada: la habilita un administrador.")
     if amb == "produccion" and not confirmo:
         raise Rechazo(422, "Confirmá que vas a emitir una Carta de Porte real.")
-    _exigir_que_emitamos_nosotros(sesion, digitos(datos.get("cuit_titular", "")))
+    _exigir_que_emitamos_nosotros(sesion, solo_digitos(datos.get("cuit_titular", "")))
     cuit, amb, ticket = _acceso(datos.get("cuit_titular", ""))
     habilitados = w.cuits_habilitados(ticket)
     if habilitados and cuit not in habilitados:

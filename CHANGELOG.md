@@ -3,6 +3,12 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — «Sólo los dígitos del CUIT» sale de los productos: lo da el motor
+
+- **Refactor, sin cambio de comportamiento:** había cinco copias del mismo helper (`emision_arca`, `pre_facturas`, `routers/maestros`, `cartas_porte` y `routers/comprobantes`) y dos validadores de esquema con el mismo `join`/`isdigit`. Todas usan ahora `libracore.cuit.solo_digitos` (libracore v1.154.0 propuesta; el pin se sube con el tag), la regla que ya aplica la guarda `problema_del_receptor`.
+- Se borran `emision_arca._solo_digitos`, `pre_facturas._digitos`, `maestros._digitos` y `cartas_porte.digitos`. Un test (`test_cuit_del_motor.py`) falla si vuelve una copia propia.
+- Único matiz: el motor tolera un valor que no es texto (devuelve los dígitos en vez de romper) y no cuenta como dígito a los superíndices (`²`). Ninguno llega desde la API.
+
 ## [Unreleased] — «Entidades» se divide: Clientes y Proveedores en el menú, y «Transporte» con Fleteros, Choferes y Vehículos
 
 - **Pedido del dueño:** «Entidades se va a pasar a llamar Transporte y dentro va a tener fleteros y choferes en pestañas separadas y clientes y proveedores pasan al menú principal»; y **Vehículos también va dentro de Transporte** (ADR-045, que reemplaza en parte a ADR-040).
