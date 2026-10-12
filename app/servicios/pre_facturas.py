@@ -31,6 +31,7 @@ from datetime import date
 from decimal import Decimal
 
 from libracore import pre_facturas as dominio
+from libracore.cuit import solo_digitos
 from libracore.db import arca_config
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
@@ -84,10 +85,6 @@ class Ensayo(Exception):
 
 
 # ── Qué órdenes entran ─────────────────────────────────────────────────────
-
-
-def _digitos(cuit: str | None) -> str:
-    return "".join(c for c in (cuit or "") if c.isdigit())
 
 
 def reservada_en(sesion: Session, orden_id: int) -> int | None:
@@ -202,7 +199,7 @@ def validar_tipo_y_fechas(tipo: TipoComprobante, fecha: date, vencimiento: date 
         # fecha de presentación, la que sea posterior»).
         if vencimiento < tiempo.hoy():
             raise Rechazo(422, "el vencimiento de pago no puede ser anterior a hoy")
-        if len(_digitos(cliente.cuit)) != 11:
+        if len(solo_digitos(cliente.cuit)) != 11:
             # Una FCE se emite a una empresa, y ARCA rechaza el receptor sin CUIT (10015). Se exigen los
             # 11 dígitos y no «algún dígito»: un CUIT a medio cargar llegaría a ARCA y volvería como un
             # 502. Se dice acá, y dice qué hacer.

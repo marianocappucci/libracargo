@@ -20,6 +20,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from libracore import arca_wsfecred
+from libracore.cuit import solo_digitos
 from libracore.db import arca_config
 from libracore.notas_de_credito import NotaNoPermitida
 from sqlalchemy import select
@@ -158,7 +159,7 @@ def fce_corresponde(
         cfg = emision_arca.configuracion_activa(sesion)
     except emision_arca.ArcaAmbiguo as e:
         return {"disponible": False, "motivo": str(e), "fce_habilitada": False}
-    if not "".join(c for c in (cliente.cuit or "") if c.isdigit()):
+    if not solo_digitos(cliente.cuit):
         return {"disponible": False, "motivo": "el cliente no tiene CUIT cargado", "fce_habilitada": False}
     resultado = asyncio.run(arca_wsfecred.corresponde_fce(cfg, cliente.cuit, total, fecha or tiempo.hoy()))
     habilitada = bool(cfg and cfg.get("fce_cbu") and cfg.get("fce_transmision"))

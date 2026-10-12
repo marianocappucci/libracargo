@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from libracore.arca_wsfe import cuit_con_verificador_valido
+from libracore.cuit import solo_digitos
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.enums import CondicionIVA
@@ -131,7 +132,7 @@ class ChoferIn(_Base):
         nunca con la Carta de Porte, y nada avisaría."""
         if v is None:
             return v
-        digitos = "".join(c for c in v if c.isdigit())
+        digitos = solo_digitos(v)
         if len(digitos) != 11 or not cuit_con_verificador_valido(digitos):
             raise ValueError("el CUIT del chofer no es válido: tienen que ser 11 dígitos con el verificador correcto")
         return digitos
