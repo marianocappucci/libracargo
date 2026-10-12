@@ -41,6 +41,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from libracore import arca_credenciales, arca_wsaa, arca_wsfe
+from libracore.cuit import solo_digitos
 from libracore.db import arca_config as db_arca_config
 from sqlalchemy.orm import Session
 
@@ -121,18 +122,6 @@ class ArcaRechazo(RuntimeError):
     """ARCA contestó, y dijo que no. El mensaje va tal cual a la pantalla."""
 
 
-def _solo_digitos(cuit: str | None) -> str:
-    """El CUIT comparable.
-
-    `configuracion_empresa.cuit` es `String(13)` porque admite la forma con guiones
-    (`20-12345678-9`), y en `arca_config` se carga como lo tipea quien configura
-    la pantalla compartida. Comparar los textos crudos haría que el mismo CUIT
-    escrito de las dos formas **no** matchee, y la empresa correcta dejaría de
-    poder emitir con un mensaje que dice que los CUIT difieren cuando son el mismo.
-    """
-    return "".join(c for c in (cuit or "") if c.isdigit())
-
-
 def configuracion_de_la_instancia() -> dict | None:
     """La fila de `arca_config`, o `None` si esta instancia todavía no facturó.
 
@@ -180,13 +169,19 @@ def empresa_de(sesion: Session) -> ConfiguracionEmpresa | None:
 def _problema(sesion: Session, cfg: dict | None) -> str | None:
     """Por qué **esta configuración** no sirve para emitir con la empresa de la instancia, o `None`."""
     empresa = empresa_de(sesion)
-    if empresa is None or not _solo_digitos(empresa.cuit):
+    # Se comparan sólo los dígitos: `configuracion_empresa.cuit` es `String(13)` y admite la forma con
+    # guiones (`20-12345678-9`), y en `arca_config` se carga como lo tipea quien configura la pantalla
+    # compartida. Con los textos crudos el mismo CUIT escrito de las dos formas **no** matchearía, y la
+    # empresa correcta dejaría de poder emitir con un mensaje que dice que los CUIT difieren cuando son el mismo.
+    # Quitar lo que no es dígito es del motor (`libracore.cuit.solo_digitos`): este producto no tiene su copia.
+    cuit_empresa = solo_digitos(empresa.cuit) if empresa else ""
+    if empresa is None or not cuit_empresa:
         return ("la empresa no tiene CUIT cargado, y ARCA factura contra un CUIT: "
                 "cargá el CUIT en Configuración → Datos de la empresa")
     if cfg is None:
         return (f"ARCA no está configurado: cargá el certificado y la clave en Configuración → ARCA, "
                 f"con el CUIT de la empresa ({empresa.cuit})")
-    if _solo_digitos(cfg.get("cuit")) != _solo_digitos(empresa.cuit):
+    if solo_digitos(cfg.get("cuit")) != cuit_empresa:
         # 🔑 El CUIT de `arca_config` es el que FACTURA (el de la empresa), aunque el certificado esté a
         # nombre de otra persona que la representa (delegación). Nunca se compara contra el sujeto del
         # certificado: sólo contra lo que dice la configuración.

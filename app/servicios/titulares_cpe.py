@@ -31,6 +31,7 @@ import re
 from dataclasses import dataclass
 
 from libracore import arca_certificados, arca_credenciales, arca_wscpe
+from libracore.cuit import solo_digitos
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -39,7 +40,7 @@ from app.models.cartas_porte import PlantillaCpe, TitularCpe
 from app.schemas.cartas_porte import PlantillaIn, TitularEdicion, TitularIn
 from app.servicios import auditoria
 from app.servicios import cartas_porte as cpe_servicio
-from app.servicios.cartas_porte import Rechazo, digitos
+from app.servicios.cartas_porte import Rechazo
 from app.servicios.emision_arca import EMPRESA_ARCA
 
 DELEGADO = "delegado"
@@ -102,7 +103,7 @@ def _terceros_por_cuit(sesion: Session, cuits: list[str]) -> dict[str, Tercero]:
     filas = sesion.scalars(select(Tercero).where(_limpio().in_(cuits))
                            .order_by(Tercero.es_cliente.asc(), Tercero.activo.asc(), Tercero.id.desc())).all()
     # Del peor al mejor, así el dict se queda con el mejor (el que `_tercero_por_cuit` elegiría solo).
-    return {digitos(t.cuit): t for t in filas}
+    return {solo_digitos(t.cuit): t for t in filas}
 
 
 def _vinculo(titular: TitularCpe, por_cuit: dict[str, Tercero], por_id: dict[int, Tercero]) -> Tercero | None:
@@ -168,7 +169,7 @@ def de_tercero(sesion: Session, tercero_id: int) -> dict | None:
     tercero = sesion.get(Tercero, tercero_id)
     if tercero is None:
         raise Rechazo(404, f"no existe la entidad {tercero_id}")
-    cuit = digitos(tercero.cuit)
+    cuit = solo_digitos(tercero.cuit)
     vinculo = TitularCpe.tercero_id == tercero_id
     titular = sesion.scalars(
         select(TitularCpe).where(or_(vinculo, TitularCpe.cuit == cuit) if len(cuit) == 11 else vinculo)

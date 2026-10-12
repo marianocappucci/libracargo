@@ -18,6 +18,7 @@ import asyncio
 from datetime import UTC, datetime
 
 from libracore import arca_credenciales, arca_wscpe
+from libracore.cuit import solo_digitos
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -69,10 +70,6 @@ def _ticket(amb: str) -> dict:
         raise Rechazo(502, f"ARCA no dio acceso al servicio de Carta de Porte: {e}") from None
 
 
-def digitos(cuit: str | None) -> str:
-    return "".join(c for c in (cuit or "") if c.isdigit())
-
-
 def nombres_por_cuit(sesion: Session, cuits) -> dict[str, str]:
     """`cuit -> razón social` de los terceros cargados. Compara sólo los dígitos: en `terceros` hay CUIT con guiones."""
     buscados = {c for c in cuits if c}
@@ -94,7 +91,7 @@ def representados(sesion: Session) -> dict:
 # ── Consultar ──────────────────────────────────────────────────────────────
 
 def _exigir_cuit(cuit_representada: str) -> str:
-    cuit = digitos(cuit_representada)
+    cuit = solo_digitos(cuit_representada)
     if len(cuit) != 11:
         raise Rechazo(422, "Elegí por qué CUIT se consulta (11 dígitos).")
     return cuit
