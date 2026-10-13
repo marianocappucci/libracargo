@@ -135,6 +135,12 @@ async def emitir(
         cargar_previas=lambda: _previas(sesion, original.id),
         numerar=numerar, registrar=registrar, pedir_cae=pedir_cae,
         hoy=hoy, motivo=motivo, importe=importe,
+        # 🔴 `conn=sesion`: con varios procesos por instancia (`uvicorn --workers N`; hoy N = 1, ADR-044 del motor) la
+        # guarda «una a la vez» en memoria no ve al otro proceso, y un doble clic emite DOS notas ante ARCA. Con la
+        # sesion, el motor toma ademas un candado de la base que dura hasta que ESTA transaccion termina: por eso nada
+        # de lo de arriba hace `commit` ni `rollback` de la sesion mientras dura la emision (el `commit` es de quien
+        # llama, y el candado se suelta con el: el pedido siguiente ya encuentra la nota que dejo este).
+        conn=sesion,
     )
     return emitida.registro, estado["cfg"]
 

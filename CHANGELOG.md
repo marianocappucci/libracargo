@@ -3,6 +3,10 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Varios procesos listos (todo sigue en 1) y registro de errores
+
+- **Varios procesos listos (todo sigue en 1) y registro de errores** (2026-10-13, ADR-047; libracore `v1.159.0`, libraauth `v0.50.0`, libra-ui `v0.142.1`). Las siembras de arranque corren serializadas (`una_vez_al_arrancar`), el captcha anota los desafíos usados en la base (`UsadosEnBase`), la nota de crédito toma el candado de la base (`conn=`), el compose de `-dev` acepta `WEB_CONCURRENCY` (por defecto 1) y un 500 deja una línea en `errores/errores.jsonl` con un `ref` que ve el usuario (la pantalla «Algo falló» de libra-ui lo muestra). **Con migración de libraauth** (`0003_captcha_usados`), que corre antes de uvicorn. Sin migración propia.
+
 ## [Unreleased] — «Sólo los dígitos del CUIT» sale de los productos: lo da el motor
 
 - **Refactor, sin cambio de comportamiento:** había cinco copias del mismo helper (`emision_arca`, `pre_facturas`, `routers/maestros`, `cartas_porte` y `routers/comprobantes`) y dos validadores de esquema con el mismo `join`/`isdigit`. Todas usan ahora `libracore.cuit.solo_digitos` (libracore v1.154.0 propuesta; el pin se sube con el tag), la regla que ya aplica la guarda `problema_del_receptor`.

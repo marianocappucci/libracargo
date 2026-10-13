@@ -5,6 +5,8 @@ import './index.css'
 import App from './App.tsx'
 import { AuthProvider } from './context/AuthContext.tsx'
 import { aplicarIdentidad } from 'libra-ui/identidad'
+import { ErrorBoundary } from 'libra-ui/ErrorBoundary'
+import { instalarReporteDeErrores } from 'libra-ui/errores-del-navegador'
 import { cargarTema } from 'libra-ui/tema'
 
 // La identidad del producto (libra-ui ADR-033): su color de acento (botón principal, ítem activo del menú, foco) y el `theme-color`. Va antes
@@ -15,13 +17,19 @@ aplicarIdentidad('libracargo')
 // ni puede fallar: sin red o con un error, la app arranca con los colores de siempre.
 void cargarTema()
 
+// Los errores del navegador que nadie atrapa (`window.onerror`, promesas rechazadas) llegan al registro de errores de la instancia
+// (`POST /api/errores-cliente`, libra-ui ADR-053 / libracore ADR-045). Antes de montar: lo que falle al montar tambien cuenta.
+instalarReporteDeErrores()
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   </StrictMode>,
 )
 
