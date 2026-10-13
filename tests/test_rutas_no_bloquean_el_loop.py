@@ -32,9 +32,9 @@ import httpx
 import pytest
 
 from app.routers import configuracion
-from app.servicios import emision_arca, pre_facturas
+from app.servicios import emision_arca, facturacion
 from tests.conftest import cargar_empresa
-from tests.test_comprobantes import facturar, orden, pre_factura
+from tests.test_comprobantes import facturar, orden
 from tests.test_configuracion import EMPRESA, PNG
 from tests.test_emision_arca import _configurar_arca
 
@@ -99,7 +99,7 @@ def _no_bloqueo(lento: _Lento, health, health_termino: float):
     )
 
 
-# ── POST /api/pre-facturas y /api/pre-facturas/{id}/facturar ─────────────────────────────────────────────
+# ── POST /api/comprobantes/desde-ordenes y /directa ──────────────────────────────────────────────────────
 
 
 def _arca_con(monkeypatch, lento: _Lento, donde: str):
@@ -129,7 +129,7 @@ def _arca_con(monkeypatch, lento: _Lento, donde: str):
 
 @pytest.mark.parametrize("donde", ["decide", "numera", "pide-cae"])
 def test_facturar_no_frena_el_loop(cliente, datos, monkeypatch, donde):
-    """🔑 Tres lugares, porque `POST /api/pre-facturas/{id}/facturar` tiene tres tramos que bloquean:
+    """🔑 Tres lugares, porque `POST /api/comprobantes/desde-ordenes` tiene tres tramos que bloquean:
 
     - `decide`: lo lento es la base (`problema_de_emision`, que lee la empresa y
       `arca_config`). Una ruta `async` la hace en el loop.
@@ -152,11 +152,10 @@ def test_facturar_no_frena_el_loop(cliente, datos, monkeypatch, donde):
     else:
         _arca_con(monkeypatch, lento, donde)
     a = orden(cliente, datos, "1000.00")
-    pf = pre_factura(cliente, datos, [a])
-    assert pf.status_code == 201, pf.text
 
-    respuesta, health, fin = _mientras_duerme(
-        cliente, lento, lambda c: c.post(f"/api/pre-facturas/{pf.json()['id']}/facturar"))
+    respuesta, health, fin = _mientras_duerme(cliente, lento, lambda c: c.post(
+        "/api/comprobantes/desde-ordenes", json={
+            "fecha": "2026-08-15", "cliente_id": datos["cliente"], "tipo": "factura_a", "orden_ids": [a["id"]]}))
 
     assert respuesta.status_code == 201, respuesta.text
     comp = respuesta.json()
@@ -165,21 +164,43 @@ def test_facturar_no_frena_el_loop(cliente, datos, monkeypatch, donde):
     _no_bloqueo(lento, health, fin)
 
 
-def test_generar_la_pre_factura_no_frena_el_loop(cliente, datos, monkeypatch):
-    """Generarla lee las órdenes y el emisor, y escribe en la base: todo sincrónico."""
+@pytest.mark.parametrize("donde", ["numera", "pide-cae"])
+def test_la_factura_directa_no_frena_el_loop(cliente, datos, monkeypatch, donde):
+    """Misma garantía para «Nueva factura»: la ruta es `def` y lo asincrónico va en un loop propio de su hilo."""
     lento = _Lento()
-    real = pre_facturas.cargar_ordenes
+    cargar_empresa(cliente)
+    _configurar_arca(cliente)
+    _arca_con(monkeypatch, lento, donde)
+
+    respuesta, health, fin = _mientras_duerme(cliente, lento, lambda c: c.post(
+        "/api/comprobantes/directa", json={
+            # B: el cliente de la suite es consumidor final, y a ése le corresponde B (no A).
+            "fecha": "2026-08-15", "cliente_id": datos["cliente"], "tipo": "factura_b",
+            "conceptos": [{"descripcion": "Flete", "cantidad": "1", "precio_unitario": "1000.00"}]}))
+
+    assert respuesta.status_code == 201, respuesta.text
+    assert respuesta.json()["numero"] == 42
+    _no_bloqueo(lento, health, fin)
+
+
+def test_facturar_las_ordenes_leidas_con_lentitud_no_frena_el_loop(cliente, datos, monkeypatch):
+    """Leer y bloquear las órdenes es la base: todo sincrónico."""
+    lento = _Lento()
+    cargar_empresa(cliente)
+    _configurar_arca(cliente)
+    _arca_con(monkeypatch, _Lento(), "nunca")
+    real = facturacion.cargar_ordenes
 
     def cargar_lento(*args, **kwargs):
         lento.dormir()
         return real(*args, **kwargs)
 
-    monkeypatch.setattr(pre_facturas, "cargar_ordenes", cargar_lento)
+    monkeypatch.setattr(facturacion, "cargar_ordenes", cargar_lento)
     a = orden(cliente, datos, "1000.00")
 
-    respuesta, health, fin = _mientras_duerme(cliente, lento, lambda c: c.post("/api/pre-facturas", json={
-        "fecha": "2026-08-15", "cliente_id": datos["cliente"],
-        "tipo": "factura_a", "orden_ids": [a["id"]]}))
+    respuesta, health, fin = _mientras_duerme(cliente, lento, lambda c: c.post(
+        "/api/comprobantes/desde-ordenes", json={
+            "fecha": "2026-08-15", "cliente_id": datos["cliente"], "tipo": "factura_a", "orden_ids": [a["id"]]}))
 
     assert respuesta.status_code == 201, respuesta.text
     _no_bloqueo(lento, health, fin)

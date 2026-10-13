@@ -56,20 +56,15 @@ def _sembrar(cliente, monkeypatch, capsys):
     return capsys.readouterr().out
 
 
-def test_la_semilla_de_la_demo_corre_y_deja_pre_facturas_de_ejemplo(cliente, monkeypatch, capsys):
+def test_la_semilla_de_la_demo_corre_y_deja_ordenes_pendientes_para_facturar(cliente, monkeypatch, capsys):
     salida = _sembrar(cliente, monkeypatch, capsys)
 
     assert "las verificaciones del producto coinciden" in salida, salida[-1500:]
-    pre_facturas = cliente.get("/api/pre-facturas").json()
-    assert pre_facturas["counts"] == {
-        "pendiente": 1, "enviado": 0, "aceptado": 1, "facturado": 0, "descartado": 1}
-    assert sorted(p["numero_interno"] for p in pre_facturas["items"]) == ["PF-0001", "PF-0002", "PF-0003"]
-    # Datos ficticios: ni un nombre real.
-    assert {p["cliente_razon"] for p in pre_facturas["items"]} == {
-        "Agro del Oeste SA", "Molinos Suipacha", "Cerealera del Sur"}
-    # No hay comprobantes: la demo no tiene certificado de ARCA y ya no se registran a mano.
+    # No hay comprobantes: la demo no tiene certificado de ARCA y no se registran a mano (ADR-048).
     assert cliente.get("/api/comprobantes").json() == []
-    # Las órdenes de las pre facturas abiertas están reservadas; las de la anulada, libres.
-    libres = cliente.get("/api/ordenes?reservada=false&estado=pendiente").json()
-    assert len(libres) == 3
-    assert len(cliente.get("/api/ordenes?reservada=true").json()) == 3
+    # Todas las órdenes vigentes están pendientes y libres: se ven en «Facturar pendientes».
+    pendientes = cliente.get("/api/ordenes?facturada=false&estado=pendiente").json()
+    assert len(pendientes) == 6
+    assert {o["cliente_id"] for o in pendientes} and len({o["cliente_id"] for o in pendientes}) == 3
+    # Y la pre factura ya no existe en el producto.
+    assert cliente.get("/api/pre-facturas").status_code in (404, 405)

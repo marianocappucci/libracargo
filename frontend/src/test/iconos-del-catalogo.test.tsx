@@ -61,13 +61,11 @@ const MENU: Record<string, Concepto> = {
   '/logs': 'logDeActividad',
 }
 
-/** Los títulos de las pantallas que un concepto del catálogo, y no el sidebar, decide: las pre facturas (un botón de Comprobantes, no una
- *  entrada del menú) y las que cuelgan de una entrada pero tienen su propio concepto. */
+/** Los títulos de las pantallas que un concepto del catálogo, y no el sidebar, decide: las que cuelgan de una entrada del menú
+ *  (los botones de Comprobantes) o tienen su propio concepto. */
 const TITULOS: Record<string, Concepto> = {
-  PreFacturas: 'preFacturas',
-  PreFactura: 'preFacturas',
-  EditarPreFactura: 'preFacturas',
   FacturarPendientes: 'comprobantes',
+  NuevaFactura: 'comprobantes',
   ComprobantesSeccion: 'comprobantes',
   CuentaCorriente: 'cuentaCorriente',
   Caja: 'caja',
@@ -210,10 +208,12 @@ describe('Proveedores es Store y Fleteros es Truck, en lo que se dibuja', () => 
     expect(iconoDe(screen.getByRole('tab', { name: 'Clientes' }))).toBe('lucide-users')
   })
 
-  it('🔴 Comprobantes: el botón Pre facturas dibuja FileClock', async () => {
+  it('🔴 Comprobantes: ya no hay botón Pre facturas, y «Nueva factura» y «Facturar pendientes» llevan el +', async () => {
     render(<MemoryRouter initialEntries={['/comprobantes']}><App /></MemoryRouter>)
-    const boton = (await screen.findByText('Pre facturas')).closest('a') as HTMLElement
-    expect(iconoDe(boton)).toBe('lucide-file-clock')
+    const nueva = (await screen.findByText('Nueva factura')).closest('a') as HTMLElement
+    expect(iconoDe(nueva)).toBe('lucide-plus')
+    expect(iconoDe(screen.getByText('Facturar pendientes').closest('a') as HTMLElement)).toBe('lucide-plus')
+    expect(screen.queryByText('Pre facturas')).toBeNull()
   })
 
   it('🔴 Cuenta corriente: Clientes Users, Fleteros Truck y Proveedores Store', async () => {

@@ -59,6 +59,14 @@ class TipoComprobante(enum.Enum):
     NOTA_CREDITO_FCE_A = "nota_credito_fce_a"
     NOTA_CREDITO_FCE_B = "nota_credito_fce_b"
     NOTA_CREDITO_FCE_C = "nota_credito_fce_c"
+    #: La nota de débito (ADR-048): 2, 7 y 12, y la de una FCE: 202, 207 y 212. Suma plata a una factura con CAE
+    #: (intereses, un gasto, una diferencia). No hay valor en una base: `facturas.tipo` guarda el código de ARCA.
+    NOTA_DEBITO_A = "nota_debito_a"
+    NOTA_DEBITO_B = "nota_debito_b"
+    NOTA_DEBITO_C = "nota_debito_c"
+    NOTA_DEBITO_FCE_A = "nota_debito_fce_a"
+    NOTA_DEBITO_FCE_B = "nota_debito_fce_b"
+    NOTA_DEBITO_FCE_C = "nota_debito_fce_c"
 
 
 #: El código que ARCA le da a cada tipo. No es un detalle de presentación: va
@@ -79,6 +87,13 @@ CODIGO_ARCA = {
     TipoComprobante.NOTA_CREDITO_FCE_A: 203,
     TipoComprobante.NOTA_CREDITO_FCE_B: 208,
     TipoComprobante.NOTA_CREDITO_FCE_C: 213,
+    # Notas de débito: 2, 7 y 12; las de una FCE, 202, 207 y 212.
+    TipoComprobante.NOTA_DEBITO_A: 2,
+    TipoComprobante.NOTA_DEBITO_B: 7,
+    TipoComprobante.NOTA_DEBITO_C: 12,
+    TipoComprobante.NOTA_DEBITO_FCE_A: 202,
+    TipoComprobante.NOTA_DEBITO_FCE_B: 207,
+    TipoComprobante.NOTA_DEBITO_FCE_C: 212,
 }
 
 #: Del código de ARCA al tipo de este producto (lo inverso de `CODIGO_ARCA`).

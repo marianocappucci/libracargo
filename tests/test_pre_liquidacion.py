@@ -104,11 +104,10 @@ def escenario(cliente, monkeypatch):
     cargar_empresa(cliente)
     configurar_arca(cliente, cuit=CUIT_EMISOR, punto_venta=1)
     arca_responde(monkeypatch)
-    pf = cliente.post("/api/pre-facturas", json={
+    r = cliente.post("/api/comprobantes/desde-ordenes", json={
         "fecha": "2026-07-31", "cliente_id": d["cliente_a"],
         "tipo": "factura_b", "orden_ids": [d["ri_borde_desde"]["id"]]})
-    assert pf.status_code == 201, pf.text
-    assert cliente.post(f"/api/pre-facturas/{pf.json()['id']}/facturar").status_code == 201
+    assert r.status_code == 201, r.text
     return d
 
 

@@ -27,8 +27,6 @@ from app.models.operacion import (
     ComprobanteDeApertura,
     GastoDeProveedor,
     OrdenCarga,
-    PreFacturaCargo,
-    PreFacturaOrden,
 )
 from app.models.tarifario import TarifaDeReferencia, Tarifario
 
@@ -37,7 +35,7 @@ __all__ = [
     "Comprobante", "ComprobanteCargo",
     "ComprobanteDeApertura", "CondicionIVA",
     "EstadoOrden", "EtapaOrden", "GastoDeProveedor", "Localidad", "MedioPago", "MovimientoCaja",
-    "MovimientoCuenta", "OrdenCarga", "PreFacturaCargo", "PreFacturaOrden", "ConfiguracionEmpresa",
+    "MovimientoCuenta", "OrdenCarga", "ConfiguracionEmpresa",
     "RegistroAuditoria",
     "RolCuenta", "TarifaDeReferencia", "Tarifario", "Tercero", "TipoCarga", "TipoComprobante",
     "TipoMovimientoCaja", "Vehiculo",
