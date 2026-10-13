@@ -26,8 +26,10 @@ from libraauth.smtp_settings import SmtpSettingsRepository, resolver_smtp_config
 from libraauth.terminos import TerminosRepository, build_terminos_router
 from libracore import config_manager
 from libracore.arca_router import build_arca_router
+from libracore.candados import una_vez_al_arrancar
 from libracore.config_router import build_backup_router
 from libracore.db import core as libracore_core
+from libracore.errores import instalar_registro_de_errores
 from libracore.geografia import build_geo_router
 from libracore.resguardo_enlace import build_resguardo_enlace_router
 from libracore.respaldo import Instancia
@@ -217,23 +219,28 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     # la instancia —sin el logo de la base ni los datos de la empresa— y nada falla: es el defecto que se corrige.
     emisor_del_pdf_de_cargo.registrar()
 
-    if sembrar_admin:
-        # Variante **fail-closed**: sin `LIBRACARGO_ADMIN_PASSWORD` la app no
-        # levanta, salvo `ENV=development`. Es la que usan los productos
-        # FastAPI de la familia; la otra (`ensure_admin_user`) inventa una
-        # contraseña y la imprime, y no son intercambiables.
-        ensure_default_admin(usuarios, env_prefix="LIBRACARGO")
+    # 🔴 Las dos siembras de abajo son «si no existe, crear», y con `uvicorn --workers N` (ADR-044 de libracore; hoy N
+    # = 1) cada worker corre este arranque: las dos preguntas «¿existe?» se contestan «no» antes de que ninguna haya
+    # creado. `una_vez_al_arrancar` las serializa (el segundo espera al primero y ve lo que dejó), y por eso cada una
+    # **sigue preguntando adentro**: el candado las ordena, no las saltea. `destino` es la base del dominio.
+    with una_vez_al_arrancar("libracargo-sembrar", destino=config.database_url):
+        if sembrar_admin:
+            # Variante **fail-closed**: sin `LIBRACARGO_ADMIN_PASSWORD` la app no
+            # levanta, salvo `ENV=development`. Es la que usan los productos
+            # FastAPI de la familia; la otra (`ensure_admin_user`) inventa una
+            # contraseña y la imprime, y no son intercambiables.
+            ensure_default_admin(usuarios, env_prefix="LIBRACARGO")
 
-    # El visitante de la demo pública, **sólo si esta instancia es una demo**:
-    # se guía por `DEMO_MODE` + `DEMO_USERNAME`, las mismas dos variables que
-    # registran `POST /auth/demo`. En `suitrans` y en cualquier instancia de
-    # cliente devuelve None y no toca la base.
-    #
-    # 🔴 Sin esta llamada la ruta existe y no tiene a quién loguear: contesta
-    # `503 demo user not provisioned`. Cablear `incluir_demo=True` en el router
-    # no alcanza — la ruta y la siembra las conecta el producto, cada una por
-    # su lado, y ninguna de las dos delata que falta la otra.
-    ensure_demo_user(usuarios)
+        # El visitante de la demo pública, **sólo si esta instancia es una demo**:
+        # se guía por `DEMO_MODE` + `DEMO_USERNAME`, las mismas dos variables que
+        # registran `POST /auth/demo`. En `suitrans` y en cualquier instancia de
+        # cliente devuelve None y no toca la base.
+        #
+        # 🔴 Sin esta llamada la ruta existe y no tiene a quién loguear: contesta
+        # `503 demo user not provisioned`. Cablear `incluir_demo=True` en el router
+        # no alcanza — la ruta y la siembra las conecta el producto, cada una por
+        # su lado, y ninguna de las dos delata que falta la otra.
+        ensure_demo_user(usuarios)
 
     app = FastAPI(
         title="LibraCargo",
@@ -252,6 +259,10 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     # `CSP_SPA` y no la CSP por defecto: esa habilita `cdn.jsdelivr.net` para las
     # apps Jinja2, y este producto no carga nada externo. Ver libracore.
     app.add_middleware(SecurityHeadersMiddleware, csp=CSP_SPA)
+    # El registro de errores de la familia (ADR-045 de libracore): un 500 deja una línea en
+    # `DATA_DIR/errores/errores.jsonl` y responde con un `ref`; monta `POST /api/errores-cliente` para los errores del
+    # navegador. Una sola línea, **al construir la app**: Starlette no deja sumar handlers después.
+    instalar_registro_de_errores(app, "libracargo")
 
     # 🔴 **Sin esta línea se apagan DOS cosas, y ninguna avisa.** El registro de
     # accesos —quién entró, quién salió, quién lo intentó sin lograrlo— y el

@@ -15,6 +15,7 @@ from decimal import Decimal
 
 import pytest
 from libracore import notas_de_credito as motor
+from libracore.candados import candado_de_base
 from sqlalchemy import func, select
 
 from app import tiempo
@@ -167,6 +168,22 @@ def test_dos_pedidos_a_la_vez_emiten_una_sola_nota(cliente, datos, factura):
     assert r.status_code == 409, r.text
     assert "en curso" in r.json()["detail"]
     assert not motor.en_curso(("comprobantes", original_id)), "el candado se libera"
+    assert cliente.get(f"/api/comprobantes/{original_id}").json()["comprobante"]["anulado"] is False
+
+
+def test_un_pedido_en_otro_proceso_tambien_frena_a_este(cliente, datos, factura, engine):
+    """Con varios procesos por instancia (`uvicorn --workers N`, ADR-044 del motor; hoy N = 1) el candado en memoria no
+    alcanza: otro proceso es otra conexion a la base. Aca el "otro proceso" toma el candado de la base con su propia
+    conexion, y la nota tiene que contestar 409. Sin `conn=sesion` en `notas_de_credito.emitir`, este test da 201 y
+    habria dos notas ante ARCA."""
+    original_id = factura["comprobante"]["id"]
+    nombre = motor._nombre_del_candado(("comprobantes", original_id))
+    with engine.connect() as otro_proceso:
+        with candado_de_base(otro_proceso, nombre) as obtenido:
+            assert obtenido
+            r = _nota(cliente, original_id)
+    assert r.status_code == 409, r.text
+    assert "en curso" in r.json()["detail"]
     assert cliente.get(f"/api/comprobantes/{original_id}").json()["comprobante"]["anulado"] is False
 
 
