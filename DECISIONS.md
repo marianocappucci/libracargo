@@ -1144,3 +1144,22 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
 - Un límite de tasa transitorio cuesta unos segundos de espera en el paso, no un CI en rojo. El espejo sólo se usa si el ECR falla; el warning de GitHub deja el rastro.
 - La lógica de reintento de `cargar.py` se prueba sin Docker ni red (`tests/test_migracion_imagen.py`). El paso del workflow se probó con un `docker` falso para los cuatro caminos (ECR, `mirror.gcr.io`, Docker Hub, ninguno).
 - Pendiente de decidir: si más productos terminan levantando MariaDB, la descarga con espejo pasa a una Action compartida en libra-web-kit, como `postgres-ci`. Hoy es el único.
+
+
+## ADR-047 — Varios procesos listos (`WEB_CONCURRENCY`, hoy 1) y el registro de errores de la familia
+
+- Estado: aceptada. **Exige `libracore >= v1.159.0`, `libraauth >= v0.50.0` (con migración `0003_captcha_usados`) y `libra-ui >= v0.142.1`.**
+- Fecha: 2026-10-13
+- Contexto: el dueño decidió (2026-10-13) dejar el código listo para correr con `uvicorn --workers N` **sin prender más workers todavía**: todo sigue en 1 (ADR-044 de libracore, `docs/varios-procesos.md`). Y (2026-10-12) que la familia tenga un registro de errores propio (ADR-045 de libracore, ADR-053 de libra-ui): hasta ahora un 500 iba al stdout de uvicorn y se perdía en cada recreate del contenedor.
+- Qué ya existía (se miró antes): `docs/varios-procesos.md` y `docs/errores.md` del motor, ADR-023 de libraauth (captcha en la base), el `pool_pre_ping` de este producto. `pool_pre_ping=True` ya estaba (`app/db.py`).
+- Decisión:
+  - **Siembras de arranque serializadas.** `ensure_default_admin` y `ensure_demo_user` (`app/main.py`, `crear_app`) corren adentro de `una_vez_al_arrancar("libracargo-sembrar", destino=config.database_url)`; cada uno sigue preguntando adentro.
+  - **Captcha en la base.** `app/routers/auth.py`: `captcha_usados=UsadosEnBase(lambda: db.fabrica_de_sesiones()())` (la fábrica se rearma en cada `crear_app()`).
+  - **Nota de crédito.** `app/servicios/notas_de_credito.py::emitir` pasa `conn=sesion` a `emitir_nota_de_credito`: la guarda «una a la vez» toma además un candado de la base (`pg_try_advisory_xact_lock`) que dura hasta que termina la transacción de la sesión. Nada de la emisión hace `commit` ni `rollback` de la sesión; el `commit` es del router (`routers/comprobantes.py`), que ya era así.
+  - **Registro de errores.** Backend: `instalar_registro_de_errores(app, "libracargo")` al lado de `SecurityHeadersMiddleware`, que monta `POST /api/errores-cliente`. Frontend: `instalarReporteDeErrores()` antes de montar y `<ErrorBoundary>` alrededor de todo en `main.tsx`. Compose de `-dev`: `LIBRA_ENTORNO=dev`, `LIBRA_INSTANCIA=libracargo-dev`, `LIBRA_VERSION=${LIBRA_VERSION:-dev}`; las instancias de cliente y demo las escribe el panel.
+  - **Compose de `-dev`**: `exec uvicorn ... --workers ${WEB_CONCURRENCY:-1}`. `uvicorn>=0.30` ya era el piso.
+- Consecuencias:
+  - **La migración `0003` de libraauth corre antes de uvicorn** en todo camino de arranque (la cadena de `scripts/panel_admin.py` y el `command:` del compose ya incluyen `libraauth-migrar upgrade`): `exigir_schema_al_dia` hace que el producto no arranque sin ella, aunque no use `UsadosEnBase`.
+  - Sin migración propia. Con más de un worker, después de un restore en caliente hay que **reiniciar el contenedor** (`docs/varios-procesos.md` del motor).
+  - Las serializaciones del arranque cubren las siembras («si no existe, crear»); la creación idempotente del esquema (`CREATE TABLE IF NOT EXISTS` de `ensure_schema`) no se serializa: antes de subir `WEB_CONCURRENCY` a más de 1 hay que medirlo con dos workers.
+  - Tests: `tests/test_registro_de_errores.py`, `tests/test_arranque_varios_procesos.py` y el caso de `captcha_usados` en `tests/test_captcha_login.py`; los dobles del captcha de los `conftest` aceptan el segundo argumento que libraauth v0.50.0 pasa a `_captcha_de(request, usados)`.

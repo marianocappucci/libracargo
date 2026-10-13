@@ -30,7 +30,10 @@ que `crear_app()` tampoco corre al importar: ver el docstring de `main.py`.
 from __future__ import annotations
 
 from fastapi import APIRouter
+from libraauth.captcha import UsadosEnBase
 from libraauth.session_auth import build_json_api_auth_router
+
+from app import db
 
 
 def construir_router() -> APIRouter:
@@ -51,4 +54,10 @@ def construir_router() -> APIRouter:
         # fallos: decisión del humano (2026-09-11, ADR-014 de libraauth). Un
         # captcha que falta o no vale da 400 y no suma intento fallido.
         captcha=True,
+        # Los desafíos ya resueltos se anotan en `libraauth_captcha_usados` (libraauth v0.50.0, ADR-023) y no en la
+        # memoria del proceso: con `uvicorn --workers N` (hoy N = 1) una lista por proceso deja que un desafío
+        # resuelto sirva **una vez por worker**. Necesita la migración `0003` de la cadena de libraauth, que corre
+        # antes de uvicorn. La fábrica de sesiones se resuelve en cada uso (`lambda`): `db.inicializar()` la rearma
+        # cada vez que `crear_app()` corre.
+        captcha_usados=UsadosEnBase(lambda: db.fabrica_de_sesiones()()),
     )

@@ -373,7 +373,9 @@ def _captcha_aprobado():
     desharía también este parche y el siguiente login daría 400.
     """
     mp = pytest.MonkeyPatch()
-    mp.setattr(_session_auth, "_captcha_de", lambda request: _CAPTCHA_DE_PRUEBA)
+    # libraauth v0.50.0 (ADR-023) llama `_captcha_de(request, usados)`: el segundo argumento es el `captcha_usados=`
+    # del router, que el doble ignora.
+    mp.setattr(_session_auth, "_captcha_de", lambda request, usados=None: _CAPTCHA_DE_PRUEBA)
     yield
     mp.undo()
 
@@ -607,3 +609,11 @@ def rearmar_en(revision: str) -> None:
             os.environ.pop("DATABASE_URL", None)
         else:
             os.environ["DATABASE_URL"] = previo
+
+
+@pytest.fixture(autouse=True)
+def _errores_a_tmp(tmp_path, monkeypatch):
+    """El registro de errores (ADR-045) escribe en `DATA_DIR/errores/` o, sin `DATA_DIR`, en `./errores/`: un
+    test que provoca un 500 a propósito (la base caída en `/health`) dejaría el archivo en el repo. Cada test
+    escribe en su tmp."""
+    monkeypatch.setenv("LIBRA_ERRORES_DIR", str(tmp_path / "errores-del-registro"))
