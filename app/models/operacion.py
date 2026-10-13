@@ -25,6 +25,7 @@ from sqlalchemy import (
     TypeDecorator,
     func,
     join,
+    text,
 )
 from sqlalchemy.orm import Mapped, column_property, mapped_column
 
@@ -133,15 +134,6 @@ facturas = Table(
 )
 
 
-#: La bandeja de comprobantes por facturar del motor, donde vive la pre factura (ADR-030 de
-#: LibraCore). Sólo el `id`: lo propio de la pre factura va en `pre_facturas_cargo`, y lo demás
-#: (ítems, cliente, estado) lo lee y lo escribe `libracore.pre_facturas`.
-comprobantes_pendientes = Table(
-    "comprobantes_pendientes", MOTOR,
-    Column("id", BigInteger, primary_key=True),
-)
-
-
 class ComprobanteCargo(Base, Auditable):
     """Lo que sólo este producto sabe de un comprobante. Una fila por cada fila de `facturas`.
 
@@ -180,6 +172,10 @@ class ComprobanteCargo(Base, Auditable):
         ForeignKey(facturas.c.id, ondelete="RESTRICT", name="fk_comprobantes_cargo_asociado"),
         nullable=True,
     )
+    #: 🔑 **No agrupa órdenes** (ADR-048): una factura directa (conceptos libres, «Nueva factura») o una nota de
+    #: débito. El gate de F5 compara cada comprobante contra las órdenes que agrupa, y estos no tienen: sin esta marca
+    #: aparecerían como un comprobante que no coincide con sus órdenes, siempre. `False` es todo lo anterior.
+    sin_ordenes: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
 
     __table_args__ = (
         Index("ix_comprobantes_cargo_asociado", "comprobante_asociado_id"),
@@ -216,56 +212,6 @@ class Comprobante(Base):
         # Los datos de ARCA del comprobante los escribe el motor, no el ORM.
         "exclude_properties": ["ambiente", "anulada_en"],
     }
-
-
-class PreFacturaCargo(Base):
-    """Lo que sólo este producto sabe de una pre factura: el tercero.
-
-    La pre factura vive en `comprobantes_pendientes` del motor (ADR-030 de LibraCore), que guarda al
-    cliente como foto y al emisor como el `arca_config` del CUIT de la empresa, o `NULL` si la instancia
-    todavía no tiene uno. El tercero es una FK de este producto, que la bandeja del motor no conoce.
-    Una fila por pre factura, con el **mismo id**, como `comprobantes_cargo` con `facturas`.
-    """
-
-    __tablename__ = "pre_facturas_cargo"
-
-    pre_factura_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey(comprobantes_pendientes.c.id, ondelete="RESTRICT",
-                   name="fk_pre_facturas_cargo_pre_factura"),
-        primary_key=True, autoincrement=False,
-    )
-    cliente_id: Mapped[int] = mapped_column(
-        ForeignKey("terceros.id", ondelete="RESTRICT"), nullable=False
-    )
-
-    __table_args__ = (Index("ix_pre_facturas_cargo_cliente", "cliente_id"),)
-
-
-class PreFacturaOrden(Base):
-    """La reserva de una orden en una pre factura abierta (pendiente, enviada o aceptada).
-
-    🔑 **`orden_id` es la clave primaria**: una orden está en a lo sumo una pre factura abierta, y lo
-    dice la base y no sólo el código. La fila existe **mientras la pre factura está abierta**: anular
-    la pre factura o facturarla la borra. Así una orden que vuelve a pendientes (porque se anuló el
-    comprobante que la facturó) no queda ligada a una pre factura ya cerrada, y se puede reservar de
-    nuevo. Qué órdenes tuvo una pre factura cerrada lo dicen sus ítems (`orden_id`) y, si se facturó,
-    `ordenes_carga.comprobante_id`.
-    """
-
-    __tablename__ = "pre_factura_ordenes"
-
-    orden_id: Mapped[int] = mapped_column(
-        ForeignKey("ordenes_carga.id", ondelete="RESTRICT"), primary_key=True, autoincrement=False
-    )
-    pre_factura_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey(comprobantes_pendientes.c.id, ondelete="RESTRICT",
-                   name="fk_pre_factura_ordenes_pre_factura"),
-        nullable=False,
-    )
-
-    __table_args__ = (Index("ix_pre_factura_ordenes_pre_factura", "pre_factura_id"),)
 
 
 #: El comprobante de apertura del legado (ADR-010): **no es fiscal**, así que no

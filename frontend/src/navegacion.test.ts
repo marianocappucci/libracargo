@@ -58,10 +58,17 @@ describe('destinoDelLog', () => {
     expect(destinoDelLog('gasto_de_proveedor', 5)).toBe('/comprobantes?seccion=proveedores&ver=5')
   })
 
-  it('la pre factura lleva a su pantalla, que no es un diálogo sobre la lista', () => {
-    expect(destinoDelLog('pre_factura', 7)).toBe('/pre-facturas/7')
-    expect(irA.preFactura(7)).toBe('/pre-facturas/7')
+  it('🔑 la pre factura se retiró (ADR-048): lo que quedó en el log se ve, pero ya no lleva a ninguna pantalla', () => {
+    expect(destinoDelLog('pre_factura', 7)).toBeNull()
     expect(destinoDelLog('pre_factura', null)).toBeNull()
+    expect('preFactura' in irA).toBe(false)
+  })
+
+  it('«Nueva factura» y «Facturar pendientes» llevan a su pantalla, con el cliente puesto si se sabe', () => {
+    expect(irA.nuevaFactura()).toBe('/comprobantes/nueva')
+    expect(irA.nuevaFactura(3)).toBe('/comprobantes/nueva?cliente=3')
+    expect(irA.facturarPendientes()).toBe('/comprobantes/facturar')
+    expect(irA.facturarPendientes(3)).toBe('/comprobantes/facturar?cliente=3')
   })
 
   it('🔑 los maestros se auditan en PLURAL, que es el prefijo del ABM', () => {
@@ -145,13 +152,12 @@ describe('Comprobantes: secciones y menú', () => {
 
   it('🔑 todo lo que cuelga de Comprobantes marca esa entrada del menú', () => {
     for (const ruta of [
-      '/comprobantes', '/comprobantes/facturar', '/pre-facturas', '/pre-facturas/7',
-      '/pre-facturas/7/editar', '/gastos',
+      '/comprobantes', '/comprobantes/facturar', '/comprobantes/nueva', '/gastos',
     ]) expect(estaActivo(ruta, '/comprobantes', RUTAS_DE_COMPROBANTES), ruta).toBe(true)
   })
 
   it('el resto de las rutas no la marca, ni las que sólo se parecen', () => {
-    for (const ruta of ['/', '/ordenes', '/cuentas', '/caja', '/reportes/por-cliente', '/gastos-raros', '/pre-facturasX'])
+    for (const ruta of ['/', '/ordenes', '/cuentas', '/caja', '/reportes/por-cliente', '/gastos-raros', '/pre-facturas'])
       expect(estaActivo(ruta, '/comprobantes', RUTAS_DE_COMPROBANTES), ruta).toBe(false)
 })
 })

@@ -20,8 +20,6 @@ import type { FilaDeCuenta } from '@/api/cuentas'
 export const irA = {
   orden: (id: number) => `/ordenes?ver=${id}`,
   comprobante: (id: number) => `/comprobantes?ver=${id}`,
-  /** La pre factura es una pantalla y no un diálogo: tiene sus acciones (enviar, aceptar, facturar). */
-  preFactura: (id: number) => `/pre-facturas/${id}`,
   caja: (id: number) => `/caja?ver=${id}`,
   cuenta: (rol: string, terceroId: number) => `/cuentas?rol=${rol}&tercero=${terceroId}`,
   /** Sin rol: la pantalla elige el primero que el tercero tenga. Es todo lo que
@@ -34,6 +32,9 @@ export const irA = {
   /** La pantalla de facturar, con el cliente ya elegido si se sabe cual. */
   facturarPendientes: (clienteId?: number) =>
     clienteId ? `/comprobantes/facturar?cliente=${clienteId}` : '/comprobantes/facturar',
+  /** «Nueva factura» (ADR-048): una factura de conceptos libres, sin órdenes ni remitos, con el cliente ya elegido si se sabe cual. */
+  nuevaFactura: (clienteId?: number) =>
+    clienteId ? `/comprobantes/nueva?cliente=${clienteId}` : '/comprobantes/nueva',
   /** «Clientes», una entrada propia del menú (ADR-045; era una pestaña de «Entidades»). Con `ver`, con la ficha de esa fila abierta. */
   clientes: (ver?: number) => (ver !== undefined ? `/clientes?ver=${ver}` : '/clientes'),
   /** «Proveedores», una entrada propia del menú (ADR-045; era una pestaña de «Entidades»). Con `ver`, con la ficha de esa fila abierta. */
@@ -139,10 +140,11 @@ export function seccionDe(valor: string | null): SeccionDeComprobantes {
 /** Las rutas que pertenecen a «Comprobantes», para que el menú marque esa entrada en todas
  *  (`activoEn` de libra-ui 0.119.0: cada una cubre también lo que cuelga de ella).
  *
- *  «Comprobantes» abarca más que `/comprobantes`: facturar pendientes (`/comprobantes/facturar`),
- *  las pre facturas (lista, detalle, edición) y el enlace viejo `/gastos`.
+ *  «Comprobantes» abarca más que `/comprobantes`: facturar pendientes (`/comprobantes/facturar`), la nueva factura
+ *  (`/comprobantes/nueva`, ADR-048) y el enlace viejo `/gastos`. Las pre facturas (`/pre-facturas*`) ya no existen: un enlace
+ *  viejo cae en la lista de Comprobantes (`App.tsx`).
  */
-export const RUTAS_DE_COMPROBANTES = ['/comprobantes', '/pre-facturas', '/gastos']
+export const RUTAS_DE_COMPROBANTES = ['/comprobantes', '/gastos']
 
 /** El origen de un asiento de cuenta corriente, o `null` si no tiene.
  *
@@ -179,7 +181,7 @@ export function destinoDelLog(entidad: string, entidadId: number | null): string
   if (entidadId !== null) {
     if (entidad === 'orden_carga') return irA.orden(entidadId)
     if (entidad === 'comprobante') return irA.comprobante(entidadId)
-    if (entidad === 'pre_factura') return irA.preFactura(entidadId)
+    // `pre_factura` (ADR-032) ya no tiene pantalla: las pre facturas se retiraron (ADR-048). Su rastro en el log queda, sin enlace.
     if (entidad === 'movimiento_caja') return irA.caja(entidadId)
     if (entidad === 'gasto_de_proveedor') return irA.gasto(entidadId)
     // El titular de cartas de porte lleva a su ficha, y su plantilla a la página de la plantilla (el id de la plantilla

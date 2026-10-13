@@ -24,7 +24,7 @@ from app.servicios import emision_arca
 # Las fixtures `cliente` y `datos` salen del conftest; de acá sólo los
 # helpers, que son funciones normales.
 from tests.conftest import cargar_empresa, par_de_arca
-from tests.test_comprobantes import facturado_a_mano, facturar, orden, pre_factura
+from tests.test_comprobantes import facturado_a_mano, facturar, orden
 
 CUIT = "20-12345678-6"
 
@@ -95,10 +95,10 @@ def _arca_responde(monkeypatch, *, ultimo=41, cae="75123456789012",
 # ── El camino que sostiene la instancia viva ────────────────────────────────
 
 def test_sin_arca_no_se_factura_y_lo_dice(cliente, datos):
-    """🔑 Ya no hay otro camino: sin certificado de ARCA la pre factura espera, y no se registra a mano.
+    """🔑 Ya no hay otro camino: sin certificado de ARCA no se factura, y no se registra a mano.
 
-    La instancia del cliente **no tiene ningún certificado cargado** (ADR-032): hasta entonces genera y
-    manda pre facturas, y el botón de facturar contesta qué falta sin tocar nada.
+    La instancia del cliente **no tiene ningún certificado de producción cargado**: el botón de facturar
+    contesta qué falta (409) sin tocar nada (ADR-048: sin pre factura intermedia, no queda nada "esperando").
     """
     cargar_empresa(cliente)
     a = orden(cliente, datos, "1000.00")
@@ -192,7 +192,7 @@ def test_si_el_cuit_de_arca_no_es_el_de_la_empresa_no_emite(cliente, datos, monk
 
     La configuración de ARCA lleva el CUIT **que factura**, que es el de la empresa (aunque el certificado esté
     a nombre de otra persona que la representa). Si no coinciden, ARCA firmaría por un contribuyente que no es
-    el emisor: la pre factura espera, y el mensaje dice los dos CUIT y cómo se corrige.
+    el emisor: no se emite nada, y el mensaje dice los dos CUIT y cómo se corrige.
 
     Y el control importa tanto como el caso: la instancia SÍ tiene ARCA configurado. Sin eso, "no emitió"
     pasaría igual con la configuración vacía (ver `test_con_el_cuit_de_la_empresa_se_emite`).
@@ -475,8 +475,6 @@ def test_el_ensayo_NO_deja_nada(cliente, datos, empresa_en_homologacion, monkeyp
     quedo = cliente.get(f"/api/ordenes/{a['id']}").json()
     assert quedo["estado"] == "pendiente", "cerró la orden"
     assert quedo["comprobante_id"] is None
-    (pf,) = cliente.get("/api/pre-facturas").json()["items"]
-    assert pf["estado"] == "pendiente" and pf["factura_id"] is None, "cerró la pre factura"
 
 
 def test_el_ensayo_no_deja_asiento_de_auditoria(cliente, datos,
@@ -494,22 +492,18 @@ def test_el_ensayo_no_deja_asiento_de_auditoria(cliente, datos,
     assert r.json()["registros"] == [], r.json()
 
 
-def test_la_misma_pre_factura_se_puede_facturar_de_verdad_despues_del_ensayo(
+def test_las_mismas_ordenes_se_pueden_facturar_de_verdad_despues_del_ensayo(
         cliente, datos, empresa_en_homologacion, monkeypatch):
     """🔑 Lo que el ensayo tiene que dejar posible, y es el punto de todo esto.
 
-    Probar con el cliente y **después** cortar a facturación real sobre la
-    misma pre factura. Si el ensayo la cerrara (o cerrara sus órdenes), el
-    corte empezaría con la operación a medio facturar.
+    Probar con el cliente y **después** cortar a facturación real sobre las mismas órdenes. Si el ensayo las cerrara,
+    el corte empezaría con la operación a medio facturar.
     """
     _arca_responde(monkeypatch, ultimo=41)
     a = orden(cliente, datos, "1000.00")
-    pf = pre_factura(cliente, datos, [a]).json()
-    ensayo = cliente.post(f"/api/pre-facturas/{pf['id']}/facturar")
+    ensayo = facturar(cliente, datos, [a])
     assert ensayo.status_code == 200, ensayo.text
-    abierta = cliente.get(f"/api/pre-facturas/{pf['id']}").json()
-    assert abierta["estado"] == "pendiente" and abierta["factura_id"] is None, \
-        "el ensayo no cierra la pre factura"
+    assert cliente.get(f"/api/ordenes/{a['id']}").json()["estado"] == "pendiente", "el ensayo no cierra la orden"
 
     # El corte: el selector pasa a producción.
     assert cliente.put("/api/arca", json={
@@ -523,10 +517,10 @@ def test_la_misma_pre_factura_se_puede_facturar_de_verdad_despues_del_ensayo(
                             ).status_code == 200
 
     _arca_responde(monkeypatch, ultimo=7)
-    r = cliente.post(f"/api/pre-facturas/{pf['id']}/facturar")
+    r = facturar(cliente, datos, [a])
     assert r.status_code == 201, r.text
     assert r.json()["numero"] == 8, "la numeración real arranca donde dice ARCA"
-    assert cliente.get(f"/api/pre-facturas/{pf['id']}").json()["estado"] == "facturado"
+    assert cliente.get(f"/api/ordenes/{a['id']}").json()["estado"] == "facturada"
 
 
 def test_con_el_selector_en_produccion_se_guarda_como_siempre(cliente, datos,

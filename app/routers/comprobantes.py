@@ -1,16 +1,19 @@
-"""Comprobantes: lo facturado, sus totales, la anulación de lo que no tiene CAE y las notas de crédito.
+"""Comprobantes: facturar directo por ARCA, lo facturado, y sus notas de crédito y de débito.
 
-**Acá no se crean comprobantes.** Hasta ADR-032 `POST /api/comprobantes` facturaba un grupo de órdenes, y si
-no había certificado de ARCA, **registraba a mano** el punto de venta y el número que alguien
-tipeaba. Ya no: el comprobante sale siempre de una pre factura que el cliente pudo ver
-(`POST /api/pre-facturas/{id}/facturar`, en `app/routers/pre_facturas.py`), y el número lo pone ARCA y el
-punto de venta es el de su configuración. El emisor es siempre la empresa (ADR-035).
-Lo que se registró a mano antes y lo migrado del legado sigue ahí, y se anula como siempre.
+**El comprobante sale de dos caminos y los dos van directo a ARCA** (ADR-048, que reemplaza a la pre factura de
+ADR-032): `POST /api/comprobantes/desde-ordenes` (**Facturar pendientes**: las órdenes de un cliente) y
+`POST /api/comprobantes/directa` (**Nueva factura**: conceptos libres, sin órdenes ni remitos). El número lo pone ARCA,
+el punto de venta es el de su configuración y el emisor es siempre la empresa (ADR-035). Sin certificado de producción,
+409 con el motivo y sin tocar nada. Lo que se registró a mano antes y lo migrado del legado sigue ahí, y se anula como
+siempre (`DELETE`, sólo sin CAE).
+
+Una factura con CAE se corrige con una **nota de crédito** (la acredita, total o por un importe) o se completa con una
+**nota de débito** (le suma un importe: intereses, un gasto). Las dos las emite ARCA y las dos salen del motor.
 
 **La operación es una sola, no tres pasos.** En el legado el alta de una orden insertaba en `orden_carga`,
 después en `facturas` y después en la cuenta corriente, con `INSERT` sueltos y sin transacción: si el segundo
 fallaba, el primero ya estaba grabado. Acá el comprobante, el estado de las órdenes y el movimiento de la
-cuenta del cliente entran o no entran juntos (ver `app/servicios/pre_facturas.py`).
+cuenta del cliente entran o no entran juntos (ver `app/servicios/facturacion.py`).
 """
 
 import asyncio
@@ -43,12 +46,23 @@ from app.schemas.comprobantes import (
     TIPOS_FCE,
     ComprobanteConOrdenes,
     ComprobanteOut,
+    FacturaDirectaIn,
+    FacturarOrdenesIn,
     NotaDeCreditoIn,
+    NotaDeDebitoIn,
     TotalDeComprobantes,
 )
-from app.servicios import auditoria, comprobantes, cuentas, emision_arca, notas_de_credito
+from app.servicios import (
+    auditoria,
+    comprobantes,
+    cuentas,
+    emision_arca,
+    facturacion,
+    notas_de_credito,
+    notas_de_debito,
+)
 from app.servicios.comprobantes import (
-    TIPOS_NOTA,
+    TIPOS_CON_ASOCIADO,
     etiqueta,
     sumar_ordenes,
     totales_facturados,
@@ -121,7 +135,7 @@ def listar(
 
 @router.get("/fce/cuentas")
 def fce_cuentas(sesion: Session = Depends(obtener_sesion)):
-    """En qué cuentas puede cobrar una FCE la empresa (libracore ADR-040): para elegir una al armar la pre factura.
+    """En qué cuentas puede cobrar una FCE la empresa (libracore ADR-040): para elegir una al facturar.
 
     `cuentas` es `[{cbu, alias, etiqueta}]` y `predeterminada` el CBU que sale si no se elige otra. Sin configuración
     de ARCA, o con más de una que no se sabe cuál es, la lista viene vacía: la pantalla dice que no se puede.
@@ -166,13 +180,87 @@ def fce_corresponde(
     return resultado | {"fce_habilitada": habilitada}
 
 
+@router.get("/tipos")
+def tipos_de_factura(cliente_id: int | None = None, sesion: Session = Depends(obtener_sesion)):
+    """Qué clases de comprobante puede emitir la empresa (a este cliente, si se pasa): la lista de «Nueva factura».
+
+    El emisor manda (monotributo: C; inscripto: A o B; exento: B) y después el receptor (a un inscripto o monotributista
+    le corresponde A). `sugerido` es la clase común que le toca cuando hay una sola. `problema` dice por qué no se puede
+    emitir ninguna (la empresa sin condición de IVA). Es una ayuda para la pantalla: lo que vale lo vuelve a validar
+    `POST /directa`.
+    """
+    cliente = sesion.get(Tercero, cliente_id) if cliente_id is not None else None
+    if cliente_id is not None and cliente is None:
+        raise HTTPException(404, f"no existe el tercero {cliente_id}")
+    return facturacion.opciones_de_tipo(sesion, cliente)
+
+
+def _facturar(sesion: Session, emision) -> Comprobante | JSONResponse:
+    """El borde HTTP de las dos emisiones: confirma, o traduce lo que pasó (`Rechazo`, `Ensayo`, la base).
+
+    `emision` es una función sin argumentos que llama al servicio. **Un ensayo contra homologación contesta 200 y no
+    201** (no se creó nada): la pantalla se guía por `ensayo`, pero el código tiene que decir la verdad igual.
+    """
+    try:
+        comprobante = emision()
+        sesion.commit()
+    except facturacion.Ensayo as e:
+        return JSONResponse(status_code=200, content=e.respuesta)
+    except facturacion.Rechazo as e:
+        sesion.rollback()
+        raise HTTPException(e.status, e.detalle) from None
+    except IntegrityError as err:
+        sesion.rollback()
+        raise traducir_integridad(err) from None
+    # Ya autorizado y guardado: el PDF va después, y si no sale el comprobante queda igual (ver `guardar_pdf`).
+    comprobantes.guardar_pdf(sesion, comprobante)
+    sesion.refresh(comprobante)
+    return comprobante
+
+
+# `def` y no `async def`, a propósito: la `Session` y `openssl` son sincrónicos y bloquearían el loop de uvicorn, que
+# corre con un solo proceso. Lo asincrónico (WSAA y WSFE) va con `asyncio.run` en un loop propio de este hilo.
+@router.post("/desde-ordenes", response_model=ComprobanteOut, status_code=201)
+def facturar_ordenes(datos: FacturarOrdenesIn, sesion: Session = Depends(obtener_sesion),
+                     actual: dict = Depends(get_current_user)):
+    """**Facturar pendientes**: emite por ARCA el comprobante de las órdenes elegidas de un cliente.
+
+    Sin pre factura: el CAE sale en el momento. Los ítems y los importes salen de las órdenes; el número lo pone ARCA y
+    el punto de venta es el de su configuración. **Si la empresa no puede emitir (sin CUIT, sin certificado o con otro
+    CUIT) no se toca nada** (409, y dice cuál). Si ARCA rechaza, no queda nada (502). Contra homologación se corre todo
+    y se revierte, y contesta 200 con el resultado del ensayo.
+    """
+    return _facturar(sesion, lambda: facturacion.facturar_ordenes(
+        sesion, actual, cliente_id=datos.cliente_id, orden_ids=datos.orden_ids, tipo=datos.tipo, fecha=datos.fecha,
+        vencimiento=datos.fecha_vencimiento_pago, cuenta=datos.fce_cbu, observaciones=datos.observaciones))
+
+
+@router.post("/directa", response_model=ComprobanteOut, status_code=201)
+def facturar_directa(datos: FacturaDirectaIn, sesion: Session = Depends(obtener_sesion),
+                     actual: dict = Depends(get_current_user)):
+    """**Nueva factura**: emite por ARCA un comprobante de conceptos libres, sin órdenes ni remitos.
+
+    Cliente, clase (la que corresponde a la empresa y al cliente: `GET /tipos`), fecha y conceptos —descripción,
+    cantidad, precio y alícuota de IVA—. Los importes los calcula el servidor. Mismas garantías que
+    `POST /desde-ordenes`: sin certificado de producción, 409 y no se toca nada; si ARCA rechaza, no queda nada; contra
+    homologación se corre todo y se revierte. El comprobante suma a la cuenta corriente del cliente.
+    """
+    return _facturar(sesion, lambda: facturacion.facturar_directa(
+        sesion, actual, cliente_id=datos.cliente_id, conceptos=datos.conceptos, tipo=datos.tipo, fecha=datos.fecha,
+        vencimiento=datos.fecha_vencimiento_pago, cuenta=datos.fce_cbu, observaciones=datos.observaciones))
+
+
 @router.get("/{id_}", response_model=ComprobanteConOrdenes)
 def traer(id_: int, sesion: Session = Depends(obtener_sesion)):
     """El comprobante con sus órdenes, y si los dos importes dan lo mismo."""
     comprobante = _traer(sesion, id_)
     ordenes = _ordenes_de(sesion, id_)
     suma = sumar_ordenes(ordenes)
-    if comprobante.anulado or comprobante.tipo in TIPOS_NOTA:
+    if comprobante.sin_ordenes:
+        # Una factura directa o una nota de débito no agrupa órdenes (ADR-048): no hay con qué compararla, y compararla
+        # con una suma que no tiene la mostraría siempre como un comprobante que no coincide.
+        coinciden = suma.cantidad == 0
+    elif comprobante.anulado or comprobante.tipo in TIPOS_CON_ASOCIADO:
         # Una nota de crédito no agrupa órdenes: acredita a un comprobante. Compararla con una suma de
         # órdenes que no tiene la mostraría siempre como un comprobante que no coincide con las suyas.
         # Un anulado devolvió sus órdenes a pendientes, así que sus importes ya
@@ -184,12 +272,13 @@ def traer(id_: int, sesion: Session = Depends(obtener_sesion)):
         coinciden = ((comprobante.neto, comprobante.iva, comprobante.total)
                      == (suma.neto, suma.iva, suma.total))
     acreditado = saldo = None
-    if comprobante.cae and not comprobante.anulado and comprobante.tipo not in TIPOS_NOTA:
+    if comprobante.cae and not comprobante.anulado and comprobante.tipo not in TIPOS_CON_ASOCIADO:
         # Lo que la pantalla necesita para ofrecer la nota: cuánto se acreditó y cuánto queda. Lo cuenta el motor.
         acreditado, saldo = notas_de_credito.saldo(sesion, comprobante)
     return ComprobanteConOrdenes(
         comprobante=comprobante, ordenes=ordenes, suma_de_ordenes=suma,
         coinciden=coinciden, notas=notas_de_credito.notas_de(sesion, id_),
+        notas_debito=notas_de_debito.notas_de(sesion, id_),
         acreditado=acreditado, saldo_acreditable=saldo,
     )
 
@@ -288,6 +377,7 @@ _STATUS_DE_NOTA = {
     NotaNoPermitida.RECEPTOR: 422,
     NotaNoPermitida.IMPORTE: 422,
     NotaNoPermitida.SUPERA_SALDO: 409,
+    NotaNoPermitida.ORIGINAL_SIN_CAE: 409,
 }
 
 
@@ -358,6 +448,72 @@ def nota_de_credito(id_: int, datos: NotaDeCreditoIn, sesion: Session = Depends(
     auditoria.registrar(sesion, actual, "comprobante", nota.id, AccionAuditoria.ALTA, despues=nota)
     auditoria.registrar(sesion, actual, "comprobante", original.id, AccionAuditoria.MODIFICACION,
                         antes=antes, despues=original)
+    try:
+        sesion.commit()
+    except IntegrityError as err:
+        sesion.rollback()
+        raise traducir_integridad(err) from None
+    # La nota ya está autorizada y guardada: su PDF va después, y si no sale queda igual (ver `guardar_pdf`).
+    comprobantes.guardar_pdf(sesion, nota)
+    sesion.refresh(nota)
+    return nota
+
+
+@router.post("/{id_}/nota-de-debito", response_model=ComprobanteOut, status_code=201)
+# `def` y no `async def`, por lo mismo que `facturar`.
+def nota_de_debito(id_: int, datos: NotaDeDebitoIn, sesion: Session = Depends(obtener_sesion),
+                   actual: dict = Depends(get_current_user)):
+    """Le suma un importe a una factura emitida por ARCA con una **nota de débito** autorizada por ARCA (ADR-048).
+
+    La lógica es la del motor (`libracore.notas_de_debito`): la letra y la FCE se heredan (2/7/12; 202/207/212), el
+    original tiene que tener CAE, el CUIT del receptor tiene que servir, dos pedidos a la vez emiten una sola nota y la
+    nota sale con la fecha de hoy y asociada a su factura. **A diferencia de la de crédito va siempre por un importe
+    (con IVA) y no tiene tope**: agrega plata (intereses, un gasto, una diferencia). Lo propio de este producto, que
+    pasa **en la misma transacción**: la cuenta corriente del cliente recibe el **cargo** por el importe, con la fecha
+    de la nota. No libera órdenes ni anula el original.
+
+    ⚠️ **Si ARCA rechaza, no queda nada**: ni la nota ni el cargo. Contra homologación se corre todo y se revierte (ver
+    `facturar`): una prueba no mueve la cuenta del cliente.
+    """
+    # Sin `FOR UPDATE`, a diferencia de la nota de crédito: la de débito no modifica el original, y bloquearlo haría
+    # que un doble clic esperara al primer pedido y emitiera una segunda nota. Lo que lo frena es el candado del motor
+    # (`conn=sesion`): el segundo pedido recibe un 409 «en curso» en vez de esperar.
+    original = _traer(sesion, id_)
+    if original.anulado:
+        raise HTTPException(409, f"el comprobante {id_} ya esta anulado")
+    if not original.cae:
+        raise HTTPException(
+            409,
+            "este comprobante no tiene CAE: ARCA no lo conoce, asi que no hay nada a lo que asociar una nota de debito",
+        )
+
+    hoy = tiempo.hoy()
+    try:
+        nota, cfg = asyncio.run(notas_de_debito.emitir(
+            sesion, original, motivo=datos.motivo, hoy=hoy, importe=datos.importe))
+    except NotaNoPermitida as e:
+        sesion.rollback()
+        raise HTTPException(_STATUS_DE_NOTA.get(e.codigo, 409), str(e)) from None
+    except (emision_arca.ArcaNoConfigurado, emision_arca.ArcaAmbiguo) as e:
+        sesion.rollback()
+        raise HTTPException(409, str(e)) from None
+    except emision_arca.ArcaRechazo as e:
+        sesion.rollback()
+        raise HTTPException(502, f"ARCA rechazo la nota de debito: {e}") from None
+    except IntegrityError as err:
+        sesion.rollback()
+        raise traducir_integridad(err) from None
+
+    if emision_arca.es_ensayo(cfg):
+        # Se corrió todo contra homologación y no se guarda nada (ver `facturar`). La respuesta se arma antes
+        # del rollback: después `nota` queda expirada.
+        respuesta = _respuesta_de_ensayo(nota, cfg)
+        sesion.rollback()
+        return respuesta
+
+    notas_de_credito.avisar_autorizada(nota, original)
+    notas_de_debito.cerrar_lo_propio(sesion, original, nota)
+    auditoria.registrar(sesion, actual, "comprobante", nota.id, AccionAuditoria.ALTA, despues=nota)
     try:
         sesion.commit()
     except IntegrityError as err:

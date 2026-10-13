@@ -80,16 +80,16 @@ def escenario(cliente, monkeypatch):
     d["anulada"] = orden("2026-07-15", d["cliente_b"], "9999.00", "999.00", "suipacha", "rosario")
     assert cliente.delete(f"/api/ordenes/{d['anulada']['id']}").status_code == 200
 
-    # Una factura de julio sobre las dos órdenes del cliente A: pre factura y después ARCA (simulada).
+    # Una factura de julio sobre las dos órdenes del cliente A, directo por ARCA (simulada).
     # Es Factura B porque el cliente A no tiene CUIT: una A exige el del receptor.
     cargar_empresa(cliente)
     configurar_arca(cliente, cuit=CUIT_EMISOR, punto_venta=1)
     arca_responde(monkeypatch)
-    pf = cliente.post("/api/pre-facturas", json={
+    r = cliente.post("/api/comprobantes/desde-ordenes", json={
         "fecha": "2026-07-31", "cliente_id": d["cliente_a"],
         "tipo": "factura_b", "orden_ids": [d["o1"]["id"], d["o2"]["id"]]})
-    assert pf.status_code == 201, pf.text
-    d["comprobante"] = cliente.post(f"/api/pre-facturas/{pf.json()['id']}/facturar").json()
+    assert r.status_code == 201, r.text
+    d["comprobante"] = r.json()
 
     # Caja: un cobro del cliente A y un pago al fletero, los dos en julio.
     cliente.post("/api/caja", json={

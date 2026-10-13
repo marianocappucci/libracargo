@@ -39,9 +39,14 @@ def orden(cliente, datos, tarifa, *, cliente_id=None, fecha="2026-08-10"):
     return r.json()
 
 
-def pre_factura(cliente, datos, ordenes, *, tipo="factura_a", cliente_id=None,
-                fecha="2026-08-15", vencimiento=None, cuenta=None):
-    """Genera la pre factura de las órdenes. Sin punto de venta ni número: no se tipean más (ADR-032)."""
+def facturar(cliente, datos, ordenes, *, tipo="factura_a", cliente_id=None, fecha="2026-08-15",
+             vencimiento=None, cuenta=None, observaciones=None):
+    """Factura las órdenes **directo por ARCA** (ADR-048): `POST /api/comprobantes/desde-ordenes`.
+
+    Sin punto de venta ni número: no se tipean (ARCA da el número, el punto de venta es el de su configuración).
+    Devuelve la respuesta del servidor: el comprobante (201) o el error. Los tests que usan esto tienen que correr con
+    la empresa lista para emitir (marca `con_emisor`).
+    """
     cuerpo = {
         "fecha": fecha,
         "cliente_id": cliente_id or datos["cliente"], "tipo": tipo,
@@ -51,27 +56,16 @@ def pre_factura(cliente, datos, ordenes, *, tipo="factura_a", cliente_id=None,
         cuerpo["fecha_vencimiento_pago"] = vencimiento
     if cuenta is not None:
         cuerpo["fce_cbu"] = cuenta
-    return cliente.post("/api/pre-facturas", json=cuerpo)
-
-
-def facturar(cliente, datos, ordenes, **kw):
-    """El camino de siempre: pre factura y después ARCA. Devuelve la respuesta de lo **último que se hizo**.
-
-    Si la pre factura no se pudo generar (otro cliente, una orden ya facturada...), es ésa. Si se generó,
-    es la de `POST /api/pre-facturas/{id}/facturar`: el comprobante, o el error de la emisión. Los tests que
-    usan esto tienen que correr con la empresa lista para emitir (marca `con_emisor`).
-    """
-    r = pre_factura(cliente, datos, ordenes, **kw)
-    if r.status_code != 201:
-        return r
-    return cliente.post(f"/api/pre-facturas/{r.json()['id']}/facturar")
+    if observaciones is not None:
+        cuerpo["observaciones"] = observaciones
+    return cliente.post("/api/comprobantes/desde-ordenes", json=cuerpo)
 
 
 def facturado_a_mano(sesion, datos, ordenes, *, tipo=TipoComprobante.FACTURA_A, punto_venta=1,
                      numero=1, fecha=date(2026, 8, 15)):
     """Un comprobante **sin CAE** con sus órdenes y su asiento: lo que había registrado a mano antes de ADR-032.
 
-    Ya no se puede crear por la API (la facturación sale de una pre factura y siempre emite por ARCA), pero
+    Ya no se puede crear por la API (la facturación siempre emite por ARCA), pero
     lo registrado así y lo migrado del legado siguen existiendo, y se anulan como siempre. Los tests de
     esa anulación, de los totales y del listado arman el dato **por abajo**, con las mismas funciones que
     usaba el alta (`servicios.comprobantes`, `servicios.cuentas`).
@@ -140,7 +134,7 @@ def test_facturar_deja_la_deuda_en_la_cuenta_del_cliente(cliente, datos):
 def test_los_totales_dan_igual_por_los_dos_lados(cliente, datos, sesion):
     """El gate de F5: lo facturado, contado por los encabezados y por las órdenes.
 
-    Uno sale por ARCA (pre factura); el otro es lo que ya estaba registrado a mano, dato de antes de ADR-032.
+    Uno sale por ARCA; el otro es lo que ya estaba registrado a mano, dato de antes de ADR-032.
     """
     a = orden(cliente, datos, "1000.00")
     b = orden(cliente, datos, "2000.00")
@@ -333,10 +327,11 @@ def test_sin_sesion_no_se_ven_los_comprobantes(engine, monkeypatch):
     try:
         assert anonimo.get("/api/comprobantes").status_code == 401
         assert anonimo.get("/api/comprobantes/totales").status_code == 401
-        # Las pre facturas (de donde sale ahora todo comprobante) tienen el mismo gate.
-        assert anonimo.get("/api/pre-facturas").status_code == 401
-        assert anonimo.post("/api/pre-facturas", json={}).status_code == 401
-        assert anonimo.post("/api/pre-facturas/1/facturar").status_code == 401
+        # Los caminos de emisión (de donde sale ahora todo comprobante) tienen el mismo gate.
+        assert anonimo.get("/api/comprobantes/tipos").status_code == 401
+        assert anonimo.post("/api/comprobantes/desde-ordenes", json={}).status_code == 401
+        assert anonimo.post("/api/comprobantes/directa", json={}).status_code == 401
+        assert anonimo.post("/api/comprobantes/1/nota-de-debito", json={}).status_code == 401
     finally:
         vaciar_auth(engine)
 

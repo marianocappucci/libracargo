@@ -1,10 +1,10 @@
-/** Facturar pendientes: una pantalla, no un modal. Genera la **pre factura** (ADR-032).
+/** Facturar pendientes: una pantalla, no un modal. **Emite el comprobante directo por ARCA** (ADR-048).
  *
- * 🔑 **Acá ya no se factura: se genera la pre factura**, el documento que se manda al cliente para que
- * confirme los datos. La factura sale después, de la pre factura, por ARCA (pantalla `PreFactura`). Por eso
- * no hay punto de venta ni número: el de la pre factura (`PF-0001`) lo pone el motor, y el de la factura lo
- * pone ARCA. Es la misma pantalla para **editar** una pre factura abierta (`/pre-facturas/:id/editar`):
- * cambian las órdenes, el tipo y las fechas, pero no el cliente. El emisor es siempre la empresa (ADR-035).
+ * 🔑 **Antes (ADR-032) acá se generaba una pre factura**, un documento intermedio que se mandaba al cliente y se
+ * facturaba después. El humano la sacó el 2026-10-13: ahora el CAE sale en el momento, y como no se deshace (se
+ * corrige con una nota de crédito) el botón pide una confirmación. Sigue sin haber punto de venta ni número: los
+ * pone ARCA. El emisor es siempre la empresa (ADR-035). Los ítems y los importes salen de las órdenes, nunca de
+ * esta pantalla: lo que se ve abajo es sólo la vista previa.
  *
  * 🔑 **Era un `<Dialog>` y el humano pidió sacarlo de ahí.** Con razón: un
  * cliente tiene hasta **82 órdenes pendientes** —AGROPECUARIA PEREIRO, medido
@@ -19,16 +19,13 @@
  */
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
 import { ArrowLeft } from 'lucide-react'
-import type { ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
-import type { AvisoFce, CuentasFce } from '@/api/comprobantes'
+import type { AvisoFce, CuentasFce, TipoComprobante } from '@/api/comprobantes'
 import { comprobantes, etiquetaDeCuenta, sumarImportes } from '@/api/comprobantes'
 import type { Opciones, Orden } from '@/api/ordenes'
 import { cargarOpciones, ordenes as apiOrdenes } from '@/api/ordenes'
-import type { PreFactura } from '@/api/pre-facturas'
-import { ESTADOS_ABIERTOS, NOMBRE_DE_ESTADO, preFacturas, tipoDe } from '@/api/pre-facturas'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { Elegir } from '@/components/Elegir'
 import { hoyEnArgentina, formatearImporte } from '@/components/esquema-orden'
@@ -37,6 +34,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 import { ICONOS_LC } from '@/iconos'
+import { irA } from '@/navegacion'
 
 type Borrador = {
   fecha: string
@@ -96,9 +94,7 @@ function Eleccion({ id, etiqueta, valor, alCambiar, children }: {
 const nombreDe = (lista: { id: number; etiqueta: string }[] | undefined, id: number | null) =>
   lista?.find((o) => o.id === id)?.etiqueta ?? ''
 
-/** `titulo` lo pone quien la usa para **editar** (`EditarPreFactura`): el título de editar es otro
- *  («Editar pre factura N»). Las dos cuelgan de «Comprobantes» en el menú. Sin él, es «Facturar pendientes». */
-export default function FacturarPendientes({ titulo }: { titulo?: (numero: string) => ReactNode } = {}) {
+export default function FacturarPendientes() {
   const [params, setParams] = useSearchParams()
   const navegar = useNavigate()
   const [opciones, setOpciones] = useState<Opciones | null>(null)
@@ -107,63 +103,33 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
   const [elegidas, setElegidas] = useState<number[]>([])
   const [cargando, setCargando] = useState(false)
   const [enviando, setEnviando] = useState(false)
+  // Emitir por ARCA no se deshace: el primer click pide confirmar, el segundo emite.
+  const [confirmando, setConfirmando] = useState(false)
+  const [aviso, setAviso] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // `/pre-facturas/:id/editar` es esta misma pantalla sobre una pre factura que ya existe.
-  const { id: idDeLaRuta } = useParams()
-  const editandoId = idDeLaRuta ? Number(idDeLaRuta) : null
-  const editando = editandoId != null
-  const [existente, setExistente] = useState<PreFactura | null>(null)
-
-  // Al editar, el cliente es el de la pre factura y no se cambia: otro cliente es otra pre factura.
-  const clienteId = editando ? String(existente?.cliente_id ?? '') : (params.get('cliente') ?? '')
+  const clienteId = params.get('cliente') ?? ''
 
   useEffect(() => {
     cargarOpciones().then(setOpciones).catch((e) => setError(mensajeDeError(e)))
   }, [])
 
-  // La pre factura que se edita: sus datos pasan al borrador y sus órdenes quedan elegidas.
-  useEffect(() => {
-    if (editandoId == null) return
-    let vigente = true
-    preFacturas.ver(editandoId)
-      .then((p) => {
-        if (!vigente) return
-        setExistente(p)
-        setBorrador({
-          fecha: p.fecha_sugerida,
-          tipo: tipoDe(p) ?? 'factura_a', vencimiento: p.fecha_vencimiento_pago ?? '',
-          cuenta: p.fce_cbu ?? '',
-        })
-        setElegidas(p.orden_ids)
-      })
-      .catch((e) => { if (vigente) setError(mensajeDeError(e)) })
-    return () => { vigente = false }
-  }, [editandoId])
-
-  // Las pendientes **libres** del cliente elegido (las reservadas en otra pre factura no se pueden incluir),
-  // más —al editar— las que ya son de esta pre factura. Sin cliente no se piden: una pre factura es de un
-  // solo cliente, y una lista de todos invitaría a mezclarlos.
+  // Las pendientes del cliente elegido. Sin cliente no se piden: un comprobante es de un solo cliente, y una lista de
+  // todos invitaría a mezclarlos.
   useEffect(() => {
     if (!clienteId) { setPendientes([]); return }
     let vigente = true
     setCargando(true)
-    const libres = apiOrdenes.listar(
-      { cliente_id: Number(clienteId), facturada: false, estado: 'pendiente', reservada: false })
-    const propias = editandoId != null
-      ? apiOrdenes.listar({ pre_factura_id: editandoId }) : Promise.resolve([] as Orden[])
-    Promise.all([libres, propias])
-      .then(([a, b]) => {
-        if (!vigente) return
-        const porId = new Map([...a, ...b].map((o) => [o.id, o]))
-        setPendientes([...porId.values()].sort((x, y) => (y.fecha.localeCompare(x.fecha)) || (y.id - x.id)))
+    apiOrdenes.listar({ cliente_id: Number(clienteId), facturada: false, estado: 'pendiente' })
+      .then((lista) => {
+        if (vigente) setPendientes([...lista].sort((x, y) => (y.fecha.localeCompare(x.fecha)) || (y.id - x.id)))
       })
       .catch((e) => { if (vigente) setError(mensajeDeError(e)) })
       .finally(() => { if (vigente) setCargando(false) })
     return () => { vigente = false }
-  }, [clienteId, editandoId])
+  }, [clienteId])
 
-  // Todas las pendientes libres del cliente se pueden facturar: hay un solo emisor.
+  // Todas las pendientes del cliente se pueden facturar: hay un solo emisor.
   const visibles = pendientes
 
   // Se factura lo elegido **y visible**: si cambia el cliente, lo que dejó de
@@ -172,7 +138,7 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
   const totalPrevio = sumarImportes(aFacturar.map((o) => o.total))
   const todasElegidas = visibles.length > 0 && aFacturar.length === visibles.length
 
-  const set = (c: Partial<Borrador>) => setBorrador((b) => ({ ...b, ...c }))
+  const set = (c: Partial<Borrador>) => { setConfirmando(false); setBorrador((b) => ({ ...b, ...c })) }
   const fce = esFce(borrador.tipo)
 
   // ── El aviso de FCE ──────────────────────────────────────────────────────
@@ -216,9 +182,10 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
   // Sin elegir, la predeterminada: lo que se ve es lo que va a salir.
   const cuentaElegida = borrador.cuenta || cuentasFce?.predeterminada || ''
 
-  const alternar = (id: number) => setElegidas((previas) => (
-    previas.includes(id) ? previas.filter((i) => i !== id) : [...previas, id]
-  ))
+  const alternar = (id: number) => {
+    setConfirmando(false)
+    setElegidas((previas) => (previas.includes(id) ? previas.filter((i) => i !== id) : [...previas, id]))
+  }
 
   const columnas = useMemo(() => [
     {
@@ -228,7 +195,7 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
           type="checkbox"
           aria-label={todasElegidas ? 'Desmarcar todas' : 'Marcar todas'}
           checked={todasElegidas}
-          onChange={() => setElegidas(todasElegidas ? [] : visibles.map((o) => o.id))}
+          onChange={() => { setConfirmando(false); setElegidas(todasElegidas ? [] : visibles.map((o) => o.id)) }}
         />
       ),
       cell: ({ row }: { row: { original: Orden } }) => (
@@ -252,33 +219,38 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
       accessorFn: (o: Orden) => formatearImporte(o.total) },
   ], [elegidas, opciones, todasElegidas, visibles])
 
-  async function guardar() {
+  async function emitir() {
     setError(null)
+    setAviso(null)
     setEnviando(true)
     try {
-      // Sin ítems, importes, punto de venta ni número: salen de las órdenes, y la pre factura lleva el suyo.
-      const datos = {
+      // Sin ítems, importes, punto de venta ni número: salen de las órdenes, y el número lo pone ARCA.
+      const hecho = await comprobantes.facturarOrdenes({
+        cliente_id: Number(clienteId),
         fecha: borrador.fecha,
-        tipo: borrador.tipo,
+        tipo: borrador.tipo as TipoComprobante,
         // Sólo la FCE lleva vencimiento de pago y cuenta de cobro; `undefined` no viaja en el JSON. La cuenta
         // va siempre que es FCE: `''` vuelve a la predeterminada.
         fecha_vencimiento_pago: fce ? borrador.vencimiento : undefined,
         fce_cbu: fce ? borrador.cuenta : undefined,
         orden_ids: aFacturar.map((o) => o.id),
+      })
+      if (hecho && 'ensayo' in hecho) {
+        // Homologación: se corrió todo contra ARCA y no se guardó nada. Las órdenes siguen pendientes.
+        setAviso(`Ensayo contra ${hecho.ambiente}: ARCA autorizó una factura de prueba `
+          + `(CAE ${hecho.cae ?? 's/n'}) y no se guardó nada.`)
+        setConfirmando(false)
+        setEnviando(false)
+        return
       }
-      const hecha = editandoId != null
-        ? await preFacturas.editar(editandoId, datos)
-        : await preFacturas.crear({ ...datos, cliente_id: Number(clienteId) })
-      // Se va a la pre factura: la pregunta que sigue es siempre «¿cómo quedó?», y lo que sigue es mandarla.
-      navegar(hecha?.id ? `/pre-facturas/${hecha.id}` : '/pre-facturas')
+      // Se va al comprobante: la pregunta que sigue es siempre «¿cómo quedó?», y desde ahí se baja el PDF.
+      navegar(hecho?.id ? irA.comprobante(hecho.id) : '/comprobantes')
     } catch (e) {
       setError(mensajeDeError(e))
+      setConfirmando(false)
       setEnviando(false)
     }
   }
-
-  // Una facturada o anulada no se edita.
-  const cerrada = editando && existente != null && !ESTADOS_ABIERTOS.includes(existente.estado)
 
   const faltan = !clienteId ? 'Elegí el cliente.'
     : fce && !borrador.vencimiento ? 'Falta el vencimiento de pago.'
@@ -292,21 +264,17 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
   return (
     <div>
       <div className="mb-4 flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild
-                aria-label={editando ? 'Volver a la pre factura' : 'Volver a Comprobantes'}>
-          <Link to={editando ? `/pre-facturas/${editandoId}` : '/comprobantes'}>
-            <ArrowLeft className="size-4" />
-          </Link>
+        <Button variant="ghost" size="icon" asChild aria-label="Volver a Comprobantes">
+          <Link to="/comprobantes"><ArrowLeft className="size-4" /></Link>
         </Button>
-        {editando && titulo
-          ? titulo(existente?.numero_interno ?? '')
-          : <TituloPantalla icono={ICONOS_LC.comprobantes}>Facturar pendientes</TituloPantalla>}
+        <TituloPantalla icono={ICONOS_LC.comprobantes}>Facturar pendientes</TituloPantalla>
       </div>
 
       <p className="text-muted-foreground mb-4 text-sm">
-        Se genera una <strong>pre factura</strong>: un documento sin valor fiscal que se manda al cliente
-        para que confirme los datos. La factura se emite después, por ARCA, desde la pre factura; el
-        punto de venta y el número los pone ARCA.
+        Se factura <strong>directo por ARCA</strong>: el CAE sale en el momento y el comprobante no se puede
+        deshacer (se corrige con una nota de crédito). Los importes salen de las órdenes; el punto de venta y el
+        número los pone ARCA. ¿Una factura sin órdenes? Usá{' '}
+        <Link className="underline" to={irA.nuevaFactura()}>Nueva factura</Link>.
       </p>
 
       {error && (
@@ -315,19 +283,7 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
         </p>
       )}
 
-      {cerrada && existente && (
-        <p role="alert" className="mb-4 rounded border p-3 text-sm">
-          La pre factura {existente.numero_interno} está {NOMBRE_DE_ESTADO[existente.estado].toLowerCase()}:
-          no se edita.
-        </p>
-      )}
-
-      {editando && existente && (existente.estado === 'enviado' || existente.estado === 'aceptado') && (
-        <p role="status" className="mb-4 rounded border border-amber-500/50 p-3 text-sm">
-          Está {NOMBRE_DE_ESTADO[existente.estado].toLowerCase()}: si cambia algo, vuelve a Pendiente. El
-          cliente vio otros datos, así que hay que volver a enviarla y a marcarla como aceptada.
-        </p>
-      )}
+      {aviso && <p role="status" className="mb-4 rounded border p-3 text-sm font-semibold">{aviso}</p>}
 
       {correspondeFce && avisoFce && (
         <section role="status" aria-label="Aviso de FCE"
@@ -358,13 +314,14 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
       )}
 
       <section className="mb-6 rounded border p-4">
-        <h2 className="mb-3 text-sm font-semibold">Datos de la pre factura</h2>
+        <h2 className="mb-3 text-sm font-semibold">Datos del comprobante</h2>
         <div className="grid gap-3 md:grid-cols-3">
           <Campo id="n-fecha" etiqueta="Fecha" tipo="date" valor={borrador.fecha}
                  alCambiar={(v) => set({ fecha: v })} />
-          <Elegir id="n-cliente" etiqueta="Cliente" vacio="Elegir…" deshabilitado={editando}
+          <Elegir id="n-cliente" etiqueta="Cliente" vacio="Elegir…"
                   valor={clienteId} opciones={opciones?.clientes ?? []}
                   alCambiar={(v) => {
+                    setConfirmando(false)
                     setElegidas([])
                     setParams(v ? { cliente: v } : {}, { replace: true })
                   }} />
@@ -441,11 +398,19 @@ export default function FacturarPendientes({ titulo }: { titulo?: (numero: strin
           <span className="text-lg font-semibold">
             Total: {formatearImporte(totalPrevio)}
           </span>
-          <Button onClick={guardar} disabled={faltan != null || enviando || cerrada}>
-            {editando
-              ? (enviando ? 'Guardando…' : 'Guardar cambios')
-              : (enviando ? 'Generando…' : 'Generar pre factura')}
-          </Button>
+          {confirmando ? (
+            <>
+              <span className="text-sm">Se emite por ARCA ahora y no se deshace.</span>
+              <Button variant="ghost" onClick={() => setConfirmando(false)} disabled={enviando}>No</Button>
+              <Button onClick={emitir} disabled={enviando}>
+                {enviando ? 'Emitiendo…' : 'Confirmar y emitir'}
+              </Button>
+            </>
+          ) : (
+            <Button onClick={() => setConfirmando(true)} disabled={faltan != null || enviando}>
+              Facturar
+            </Button>
+          )}
         </div>
       </div>
       {faltan && (

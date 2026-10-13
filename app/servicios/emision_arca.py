@@ -68,7 +68,7 @@ EMPRESA_ARCA = "agencia"
 #: Los tipos C no llevan IVA discriminado: todo el importe va como neto y el
 #: bloque de alícuotas **no se manda**. Lo exige ARCA, no es una simplificación.
 TIPOS_C = {TipoComprobante.FACTURA_C, TipoComprobante.NOTA_CREDITO_C, TipoComprobante.FCE_C,
-           TipoComprobante.NOTA_CREDITO_FCE_C}
+           TipoComprobante.NOTA_CREDITO_FCE_C, TipoComprobante.NOTA_DEBITO_C, TipoComprobante.NOTA_DEBITO_FCE_C}
 
 #: La **factura** FCE lleva además el vencimiento de pago, el CBU del emisor y la modalidad
 #: de transmisión. Los dos últimos salen de la configuración de ARCA de la instancia. Sus
@@ -281,8 +281,8 @@ async def pedir_cae(
     el número y el CAE abre la ventana para que otro comprobante se meta en el
     medio y el número quede tomado.
 
-    `nota` es el diccionario que arma `libracore.notas_de_credito.armar_nota` cuando el
-    comprobante es una nota de crédito: de ahí salen lo que la ata a su factura ante ARCA
+    `nota` es el diccionario que arma el motor (`notas_de_credito.armar_nota`, y `notas_de_debito` para la de débito)
+    cuando el comprobante es una nota: de ahí salen lo que la ata a su factura ante ARCA
     (`cbte_asoc_*`), la marca de anulación de una FCE y la leyenda. El resto del pedido se
     arma igual que el de una factura, desde el comprobante.
     """

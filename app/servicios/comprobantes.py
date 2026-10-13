@@ -54,6 +54,20 @@ TIPOS_NOTA = frozenset({
 })
 
 
+#: Las notas de débito (ADR-048). A diferencia de las de crédito **suman**: agregan plata a una factura con CAE
+#: (intereses, un gasto, una diferencia). No agrupan órdenes (`sin_ordenes`) y no se restan de nada.
+TIPOS_DEBITO = frozenset({
+    TipoComprobante.NOTA_DEBITO_A,
+    TipoComprobante.NOTA_DEBITO_B,
+    TipoComprobante.NOTA_DEBITO_C,
+    TipoComprobante.NOTA_DEBITO_FCE_A,
+    TipoComprobante.NOTA_DEBITO_FCE_B,
+    TipoComprobante.NOTA_DEBITO_FCE_C,
+})
+
+#: Los que cuelgan de otro comprobante (`comprobante_asociado_id`), y nada más lo tiene.
+TIPOS_CON_ASOCIADO = TIPOS_NOTA | TIPOS_DEBITO
+
 #: Las facturas FCE, que exigen vencimiento de pago.
 TIPOS_FCE_FACTURA = frozenset({TipoComprobante.FCE_A, TipoComprobante.FCE_B, TipoComprobante.FCE_C})
 
@@ -61,13 +75,15 @@ TIPOS_FCE_FACTURA = frozenset({TipoComprobante.FCE_A, TipoComprobante.FCE_B, Tip
 def solo_facturas(consulta):
     """Saca las notas de crédito de una suma de lo facturado: las notas se **restan** aparte.
 
-    Sumarlas haría subir lo facturado en vez de bajarlo. Lo que restan lo da `acreditado_por_notas`.
+    Sumarlas haría subir lo facturado en vez de bajarlo. Lo que restan lo da `acreditado_por_notas`. Las notas de
+    **débito** se quedan: suman, y son plata facturada (ADR-048).
     """
     return consulta.where(Comprobante.tipo.notin_(TIPOS_NOTA))
 
 
 def acreditado_por_notas(
     agrupar_por, desde: date | None = None, hasta: date | None = None, filtros=(),
+    sin_ordenes: bool | None = None,
 ) -> Select:
     """Lo que acreditan las notas de crédito **cuyo original sigue vigente**, agrupado por `agrupar_por`.
 
@@ -81,6 +97,8 @@ def acreditado_por_notas(
       que entra al libro de ventas y a la cuenta corriente.
     - `agrupar_por` es una columna de la **nota** (`Comprobante.cliente_id`, `Comprobante.tipo`…), y
       `filtros` pares `(columna, valor)` sobre ella; un valor `None` no filtra.
+    - `sin_ordenes` filtra por **el original** (ADR-048): `False` son las notas de comprobantes que agrupan órdenes (las
+      que el gate resta de los dos lados), `True` las de una factura directa; `None`, todas.
     """
     original = aliased(Comprobante)
     consulta = (
@@ -95,8 +113,12 @@ def acreditado_por_notas(
         # Toda nota tiene asociado y nada más lo tiene (`ck_comprobantes_nota_con_asociado`): el `join` ya las elige.
         .join(original, Comprobante.comprobante_asociado_id == original.id)
         .where(Comprobante.anulado.is_(False), original.anulado.is_(False))
+        # Sólo las de crédito: la nota de débito también cuelga de un comprobante, pero suma en vez de restar.
+        .where(Comprobante.tipo.in_(TIPOS_NOTA))
         .group_by(agrupar_por)
     )
+    if sin_ordenes is not None:
+        consulta = consulta.where(original.sin_ordenes.is_(sin_ordenes))
     for columna, valor in filtros:
         if valor is not None:
             consulta = consulta.where(columna == valor)
@@ -160,16 +182,30 @@ def totales_facturados(
     bajar —si no, cada nota parcial aparecería como una diferencia—. Los dos restan **el mismo** conjunto
     (`acreditado_por_notas`), así que la comparación sigue siendo la de los encabezados contra sus órdenes.
     `cantidad_comprobantes` cuenta facturas, no notas.
+
+    🔑 **El gate sólo compara lo que tiene órdenes** (ADR-048). Una factura directa y una nota de débito no agrupan
+    órdenes (`sin_ordenes`): del lado de los comprobantes no tendrían contra qué coincidir, y el gate diría «no
+    coinciden» por cada una. Van aparte (`cantidad_sin_ordenes`, `total_sin_ordenes`), con las notas de crédito de las
+    facturas directas restadas, y entran igual en lo facturado de los reportes.
     """
-    por_comprobante = solo_facturas(_acotar(
-        select(
-            func.count(Comprobante.id),
-            func.coalesce(func.sum(Comprobante.neto), 0),
-            func.coalesce(func.sum(Comprobante.iva), 0),
-            func.coalesce(func.sum(Comprobante.total), 0),
-        ).where(Comprobante.anulado.is_(False)),
-        desde, hasta,
-    ))
+    def sumas(*condiciones):
+        return solo_facturas(_acotar(
+            select(
+                func.count(Comprobante.id),
+                func.coalesce(func.sum(Comprobante.neto), 0),
+                func.coalesce(func.sum(Comprobante.iva), 0),
+                func.coalesce(func.sum(Comprobante.total), 0),
+            ).where(Comprobante.anulado.is_(False), *condiciones),
+            desde, hasta,
+        ))
+
+    def restar(sin_ordenes: bool):
+        # `acreditado_por_notas` agrupa: se agrupa por `anulado`, que ahí es siempre falso (el `where` excluye las
+        # anuladas), y sale un solo grupo con todas las notas vigentes.
+        notas = [f[2:] for f in sesion.execute(
+            acreditado_por_notas(Comprobante.anulado, desde, hasta, sin_ordenes=sin_ordenes))]
+        return tuple(sum((Decimal(f[i]) for f in notas), CERO) for i in range(3))
+
     por_orden = _acotar(
         select(
             func.count(OrdenCarga.id),
@@ -181,16 +217,16 @@ def totales_facturados(
         .where(Comprobante.anulado.is_(False)),
         desde, hasta,
     )
-    cant_c, neto_c, iva_c, total_c = sesion.execute(por_comprobante).one()
+    cant_c, neto_c, iva_c, total_c = sesion.execute(sumas(Comprobante.sin_ordenes.is_(False))).one()
     cant_o, neto_o, iva_o, total_o = sesion.execute(por_orden).one()
-    # `acreditado_por_notas` agrupa: se agrupa por `anulado`, que ahí es siempre falso (el `where` excluye las
-    # anuladas), y sale un solo grupo con todas las notas vigentes.
-    notas = [fila[2:] for fila in sesion.execute(acreditado_por_notas(Comprobante.anulado, desde, hasta))]
-    neto_n, iva_n, total_n = (sum((Decimal(f[i]) for f in notas), CERO) for i in range(3))
+    neto_n, iva_n, total_n = restar(False)
     neto_c, iva_c, total_c = (
         (Decimal(x) - n).quantize(CERO) for x, n in ((neto_c, neto_n), (iva_c, iva_n), (total_c, total_n)))
     neto_o, iva_o, total_o = (
         (Decimal(x) - n).quantize(CERO) for x, n in ((neto_o, neto_n), (iva_o, iva_n), (total_o, total_n)))
+
+    cant_s, _neto_s, _iva_s, total_s = sesion.execute(sumas(Comprobante.sin_ordenes.is_(True))).one()
+    total_s = (Decimal(total_s) - restar(True)[2]).quantize(CERO)
     return TotalDeComprobantes(
         cantidad_comprobantes=cant_c,
         neto_comprobantes=neto_c, iva_comprobantes=iva_c, total_comprobantes=total_c,
@@ -199,6 +235,7 @@ def totales_facturados(
         # Los tres importes, no sólo el total: un neto de más compensado por
         # un IVA de menos da el mismo total y es un error igual.
         coinciden=(neto_c, iva_c, total_c) == (neto_o, iva_o, total_o),
+        cantidad_sin_ordenes=cant_s, total_sin_ordenes=total_s,
     )
 
 
@@ -267,7 +304,7 @@ def crear(
     numero: int, fecha: date, cliente_id: int, neto: Decimal, iva: Decimal, total: Decimal,
     items: list[dict], ambiente: str | None = None, fch_vto_pago: date | None = None,
     fce_cbu: str | None = None, fce_transmision: str | None = None,
-    asociado: Comprobante | None = None, motivo: str | None = None,
+    asociado: Comprobante | None = None, motivo: str | None = None, sin_ordenes: bool = False,
 ) -> Comprobante:
     """Crea el comprobante en `facturas` y su fila de `comprobantes_cargo`. No hace `commit`.
 
@@ -282,8 +319,9 @@ def crear(
     # que es la única puerta de entrada de un comprobante de este producto.
     if tipo in TIPOS_FCE_FACTURA and fch_vto_pago is None:
         raise ValueError("una FCE sin fecha de vencimiento de pago no existe: ARCA la rechaza (10163)")
-    if (tipo in TIPOS_NOTA) != (asociado is not None):
-        raise ValueError("toda nota de credito acredita a un comprobante, y nada mas lo hace")
+    if (tipo in TIPOS_CON_ASOCIADO) != (asociado is not None):
+        raise ValueError(
+            "toda nota de credito acredita a un comprobante (y la de debito se asocia a uno), y nada mas lo hace")
     if min(neto, iva, total) < 0:
         raise ValueError("los importes de un comprobante no son negativos: el tipo dice el signo")
     conn = _conexion_del_motor(sesion)
@@ -323,6 +361,8 @@ def crear(
     sesion.add(ComprobanteCargo(
         factura_id=factura_id, cliente_id=cliente_id,
         anulado=False, comprobante_asociado_id=asociado.id if asociado is not None else None,
+        # La nota de débito nunca agrupa órdenes; una factura directa tampoco, y lo dice quien la emite.
+        sin_ordenes=sin_ordenes or tipo in TIPOS_DEBITO,
     ))
     sesion.flush()
     return sesion.get(Comprobante, factura_id)

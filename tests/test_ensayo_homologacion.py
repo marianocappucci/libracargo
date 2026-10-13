@@ -121,13 +121,10 @@ def _hoy() -> str:
 
 def _ensayar(cliente, datos, instancia, tipo, **extra):
     a = orden(cliente, datos, "1000.00", fecha=_hoy())
-    # Pre factura y después ARCA, como en producción: el punto de venta es el de la configuración de ARCA.
-    pf = cliente.post("/api/pre-facturas", json={
+    # Directo por ARCA, como en producción: el punto de venta es el de la configuración de ARCA.
+    r = cliente.post("/api/comprobantes/desde-ordenes", json={
         "fecha": _hoy(), "cliente_id": datos["cliente"],
         "tipo": tipo, "orden_ids": [a["id"]], **extra})
-    if pf.status_code != 201:
-        return a, pf
-    r = cliente.post(f"/api/pre-facturas/{pf.json()['id']}/facturar")
     if r.status_code == 502 and "alreadyAuthenticated" in r.text:
         pytest.skip("ARCA ya tiene un ticket vigente de este certificado: "
                     "pasá ARCA_HOMO_TICKET con ese ticket y reintentá")

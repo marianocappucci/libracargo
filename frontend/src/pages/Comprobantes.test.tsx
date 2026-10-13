@@ -46,7 +46,7 @@ function total(extra: Record<string, unknown> = {}) {
     neto_comprobantes: '1000.00', iva_comprobantes: '210.00',
     total_comprobantes: '1210.00',
     cantidad_ordenes: 1, neto_ordenes: '1000.00', iva_ordenes: '210.00',
-    total_ordenes: '1210.00', coinciden: true, ...extra,
+    total_ordenes: '1210.00', coinciden: true, cantidad_sin_ordenes: 0, total_sin_ordenes: '0.00', ...extra,
   }
 }
 
@@ -305,11 +305,11 @@ describe('Comprobantes', () => {
     expect(screen.queryByRole('status')).toBeNull()
   })
 
-  it('hay un acceso a las pre facturas, de donde sale todo comprobante', async () => {
+  it('🔑 no hay acceso a las pre facturas (se retiraron, ADR-048): los dos botones emiten directo por ARCA', async () => {
     responder({})
     render(<MemoryRouter><Comprobantes /></MemoryRouter>)
-    const boton = await screen.findByText('Pre facturas')
-    expect(boton.closest('a')).toHaveAttribute('href', '/pre-facturas')
+    expect((await screen.findByText('Nueva factura')).closest('a')).toHaveAttribute('href', '/comprobantes/nueva')
+    expect(screen.queryByText('Pre facturas')).toBeNull()
   })
 
   it('el boton de facturar lleva a la pantalla, no abre un modal', async () => {
@@ -318,5 +318,193 @@ describe('Comprobantes', () => {
     const boton = await screen.findByText('Facturar pendientes')
     expect(boton.closest('a')).toHaveAttribute('href', '/comprobantes/facturar')
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  // ── Las acciones de la fila: nota de crédito y nota de débito (ADR-048) ────
+  function fila(id: number, tipo: string, extra: Record<string, unknown> = {}) {
+    return {
+      id, tipo, punto_venta: 5, numero: id + 40, fecha: '2026-08-15', cliente_id: 1, neto: '1000.00', iva: '210.00',
+      total: '1210.00', anulado: false, origen_legado: null, cae: '75123456789012', ...extra,
+    }
+  }
+
+  it('🔑 cada factura con CAE vigente tiene en su fila las acciones Nota de crédito y Nota de débito', async () => {
+    responder({ comprobantes: [fila(9, 'factura_a')] })
+    render(<MemoryRouter><Comprobantes /></MemoryRouter>)
+    expect(await screen.findByRole('button', { name: /Nota de crédito de Factura A 0005-00000049/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Nota de débito de Factura A 0005-00000049/ })).toBeInTheDocument()
+  })
+
+  it('una FCE con CAE también las tiene', async () => {
+    responder({ comprobantes: [fila(9, 'fce_a')] })
+    render(<MemoryRouter><Comprobantes /></MemoryRouter>)
+    expect(await screen.findByRole('button', { name: /Nota de crédito de Factura de crédito electrónica A/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Nota de débito de Factura de crédito electrónica A/ })).toBeInTheDocument()
+  })
+
+  it.each([
+    ['una factura sin CAE (se anula, no se acredita)', fila(9, 'factura_a', { cae: null })],
+    ['una factura anulada (ya está acreditada entera)', fila(9, 'factura_a', { anulado: true })],
+    ['una nota de crédito (una nota no admite otra)', fila(9, 'nota_credito_a')],
+    ['una nota de débito', fila(9, 'nota_debito_a')],
+  ])('%s no muestra las acciones', async (_caso, comprobante) => {
+    responder({ comprobantes: [comprobante] })
+    render(<MemoryRouter><Comprobantes /></MemoryRouter>)
+    expect(await screen.findByText(/0005-00000049/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Nota de crédito de/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Nota de débito de/ })).toBeNull()
+  })
+
+  it('«Nota de débito» de la fila abre el detalle con el formulario de la nota de débito ya abierto', async () => {
+    responder({ comprobantes: [fila(9, 'factura_a')] })
+    const base = get.getMockImplementation()!
+    get.mockImplementation((ruta?: string) =>
+      ruta === '/api/comprobantes/9' ? Promise.resolve(detalleDe('75123456789012', 'factura_a', SIN_NOTAS)) : base(ruta))
+    render(<MemoryRouter><Comprobantes /></MemoryRouter>)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Nota de débito de Factura A/ }))
+    expect(await screen.findByLabelText('Motivo de la nota de débito')).toBeInTheDocument()
+    expect(screen.getByLabelText('Importe a debitar (con IVA)')).toBeInTheDocument()
+    // Y el click de la fila no lo abrió una segunda vez ni lo cerró: sigue abierto el formulario de débito.
+    expect(screen.queryByLabelText('Motivo de la nota de crédito')).toBeNull()
+  })
+
+  it('«Nota de crédito» de la fila abre el detalle con el formulario de la nota de crédito', async () => {
+    responder({ comprobantes: [fila(9, 'factura_a')] })
+    const base = get.getMockImplementation()!
+    get.mockImplementation((ruta?: string) =>
+      ruta === '/api/comprobantes/9' ? Promise.resolve(detalleDe('75123456789012', 'factura_a', SIN_NOTAS)) : base(ruta))
+    render(<MemoryRouter><Comprobantes /></MemoryRouter>)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Nota de crédito de Factura A/ }))
+    expect(await screen.findByLabelText('Motivo de la nota de crédito')).toBeInTheDocument()
+    expect(screen.getByLabelText('Por el total')).toBeEnabled()
+  })
+
+  // ── La nota de débito (ADR-048): motivo e importe, sin total y sin tope ────
+  it('el detalle de una factura con CAE ofrece las dos notas', async () => {
+    abrirDetalle('75123456789012', 'factura_a', SIN_NOTAS)
+    expect(await screen.findByText('Emitir nota de débito')).toBeInTheDocument()
+    expect(screen.getByText('Emitir nota de crédito')).toBeInTheDocument()
+  })
+
+  it('la nota de débito pide motivo e importe, viaja como texto y no tiene «por el total»', async () => {
+    abrirDetalle('75123456789012', 'factura_a', SIN_NOTAS)
+    post.mockResolvedValue({ id: 10, tipo: 'nota_debito_a' })
+
+    fireEvent.click(await screen.findByText('Emitir nota de débito'))
+    const confirmar = await screen.findByText('Confirmar nota de débito')
+    expect(confirmar).toBeDisabled()
+    // No hay nota de débito total: no copia la factura. Va siempre por un importe.
+    expect(screen.queryByLabelText('Por el total')).toBeNull()
+    expect(screen.queryByLabelText('Por un importe')).toBeNull()
+
+    fireEvent.change(screen.getByLabelText('Motivo de la nota de débito'), { target: { value: 'Intereses por mora' } })
+    expect(confirmar).toBeDisabled() // falta el importe
+    fireEvent.change(screen.getByLabelText('Importe a debitar (con IVA)'), { target: { value: '121,5' } })
+    expect(confirmar).toBeEnabled()
+    fireEvent.click(confirmar)
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith(
+      '/api/comprobantes/9/nota-de-debito', { motivo: 'Intereses por mora', importe: '121.50' }))
+  })
+
+  it('🔑 la nota de débito no tiene tope: un importe mayor que el total de la factura se puede confirmar', async () => {
+    // El control de la diferencia con la de crédito, que no deja pasar del saldo (ver más arriba).
+    abrirDetalle('75123456789012', 'factura_a', SIN_NOTAS)
+    fireEvent.click(await screen.findByText('Emitir nota de débito'))
+    fireEvent.change(screen.getByLabelText('Motivo de la nota de débito'), { target: { value: 'Diferencia de precio' } })
+    const importe = screen.getByLabelText('Importe a debitar (con IVA)')
+    fireEvent.change(importe, { target: { value: '5000.00' } })
+    expect(screen.getByText('Confirmar nota de débito')).toBeEnabled()
+    expect(screen.queryByText(/Supera lo que queda/)).toBeNull()
+    // Pero sí tiene que ser un monto: mayor que cero y con dos decimales.
+    for (const malo of ['0', '-5', '1.234', 'abc', '']) {
+      fireEvent.change(importe, { target: { value: malo } })
+      expect(screen.getByText('Confirmar nota de débito'), malo).toBeDisabled()
+    }
+  })
+
+  it('contra homologación la nota de débito avisa que fue un ensayo', async () => {
+    abrirDetalle('75123456789012', 'factura_a', SIN_NOTAS)
+    post.mockResolvedValue({ ensayo: true, ambiente: 'homologacion', cae: '99', tipo: 'nota_debito_a' })
+    fireEvent.click(await screen.findByText('Emitir nota de débito'))
+    fireEvent.change(screen.getByLabelText('Motivo de la nota de débito'), { target: { value: 'Prueba' } })
+    fireEvent.change(screen.getByLabelText('Importe a debitar (con IVA)'), { target: { value: '10' } })
+    fireEvent.click(screen.getByText('Confirmar nota de débito'))
+
+    const aviso = await screen.findByRole('status')
+    expect(aviso).toHaveTextContent('Ensayo contra homologacion')
+    expect(aviso).toHaveTextContent('nota de débito de prueba')
+    expect(aviso).toHaveTextContent('no se guardó nada')
+  })
+
+  it('si ARCA rechaza la nota de débito se ve el motivo', async () => {
+    abrirDetalle('75123456789012', 'factura_a', SIN_NOTAS)
+    post.mockRejectedValue(new ApiError(502, 'ARCA rechazo la nota de debito: IVA inconsistente'))
+    fireEvent.click(await screen.findByText('Emitir nota de débito'))
+    fireEvent.change(screen.getByLabelText('Motivo de la nota de débito'), { target: { value: 'Intereses' } })
+    fireEvent.change(screen.getByLabelText('Importe a debitar (con IVA)'), { target: { value: '10' } })
+    fireEvent.click(screen.getByText('Confirmar nota de débito'))
+    expect(await screen.findByText(/IVA inconsistente/)).toBeInTheDocument()
+  })
+
+  it('la nota de débito de una FCE avisa que todavía no se probó contra ARCA', async () => {
+    abrirDetalle('75123456789012', 'fce_a', SIN_NOTAS)
+    fireEvent.click(await screen.findByText('Emitir nota de débito'))
+    const avisos = screen.getAllByRole('note')
+    expect(avisos.map((n) => n.textContent).join(' ')).toContain('todavía no se probó contra ARCA')
+  })
+
+  it('las notas de débito de una factura se listan aparte de las de crédito, con su PDF', async () => {
+    abrirDetalle('75123456789012', 'factura_a', {
+      ...SIN_NOTAS,
+      notas_debito: [{ id: 12, tipo: 'nota_debito_a', punto_venta: 5, numero: 7, fecha: '2026-10-13',
+                       total: '605.00', motivo: 'Intereses por mora', anulado: false, cae: '75123456789098' }],
+    })
+    expect(await screen.findByText('Notas de débito')).toBeInTheDocument()
+    expect(screen.getByText(/Nota de débito A 0005-00000007/)).toBeInTheDocument()
+    expect(screen.getByText(/Intereses por mora/)).toBeInTheDocument()
+    expect(screen.getByLabelText('PDF de la nota 0005-00000007')).toHaveAttribute('href', '/api/comprobantes/12/pdf')
+    expect(screen.queryByText('Notas de crédito')).toBeNull()
+  })
+
+  it('una nota de débito se muestra como tal: a qué factura suma, con su PDF, y sin ofrecer más notas', async () => {
+    abrirDetalle('75123456789012', 'nota_debito_a', {
+      comprobante: { ...detalleDe('75123456789012', 'nota_debito_a').comprobante,
+        comprobante_asociado_id: 3, motivo: 'Intereses', sin_ordenes: true },
+    })
+    expect(await screen.findByText(/Suma al comprobante #3/)).toBeInTheDocument()
+    expect(screen.getByText('Ver PDF')).toBeInTheDocument()
+    expect(screen.queryByText('Emitir nota de débito')).toBeNull()
+    expect(screen.queryByText('Emitir nota de crédito')).toBeNull()
+    expect(screen.queryByText(/Suma de sus/)).toBeNull()
+  })
+
+  it('una factura directa no agrupa órdenes: no muestra la suma de sus órdenes ni marca alarma', async () => {
+    abrirDetalle('75123456789012', 'factura_b', {
+      comprobante: { ...detalleDe('75123456789012', 'factura_b').comprobante, sin_ordenes: true },
+      ...SIN_NOTAS,
+    })
+    expect(await screen.findByText('Factura directa: no agrupa órdenes ni remitos.')).toBeInTheDocument()
+    expect(screen.queryByText(/Suma de sus/)).toBeNull()
+    expect(screen.queryByText(/no dice lo mismo que sus órdenes/)).toBeNull()
+    // Y se corrige como cualquier factura con CAE.
+    expect(screen.getByText('Emitir nota de crédito')).toBeInTheDocument()
+  })
+
+  it('los comprobantes sin órdenes se cuentan aparte del gate, que no se pone en rojo', async () => {
+    responder({ totales: total({ cantidad_sin_ordenes: 2, total_sin_ordenes: '1815.00' }) })
+    render(<MemoryRouter><Comprobantes /></MemoryRouter>)
+    expect(await screen.findByText(/2 comprobante\/s sin órdenes/)).toHaveTextContent('1815.00')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('con sólo facturas directas el panel aparece igual', async () => {
+    responder({ totales: total({
+      cantidad_comprobantes: 0, cantidad_ordenes: 0, total_comprobantes: '0.00', total_ordenes: '0.00',
+      cantidad_sin_ordenes: 1, total_sin_ordenes: '605.00' }) })
+    render(<MemoryRouter><Comprobantes /></MemoryRouter>)
+    expect(await screen.findByText(/1 comprobante\/s sin órdenes/)).toBeInTheDocument()
   })
 })
