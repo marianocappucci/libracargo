@@ -41,15 +41,6 @@ const GASTO = {
   id: 5, fecha: '2026-08-21', proveedor_id: 1, fletero_id: 2, comprobante: '0001-00000123',
   descripcion: '2 cubiertas', importe: '150000.00', anulado: false,
 }
-const PRE_FACTURA = {
-  id: 7, numero_interno: 'PF-0007', estado: 'pendiente', cliente_id: 1, cliente_razon: 'Agro Norte',
-  cliente_cuit: '30-12345678-1', tipo_comprobante: 1,
-  fecha_sugerida: '2026-08-20', fecha_vencimiento_pago: null, observaciones: '', orden_ids: [3],
-  total: '1210.00', created_at: '2026-08-20 10:15:00', enviado_at: null, enviado_a: null,
-  aceptado_at: null, aceptado_por: null, factura_id: null, motivo_descarte: null, resuelto_por: null,
-  resuelto_at: null,
-  items: [{ description: 'Flete', detalle: 'Orden 3', qty: 1, unit_price: 1000, iva_rate: 0.21, orden_id: 3 }],
-}
 const COMPROBANTE = {
   comprobante: {
     id: 9, tipo: 'factura_a', punto_venta: 5, numero: 42, fecha: '2026-08-15',
@@ -72,9 +63,8 @@ function responder() {
     if (ruta.startsWith('/api/terceros')) return Promise.resolve(TERCEROS)
     if (ruta.startsWith('/api/comprobantes/totales')) return Promise.resolve(TOTALES_VACIOS)
     if (ruta === '/api/comprobantes/9') return Promise.resolve(COMPROBANTE)
-    if (ruta === '/api/pre-facturas/7') return Promise.resolve(PRE_FACTURA)
-    if (ruta.startsWith('/api/pre-facturas')) {
-      return Promise.resolve({ items: [PRE_FACTURA], counts: { pendiente: 1 } })
+    if (ruta.startsWith('/api/comprobantes/tipos')) {
+      return Promise.resolve({ tipos: ['factura_a'], sugerido: 'factura_a', fce_habilitada: false, problema: null })
     }
     if (ruta.startsWith('/api/configuracion')) return Promise.resolve({ razon_social: 'Suitrans' })
     return Promise.resolve([])
@@ -114,10 +104,11 @@ beforeEach(() => {
 })
 
 describe('el menú', () => {
-  it('🔑 tiene una sola entrada «Comprobantes», sin «Pre facturas» ni «Comprobantes de proveedores»', () => {
+  it('🔑 tiene una sola entrada «Comprobantes», sin «Pre facturas» ni «Nueva factura» ni «Comprobantes de proveedores»', () => {
     const etiquetas = NAV_SECCIONES.flatMap((s) => s.items).map((i) => i.label)
     expect(etiquetas.filter((e) => e === 'Comprobantes')).toHaveLength(1)
     expect(etiquetas).not.toContain('Pre facturas')
+    expect(etiquetas).not.toContain('Nueva factura')
     expect(etiquetas).not.toContain('Comprobantes de proveedores')
   })
 
@@ -128,28 +119,30 @@ describe('el menú', () => {
     expect(menu.filter((e) => e === 'Comprobantes')).toHaveLength(1)
     expect(menu).not.toContain('Pre facturas')
     expect(menu).not.toContain('Comprobantes de proveedores')
-    // El acceso a Pre facturas existe, pero es un botón de la pantalla y no una entrada del menú.
-    expect(screen.getByText('Pre facturas').closest('[data-sidebar="menu-button"]')).toBeNull()
+    // «Nueva factura» existe, pero es un botón de la pantalla de Comprobantes y no una entrada del menú.
+    expect(screen.getByText('Nueva factura').closest('[data-sidebar="menu-button"]')).toBeNull()
+    expect(screen.queryByText('Pre facturas')).toBeNull()
   })
 })
 
 describe('las pestañas', () => {
-  it('/comprobantes abre Clientes, con los accesos a Facturar pendientes y a Pre facturas', async () => {
+  it('/comprobantes abre Clientes, con los accesos a Facturar pendientes y a Nueva factura (ya no a Pre facturas)', async () => {
     montar('/comprobantes')
     expect(await screen.findByRole('tab', { name: 'Clientes' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: 'Proveedores' })).toHaveAttribute('aria-selected', 'false')
     expect(screen.getByText('Facturar pendientes').closest('a'))
       .toHaveAttribute('href', '/comprobantes/facturar')
-    expect(screen.getByText('Pre facturas').closest('a')).toHaveAttribute('href', '/pre-facturas')
+    expect(screen.getByText('Nueva factura').closest('a')).toHaveAttribute('href', '/comprobantes/nueva')
+    expect(screen.queryByText('Pre facturas')).toBeNull()
     expect(activas()).toEqual(['Comprobantes'])
   })
 
-  it('🔑 «Pre facturas» y «Facturar pendientes» están en la línea del título «Comprobantes», no debajo de las pestañas', async () => {
+  it('🔑 «Nueva factura» y «Facturar pendientes» están en la línea del título «Comprobantes», no debajo de las pestañas', async () => {
     montar('/comprobantes')
     const facturar = await screen.findByText('Facturar pendientes')
     const fila = screen.getByRole('heading', { name: 'Comprobantes' }).parentElement as HTMLElement
     expect(within(fila).getByText('Facturar pendientes')).toBe(facturar)
-    expect(within(fila).getByText('Pre facturas')).toBeInTheDocument()
+    expect(within(fila).getByText('Nueva factura')).toBeInTheDocument()
     expect(screen.getByRole('tablist')).not.toContainElement(facturar)
   })
 
@@ -217,31 +210,24 @@ describe('los enlaces de siempre siguen andando', () => {
     expect(await screen.findByText('Anular comprobante')).toBeInTheDocument()
   })
 
-  it('🔑 /pre-facturas sigue andando y marca «Comprobantes» en el menú', async () => {
-    montar('/pre-facturas')
-    expect(await screen.findByText('PF-0007')).toBeInTheDocument()
-    expect(donde()).toBe('/pre-facturas')
-    expect(activas()).toEqual(['Comprobantes'])
-    // Y se vuelve a Comprobantes sin pasar por el menú.
-    expect(screen.getByRole('link', { name: 'Volver a Comprobantes' })).toHaveAttribute('href', '/comprobantes')
+  it('🔑 las pre facturas se retiraron (ADR-048): un enlace viejo cae en la lista de Comprobantes', async () => {
+    for (const vieja of ['/pre-facturas', '/pre-facturas/7', '/pre-facturas/7/editar']) {
+      const { unmount } = montar(vieja)
+      expect(await screen.findByRole('tab', { name: 'Clientes' })).toHaveAttribute('aria-selected', 'true')
+      expect(donde()).toBe('/comprobantes')
+      expect(activas()).toEqual(['Comprobantes'])
+      unmount()
+    }
   })
 
-  it('el detalle y la edición de una pre factura también marcan «Comprobantes»', async () => {
-    const detalle = montar('/pre-facturas/7')
-    await screen.findByText(/Pre factura PF-0007/)
-    expect(donde()).toBe('/pre-facturas/7')
-    expect(activas()).toEqual(['Comprobantes'])
-    detalle.unmount()
-
-    montar('/pre-facturas/7/editar')
-    await screen.findByText(/Editar pre factura/)
-    expect(donde()).toBe('/pre-facturas/7/editar')
-    expect(activas()).toEqual(['Comprobantes'])
-  })
-
-  it('facturar pendientes también cuelga de «Comprobantes»', async () => {
-    montar('/comprobantes/facturar')
+  it('facturar pendientes y la nueva factura también cuelgan de «Comprobantes»', async () => {
+    const primera = montar('/comprobantes/facturar')
     await screen.findAllByText('Facturar pendientes')
+    expect(activas()).toEqual(['Comprobantes'])
+    primera.unmount()
+
+    montar('/comprobantes/nueva')
+    await screen.findAllByText('Nueva factura')
     expect(activas()).toEqual(['Comprobantes'])
   })
 
@@ -251,10 +237,10 @@ describe('los enlaces de siempre siguen andando', () => {
     expect(activas()).toEqual(['Órdenes de carga'])
   })
 
-  it('el botón Pre facturas de Clientes lleva a la lista', async () => {
+  it('el botón Nueva factura de Clientes lleva a la pantalla de la nueva factura', async () => {
     montar('/comprobantes')
-    fireEvent.click(await screen.findByText('Pre facturas'))
-    expect(await screen.findByText('PF-0007')).toBeInTheDocument()
-    expect(donde()).toBe('/pre-facturas')
+    fireEvent.click(await screen.findByText('Nueva factura'))
+    expect(await screen.findByRole('heading', { name: 'Nueva factura' })).toBeInTheDocument()
+    expect(donde()).toBe('/comprobantes/nueva')
   })
 })

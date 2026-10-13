@@ -1,9 +1,10 @@
 /** Comprobantes: lo facturado, y el gate de F5 a la vista.
  *
- * Acá no se crean comprobantes (ADR-032): salen de una pre factura, por ARCA, que
- * les pone el número y el punto de venta. Esta pantalla lista lo emitido, lo
- * anterior (registrado a mano y migrado del legado) y deja anular lo que no
- * tiene CAE o acreditarlo con una nota de crédito.
+ * Los comprobantes se emiten **directo por ARCA** (ADR-048), que les pone el número y el punto de venta, desde dos
+ * pantallas que cuelgan de los botones de arriba: «Facturar pendientes» (las órdenes de un cliente) y «Nueva factura»
+ * (conceptos libres). Esta pantalla lista lo emitido y lo anterior (registrado a mano y migrado del legado), deja
+ * anular lo que no tiene CAE y corregir lo que sí: cada factura con CAE tiene, en su fila y en su detalle, las
+ * acciones **Nota de crédito** (la acredita) y **Nota de débito** (le suma un importe).
  *
  * 🔑 **El panel de totales muestra los dos lados, no uno.** El total facturado
  * se cuenta por los encabezados de los comprobantes y por las órdenes
@@ -11,12 +12,12 @@
  * confiable que uno sano — que es justo cuando no hay que usarlo.
  */
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
-import { Download, ExternalLink, FileText, Plus } from 'lucide-react'
+import { Download, ExternalLink, FileMinus, FilePlus, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import type { Comprobante, ComprobanteConOrdenes, TotalDeComprobantes } from '@/api/comprobantes'
-import { NOMBRE_DE_TIPO, comprobantes, numeroDe } from '@/api/comprobantes'
+import { NOMBRE_DE_TIPO, comprobantes, esFactura, numeroDe } from '@/api/comprobantes'
 import type { Opcion, Opciones } from '@/api/ordenes'
 import { cargarOpciones } from '@/api/ordenes'
 import { api } from 'libra-ui/api-client'
@@ -32,7 +33,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { irA } from '@/navegacion'
 import { formatearFecha } from '@/components/esquema-orden'
-import { ICONOS_LC } from '@/iconos'
 
 function Campo({ id, etiqueta, valor, alCambiar, tipo = 'text' }: {
   id: string; etiqueta: string; valor: string
@@ -52,8 +52,9 @@ function nombre(opciones: Opcion[], id: number | null): string {
 
 /** El panel del gate: lo facturado, contado por los dos lados. Hay un solo emisor (ADR-035). */
 function Totales({ total }: { total: TotalDeComprobantes | null }) {
+  const sinOrdenes = total?.cantidad_sin_ordenes ?? 0
   if (total === null || (total.cantidad_comprobantes === 0 && total.cantidad_ordenes === 0
-      && total.coinciden)) return null
+      && sinOrdenes === 0 && total.coinciden)) return null
   return (
     <section className="mb-6 rounded border p-4">
       <h2 className="mb-3 text-sm font-semibold">Total facturado</h2>
@@ -83,13 +84,15 @@ function Totales({ total }: { total: TotalDeComprobantes | null }) {
           dicen una cosa por los comprobantes y otra por las órdenes.
         </p>
       )}
+      {/* Lo que no agrupa órdenes (ADR-048) no tiene contra qué coincidir: va aparte del gate, no dentro. */}
+      {sinOrdenes > 0 && (
+        <p className="text-muted-foreground mt-3 text-sm">
+          Además, {sinOrdenes} comprobante/s sin órdenes (facturas directas y notas de débito):{' '}
+          <span className="text-foreground font-semibold">{total.total_sin_ordenes}</span>
+        </p>
+      )}
     </section>
   )
-}
-
-/** Una factura (o una FCE), no una nota: lo único a lo que se le emite una nota de crédito. */
-function esFactura(tipo: Comprobante['tipo']): boolean {
-  return tipo.startsWith('factura_') || tipo.startsWith('fce_')
 }
 
 /** `"1.234,5"` o `"121.5"` → centavos enteros, o `null` si no es un importe de hasta dos decimales. */
@@ -105,6 +108,31 @@ function deCentavos(centavos: number): string {
   return `${Math.floor(centavos / 100)}.${String(centavos % 100).padStart(2, '0')}`
 }
 
+/** Las notas que cuelgan de un comprobante (de crédito o de débito), con su PDF cuando ARCA las autorizó. */
+function ListaDeNotas({ titulo, notas }: { titulo: string; notas?: Comprobante[] }) {
+  if (!notas || notas.length === 0) return null
+  return (
+    <div>
+      <p className="text-muted-foreground text-xs">{titulo}</p>
+      <ul className="divide-y rounded border">
+        {notas.map((n) => (
+          <li key={n.id} className="flex items-center gap-3 p-2">
+            <span className="flex-1">
+              {NOMBRE_DE_TIPO[n.tipo]} {numeroDe(n)} · {formatearFecha(n.fecha)}
+              {n.motivo ? ` · ${n.motivo}` : ''}
+            </span>
+            {n.cae && (
+              <a className="underline" href={comprobantes.urlDelPdf(n.id)} target="_blank"
+                 rel="noreferrer" aria-label={`PDF de la nota ${numeroDe(n)}`}>PDF</a>
+            )}
+            <span className="tabular-nums">{formatearImporte(n.total)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 export default function Comprobantes() {
   const [filas, setFilas] = useState<Comprobante[]>([])
   const [totales, setTotales] = useState<TotalDeComprobantes | null>(null)
@@ -114,8 +142,9 @@ export default function Comprobantes() {
   const [detalle, setDetalle] = useState<ComprobanteConOrdenes | null>(null)
   const [params, setParams] = useSearchParams()
   const [confirmando, setConfirmando] = useState(false)
-  // La nota de crédito: pide un motivo y se confirma aparte, igual que anular. Total o por un importe (ADR-028).
-  const [notaAbierta, setNotaAbierta] = useState(false)
+  // La nota de crédito o de débito: pide un motivo y se confirma aparte, igual que anular. La de crédito es total o por un
+  // importe (ADR-028); la de débito va siempre por un importe y no tiene tope (ADR-048).
+  const [nota, setNota] = useState<'credito' | 'debito' | null>(null)
   const [motivo, setMotivo] = useState('')
   const [parcial, setParcial] = useState(false)
   const [importe, setImporte] = useState('')
@@ -159,16 +188,19 @@ export default function Comprobantes() {
 
   useEffect(recargar, [recargar])
 
-  async function ver(id: number) {
+  /** Abre el detalle; con `conNota`, ya con el formulario de esa nota abierto (las acciones de la fila). */
+  async function ver(id: number, conNota?: 'credito' | 'debito') {
     setError(null)
     setAviso(null)
     setConfirmando(false)
-    setNotaAbierta(false)
+    setNota(null)
     setCorreoAbierto(false)
     setMotivo('')
     setImporte('')
     try {
-      setDetalle(await comprobantes.ver(id))
+      const abierto = await comprobantes.ver(id)
+      setDetalle(abierto)
+      if (conNota) abrirNota(conNota, abierto)
     } catch (e) {
       setError(mensajeDeError(e))
     }
@@ -215,18 +247,21 @@ export default function Comprobantes() {
   async function emitirNota(id: number) {
     setError(null)
     setEmitiendo(true)
+    const esDebito = nota === 'debito'
     try {
-      const r = await comprobantes.notaDeCredito(
-        id, motivo.trim(), parcial && importeValido !== null ? deCentavos(importeValido) : undefined)
+      const r = esDebito
+        ? await comprobantes.notaDeDebito(id, motivo.trim(), deCentavos(importeValido ?? 0))
+        : await comprobantes.notaDeCredito(
+          id, motivo.trim(), parcial && importeValido !== null ? deCentavos(importeValido) : undefined)
       if ('ensayo' in r) {
         // Homologación: se corrió todo contra ARCA y no se guardó nada. El comprobante sigue como estaba.
-        setAviso(`Ensayo contra ${r.ambiente}: ARCA autorizó una nota de crédito de prueba `
+        setAviso(`Ensayo contra ${r.ambiente}: ARCA autorizó una nota de ${esDebito ? 'débito' : 'crédito'} de prueba `
           + `(CAE ${r.cae ?? 's/n'}) y no se guardó nada.`)
-        setNotaAbierta(false)
+        setNota(null)
         return
       }
       setDetalle(null)
-      setNotaAbierta(false)
+      setNota(null)
       setMotivo('')
       setImporte('')
       recargar()
@@ -245,14 +280,24 @@ export default function Comprobantes() {
   // La total copia la factura entera: sólo sin notas previas, y nunca en una FCE (ARCA: 10184).
   const admiteTotal = !tieneNotas && !esFceDetalle
   const tecleado = centavosDe(importe)
-  const importeValido = tecleado !== null && tecleado > 0 && (saldoCentavos === null
+  // La de débito no tiene tope: cualquier importe positivo. La de crédito no puede pasar del saldo (< en una FCE).
+  const importeValido = tecleado !== null && tecleado > 0 && (nota === 'debito' || saldoCentavos === null
     || (esFceDetalle ? tecleado < saldoCentavos : tecleado <= saldoCentavos)) ? tecleado : null
 
-  function abrirNota() {
-    // Sin la total posible, arranca por el importe; con notas previas, propone el saldo.
-    setParcial(!admiteTotal)
-    setImporte(tieneNotas && !esFceDetalle && detalle?.saldo_acreditable ? detalle.saldo_acreditable : '')
-    setNotaAbierta(true)
+  function abrirNota(cual: 'credito' | 'debito', abierto: ComprobanteConOrdenes | null = detalle) {
+    setMotivo('')
+    if (cual === 'debito') {
+      // Siempre por un importe y sin tope: no hay «por el total» ni saldo que proponer.
+      setParcial(true)
+      setImporte('')
+    } else {
+      // Sin la total posible, arranca por el importe; con notas previas, propone el saldo.
+      const esFce = abierto?.comprobante.tipo.startsWith('fce_') ?? false
+      const conNotas = (abierto?.notas?.length ?? 0) > 0
+      setParcial(conNotas || esFce)
+      setImporte(conNotas && !esFce && abierto?.saldo_acreditable ? abierto.saldo_acreditable : '')
+    }
+    setNota(cual)
   }
 
   const columnas = [
@@ -274,27 +319,53 @@ export default function Comprobantes() {
           {row.original.anulado ? 'anulado' : 'vigente'}
         </BadgeEstado>
       ) },
-    { id: 'acciones', header: '',
-      cell: ({ row }: { row: { original: Comprobante } }) => (
-        <Button variant="ghost" size="sm" onClick={() => ver(row.original.id)}>
-          <FileText className="size-4" /> Ver
-        </Button>
-      ) },
+    // `id: 'actions'`: la convención de la familia, con la que `DataTable` mide la columna y le da el ancho de sus botones.
+    { id: 'actions', header: '',
+      cell: ({ row }: { row: { original: Comprobante } }) => {
+        const c = row.original
+        // Las notas se piden sobre una factura con CAE que sigue vigente: sin CAE ARCA no la conoce (se anula), una nota
+        // no admite otra, y una anulada ya está acreditada entera.
+        const conNotas = esFactura(c.tipo) && Boolean(c.cae) && !c.anulado
+        // `stopPropagation`: la fila entera abre el detalle, y el click de un botón no puede abrirlo dos veces.
+        const pedir = (cual: 'credito' | 'debito') => (e: { stopPropagation: () => void }) => {
+          e.stopPropagation()
+          ver(c.id, cual)
+        }
+        return (
+          <div className="flex flex-nowrap items-center justify-end gap-1">
+            {/* Sin botón «Ver»: la fila entera abre el detalle (`onRowClick`, el contrato de `navegacion.ts`), y con el botón
+                la columna de acciones no entra en 1280 px junto a las otras. */}
+            {/* Sólo el ícono, con el nombre completo en `title` y `aria-label`: con el texto la columna se come la tabla. */}
+            {conNotas && (
+              <>
+                <Button variant="ghost" size="icon" onClick={pedir('credito')} title="Nota de crédito"
+                        aria-label={`Nota de crédito de ${NOMBRE_DE_TIPO[c.tipo]} ${numeroDe(c)}`}>
+                  <FileMinus className="size-4" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={pedir('debito')} title="Nota de débito"
+                        aria-label={`Nota de débito de ${NOMBRE_DE_TIPO[c.tipo]} ${numeroDe(c)}`}>
+                  <FilePlus className="size-4" />
+                </Button>
+              </>
+            )}
+          </div>
+        )
+      } },
   ]
 
   return (
     <div>
       {/* El título «Comprobantes» y las pestañas son de `ComprobantesSeccion`, y los dos accesos suben a la línea de
-          ese título (`AccionesDelTitulo`): facturar pendientes (que genera la pre factura) y la lista de pre
-          facturas, que ya no está en el menú.
+          ese título (`AccionesDelTitulo`): «Nueva factura» (conceptos libres) y «Facturar pendientes» (las órdenes de un
+          cliente). Los dos emiten directo por ARCA (ADR-048).
 
           El listado se imprime desde reportes (`listado-comprobantes`), que
           exige rango. Aca el boton salia sin fechas y mandaba al papel todos
           los comprobantes que hubiera. */}
       <AccionesDelTitulo>
         <Button variant="outline" asChild>
-          <Link to="/pre-facturas">
-            <ICONOS_LC.preFacturas className="size-4" /> Pre facturas
+          <Link to={irA.nuevaFactura()}>
+            <Plus className="size-4" /> Nueva factura
           </Link>
         </Button>
         <Button asChild>
@@ -350,43 +421,33 @@ export default function Comprobantes() {
                     {formatearImporte(detalle.comprobante.total)}
                   </p>
                 </div>
-                {/* Los dos numeros a la vista, igual que en la cuenta
-                    corriente: el encabezado y lo que suman sus ordenes. */}
-                <div>
-                  <p className="text-muted-foreground text-xs">
-                    Suma de sus {detalle.suma_de_ordenes.cantidad} orden/es
-                  </p>
-                  <p className="text-lg font-semibold">
-                    {formatearImporte(detalle.suma_de_ordenes.total)}
-                  </p>
-                </div>
+                {/* Los dos numeros a la vista, igual que en la cuenta corriente: el encabezado y lo que suman sus
+                    ordenes. Una factura directa o una nota de débito no agrupa órdenes (ADR-048): no hay con qué comparar. */}
+                {!detalle.comprobante.sin_ordenes && (
+                  <div>
+                    <p className="text-muted-foreground text-xs">
+                      Suma de sus {detalle.suma_de_ordenes.cantidad} orden/es
+                    </p>
+                    <p className="text-lg font-semibold">
+                      {formatearImporte(detalle.suma_de_ordenes.total)}
+                    </p>
+                  </div>
+                )}
               </div>
               {detalle.comprobante.comprobante_asociado_id != null && (
                 <p role="note" className="text-sm">
-                  Acredita al comprobante #{detalle.comprobante.comprobante_asociado_id}
+                  {detalle.comprobante.tipo.startsWith('nota_debito')
+                    ? 'Suma al comprobante #' : 'Acredita al comprobante #'}{detalle.comprobante.comprobante_asociado_id}
                   {detalle.comprobante.motivo ? ` · ${detalle.comprobante.motivo}` : ''}
                 </p>
               )}
-              {(detalle.notas?.length ?? 0) > 0 && (
-                <div>
-                  <p className="text-muted-foreground text-xs">Notas de crédito</p>
-                  <ul className="divide-y rounded border">
-                    {detalle.notas!.map((n) => (
-                      <li key={n.id} className="flex items-center gap-3 p-2">
-                        <span className="flex-1">
-                          {NOMBRE_DE_TIPO[n.tipo]} {numeroDe(n)} · {formatearFecha(n.fecha)}
-                          {n.motivo ? ` · ${n.motivo}` : ''}
-                        </span>
-                        {n.cae && (
-                          <a className="underline" href={comprobantes.urlDelPdf(n.id)} target="_blank"
-                             rel="noreferrer" aria-label={`PDF de la nota ${numeroDe(n)}`}>PDF</a>
-                        )}
-                        <span className="tabular-nums">{formatearImporte(n.total)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+              {detalle.comprobante.sin_ordenes && !detalle.comprobante.tipo.startsWith('nota_') && (
+                <p role="note" className="text-muted-foreground text-sm">
+                  Factura directa: no agrupa órdenes ni remitos.
+                </p>
               )}
+              <ListaDeNotas titulo="Notas de crédito" notas={detalle.notas} />
+              <ListaDeNotas titulo="Notas de débito" notas={detalle.notas_debito} />
               {detalle.saldo_acreditable != null && (
                 <p className="text-sm">
                   Acreditado {formatearImporte(detalle.acreditado ?? '0.00')} · queda por
@@ -400,6 +461,7 @@ export default function Comprobantes() {
                   hasta saber cuál de los dos importes es el bueno.
                 </p>
               )}
+              {detalle.ordenes.length > 0 && (
               <ul className="divide-y rounded border">
                 {detalle.ordenes.map((o) => (
                   <li key={o.id} className="flex items-center gap-3 p-2">
@@ -408,6 +470,7 @@ export default function Comprobantes() {
                   </li>
                 ))}
               </ul>
+              )}
               {/* El PDF es de lo que ARCA autorizó: sin CAE (lo registrado a mano y lo migrado del legado) no
                   hay PDF, porque parecería una factura que ARCA no conoce. Las notas de crédito tienen el suyo. */}
               {detalle.comprobante.cae && (
@@ -466,11 +529,12 @@ export default function Comprobantes() {
             )}
             {detalle && !detalle.comprobante.anulado && detalle.comprobante.cae
               && esFactura(detalle.comprobante.tipo) && (
-              notaAbierta ? (
+              nota !== null ? (
                 <div className="grid w-full gap-2">
-                  <Campo id="motivo-nota" etiqueta="Motivo de la nota de crédito" valor={motivo}
-                         alCambiar={setMotivo} />
-                  {saldoCentavos !== null && (
+                  <Campo id="motivo-nota"
+                         etiqueta={nota === 'debito' ? 'Motivo de la nota de débito' : 'Motivo de la nota de crédito'}
+                         valor={motivo} alCambiar={setMotivo} />
+                  {nota === 'credito' && saldoCentavos !== null && (
                     <fieldset className="flex gap-4 text-sm">
                       <legend className="sr-only">Por cuánto</legend>
                       <label className="flex items-center gap-1">
@@ -485,20 +549,30 @@ export default function Comprobantes() {
                       </label>
                     </fieldset>
                   )}
-                  {parcial && (
-                    <Campo id="importe-nota" etiqueta="Importe a acreditar (con IVA)" valor={importe}
-                           alCambiar={setImporte} />
+                  {(parcial || nota === 'debito') && (
+                    <Campo id="importe-nota"
+                           etiqueta={nota === 'debito' ? 'Importe a debitar (con IVA)' : 'Importe a acreditar (con IVA)'}
+                           valor={importe} alCambiar={setImporte} />
                   )}
                   <p className="text-muted-foreground text-xs">
-                    {parcial
-                      ? `Acredita ese importe, con fecha de hoy: ARCA la autoriza y la cuenta del cliente recibe el
+                    {nota === 'debito'
+                      ? `Suma ese importe a la factura, con fecha de hoy: intereses, un gasto, una diferencia. ARCA la
+                        autoriza y la cuenta del cliente recibe el cargo (su deuda sube). Va siempre por un importe y no
+                        tiene tope; no toca la factura ni sus órdenes.`
+                      : parcial
+                        ? `Acredita ese importe, con fecha de hoy: ARCA la autoriza y la cuenta del cliente recibe el
                         abono. Las órdenes no se tocan, salvo que con esta nota quede acreditado todo el
                         comprobante: ahí vuelven a pendientes.${esFceDetalle
                           ? ' En una factura de crédito electrónica tiene que ser menos que el saldo.' : ''}`
-                      : `Es por el total, con fecha de hoy. ARCA la autoriza, las órdenes vuelven a
+                        : `Es por el total, con fecha de hoy. ARCA la autoriza, las órdenes vuelven a
                         pendientes y la cuenta del cliente recibe el abono.`}
                   </p>
-                  {parcial && importe.trim() !== '' && importeValido === null && (
+                  {nota === 'debito' && esFceDetalle && (
+                    <p role="note" className="text-muted-foreground text-xs">
+                      La nota de débito de una factura de crédito electrónica todavía no se probó contra ARCA.
+                    </p>
+                  )}
+                  {(parcial || nota === 'debito') && importe.trim() !== '' && importeValido === null && (
                     <p role="alert" className="text-destructive text-xs">
                       {tecleado === null || tecleado <= 0
                         ? 'El importe tiene que ser mayor que cero, con hasta dos decimales.'
@@ -507,19 +581,25 @@ export default function Comprobantes() {
                     </p>
                   )}
                   <div className="flex justify-end gap-2">
-                    <Button variant="ghost" onClick={() => setNotaAbierta(false)}>No</Button>
-                    <Button variant="destructive"
-                            disabled={emitiendo || motivo.trim().length < 3 || (parcial && importeValido === null)}
+                    <Button variant="ghost" onClick={() => setNota(null)}>No</Button>
+                    <Button variant={nota === 'debito' ? 'default' : 'destructive'}
+                            disabled={emitiendo || motivo.trim().length < 3
+                              || ((parcial || nota === 'debito') && importeValido === null)}
                             onClick={() => emitirNota(detalle.comprobante.id)}>
-                      Confirmar nota de crédito
+                      {nota === 'debito' ? 'Confirmar nota de débito' : 'Confirmar nota de crédito'}
                     </Button>
                   </div>
                 </div>
               ) : (
-                <Button variant="destructive" onClick={abrirNota}
-                        disabled={saldoCentavos !== null && saldoCentavos <= 0}>
-                  Emitir nota de crédito
-                </Button>
+                <>
+                  <Button variant="outline" onClick={() => abrirNota('debito')}>
+                    <FilePlus className="size-4" /> Emitir nota de débito
+                  </Button>
+                  <Button variant="destructive" onClick={() => abrirNota('credito')}
+                          disabled={saldoCentavos !== null && saldoCentavos <= 0}>
+                    <FileMinus className="size-4" /> Emitir nota de crédito
+                  </Button>
+                </>
               )
             )}
             {detalle && !detalle.comprobante.anulado && !detalle.comprobante.cae && (

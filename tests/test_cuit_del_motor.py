@@ -1,7 +1,7 @@
 """«Sólo los dígitos del CUIT» es del motor: este producto no tiene su copia.
 
 Hubo cinco helpers casi idénticos (`"".join(c for c in (cuit or "") if c.isdigit())`) en
-`emision_arca`, `pre_facturas`, `routers/maestros`, `cartas_porte` y `routers/comprobantes`, más dos
+`emision_arca`, `facturacion`, `routers/maestros`, `cartas_porte` y `routers/comprobantes`, más dos
 validadores de los esquemas. La regla es `libracore.cuit.solo_digitos` (la misma que usa
 `arca_wsfe.cuit_del_receptor` y, con ella, la guarda `problema_del_receptor`): si un producto escribe la
 suya, la próxima vez que el motor cambie la regla (qué se considera «un CUIT cargado») la pantalla y la
@@ -15,7 +15,7 @@ import pytest
 from libracore.cuit import solo_digitos
 
 from app.routers import maestros
-from app.servicios import cartas_porte, emision_arca, pre_facturas
+from app.servicios import cartas_porte, emision_arca, facturacion
 
 RAIZ_APP = Path(__file__).resolve().parent.parent / "app"
 
@@ -25,7 +25,7 @@ COPIA = re.compile(r"join\(\s*\w+\s+for\s+\w+\s+in\b[^\n]*\bif\s+\w+\.isdigit\(\
 
 @pytest.mark.parametrize("modulo, nombre", [
     (emision_arca, "_solo_digitos"),
-    (pre_facturas, "_digitos"),
+    (facturacion, "_digitos"),
     (maestros, "_digitos"),
     (cartas_porte, "digitos"),
 ])

@@ -1,10 +1,10 @@
 """Quién emite lo que sale en un PDF de LibraCargo: **la empresa**, para todo documento (ADR-034, ADR-035).
 
-Todos los PDF del motor —la factura, la nota de crédito, la FCE y la pre factura— arman su membrete con un
+Todos los PDF del motor —la factura, las notas de crédito y de débito y la FCE— arman su membrete con un
 `dict` de emisor que sale de `libracore.emisor_del_pdf.emisor_para(documento)`: la configuración global de la
 instancia, el nombre y el CUIT del `arca_config` del comprobante, y **el resolvedor que registra el producto**
 (libracore ADR-031). Este módulo es ese resolvedor. Lo registra `crear_app` (`registrar()`), y lo usan por
-igual el PDF de la pre factura, el de cada comprobante, el que se guarda al emitir y el que va por correo.
+igual el PDF de cada comprobante, el que se guarda al emitir y el que va por correo.
 
 ## Qué sale
 

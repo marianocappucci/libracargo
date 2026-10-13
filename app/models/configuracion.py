@@ -16,7 +16,7 @@ class ConfiguracionEmpresa(Base, Auditable):
     comprobantes, y el nombre que se ve debajo del producto en la barra lateral.
 
     🔑 **Es el único emisor de la instancia** (ADR-035): su razón social, su CUIT y su condición de IVA
-    son los de toda factura, nota de crédito, pre factura y PDF, y por ARCA sólo se emite si su CUIT es el
+    son los de toda factura, nota de crédito, nota de débito y PDF, y por ARCA sólo se emite si su CUIT es el
     del certificado cargado. Antes el emisor era una «razón social» aparte, con el CUIT en tres lugares.
     Cada instancia de cliente tiene la suya —es lo que distingue la de Suitrans
     de la de cualquier otro— y por eso vive en la base y no en el `.env`: el

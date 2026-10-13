@@ -58,7 +58,6 @@ from app.routers import (
     gastos,
     maestros,
     ordenes,
-    pre_facturas,
     reportes,
     salud,
     tarifario,
@@ -214,7 +213,7 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     migrar_secretos(secretos)
 
     # Quién emite lo que sale en un PDF —la empresa: nombre, CUIT, domicilio y logo—: **un solo resolvedor**
-    # para el PDF de la pre factura, el de cada comprobante, el que se guarda al emitir y el que va por correo
+    # para el PDF de cada comprobante, el que se guarda al emitir y el que va por correo
     # (ADR-034; el motor lo pide así, libracore ADR-031). Sin esta línea los PDF salen con el membrete global de
     # la instancia —sin el logo de la base ni los datos de la empresa— y nada falla: es el defecto que se corrige.
     emisor_del_pdf_de_cargo.registrar()
@@ -364,10 +363,6 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     # de este producto. 🔴 Va con `require_staff` (la sesión que lee `get_current_user` no alcanza: el router
     # del motor gatea por "hay sesión", no por rol) y **no** tapa ninguna ruta de `comprobantes.router`.
     app.include_router(comprobantes_pdf.construir_router(), dependencies=[Depends(require_staff)])
-    # La pre factura (ADR-032): el documento que se manda al cliente antes de facturar, y desde donde se
-    # factura por ARCA. Es el router del motor con el gate, el SMTP y el emisor de este producto; sus
-    # rutas de crear y editar son propias porque la pre factura se arma desde órdenes.
-    app.include_router(pre_facturas.construir_router())
     app.include_router(usuarios_router.router)
     app.include_router(reportes.router)
     app.include_router(auditoria.router)

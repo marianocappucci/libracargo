@@ -14,7 +14,7 @@ El prefijo es el de los comprobantes y no `/api/facturas`: es el que ya usa la p
 
 - Sin CAE (lo registrado a mano y lo migrado del legado) ARCA no lo conoce: un PDF con el formato de una
   factura, sin CAE ni QR, se podría mandar a un cliente como si lo fuera. No se ofrece.
-- De homologación no queda ninguno (el ensayo se revierte entero, ver `servicios.pre_facturas.facturar`), pero
+- De homologación no queda ninguno (el ensayo se revierte entero, ver `servicios.facturacion._emitir`), pero
   si apareciera uno —un dato cargado por fuera— tampoco se imprime: tendría un CAE que no vale.
 
 El emisor (razón social, domicilio y logo) lo pone el resolvedor registrado (`servicios/emisor_del_pdf.py`).
@@ -49,7 +49,7 @@ def construir_router() -> APIRouter:
         usuario_actual=get_current_user,
         prefix=PREFIJO,
         puede_ver=puede_ver,
-        # CALLABLE, como el de la pre factura y el de recuperación de contraseña: se resuelve en cada envío,
+        # CALLABLE, como el de recuperación de contraseña: se resuelve en cada envío,
         # así guardar el SMTP por pantalla tiene efecto sin reiniciar.
         smtp_config=lambda: resolver_smtp_config(db.fabrica_de_sesiones()),
         donde_configurar_smtp="Configuración → Email",

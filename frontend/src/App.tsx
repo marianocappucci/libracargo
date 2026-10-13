@@ -8,7 +8,6 @@ import Caja from '@/pages/Caja'
 import CartasDePorte from '@/pages/CartasDePorte'
 import Clientes from '@/pages/Clientes'
 import ComprobantesSeccion from '@/pages/ComprobantesSeccion'
-import EditarPreFactura from '@/pages/EditarPreFactura'
 import EmitirCartaDePorte from '@/pages/EmitirCartaDePorte'
 import FacturarPendientes from '@/pages/FacturarPendientes'
 import Configuracion from '@/pages/Configuracion'
@@ -18,8 +17,7 @@ import { ForgotPassword, ResetPassword } from '@/pages/PasswordReset'
 import Logs from '@/pages/Logs'
 import PlantillaDeTitular from '@/pages/PlantillaDeTitular'
 import Ordenes from '@/pages/Ordenes'
-import PreFactura from '@/pages/PreFactura'
-import PreFacturas from '@/pages/PreFacturas'
+import NuevaFactura from '@/pages/NuevaFactura'
 import PreLiquidacionTransportistas from '@/pages/PreLiquidacionTransportistas'
 import Proveedores from '@/pages/Proveedores'
 import Reporte from '@/pages/Reporte'
@@ -94,12 +92,10 @@ export default function App() {
                 {/* Una entrada de menú, dos pestañas (`?seccion=`): Clientes —la ruta pelada— y Proveedores. */}
                 <Route path="/comprobantes" element={<ComprobantesSeccion />} />
                 <Route path="/comprobantes/facturar" element={<FacturarPendientes />} />
-                {/* Las pre facturas ya no tienen entrada de menú: se llega desde Comprobantes > Clientes, y
-                    «Comprobantes» queda marcada en el menú (`activoEn` con `RUTAS_DE_COMPROBANTES`). */}
-                <Route path="/pre-facturas" element={<PreFacturas />} />
-                <Route path="/pre-facturas/:id" element={<PreFactura />} />
-                {/* Editar es la pantalla de facturar pendientes sobre una pre factura que ya existe. */}
-                <Route path="/pre-facturas/:id/editar" element={<EditarPreFactura />} />
+                {/* «Nueva factura» (ADR-048): conceptos libres, sin órdenes. Cuelga de «Comprobantes» en el menú (`activoEn`). */}
+                <Route path="/comprobantes/nueva" element={<NuevaFactura />} />
+                {/* Las pre facturas se retiraron (ADR-048): un marcador o un enlace viejo cae en la lista de comprobantes. */}
+                <Route path="/pre-facturas/*" element={<Navigate to="/comprobantes" replace />} />
                 <Route path="/gastos" element={<GastosAProveedores />} />
                 <Route path="/reportes" element={<ReportesIndice />} />
                 {/* Viene en bloques por transportista: no entra en la grilla genérica. Va antes que

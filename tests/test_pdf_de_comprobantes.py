@@ -7,11 +7,11 @@ Lo que se mide, en el orden del flujo:
 
 1. Emitir deja el PDF guardado, con la empresa de «Datos de la empresa» y **el logo de la base**; un fallo del PDF no
    deshace la emisión, y un comprobante sin PDF guardado se arma al pedirlo.
-2. **Hay un solo emisor**: todo documento (emitido por ARCA o registrado antes, factura, nota o pre factura) sale con la
+2. **Hay un solo emisor**: todo documento (emitido por ARCA o registrado antes, factura o nota) sale con la
    empresa y con su logo, **siempre**. Ya no hay una regla de «mismo CUIT» que deje el logo afuera.
 3. Qué comprobantes se ven (`puede_ver`): los de LibraCargo, con CAE y que no sean de homologación; el resto es 404.
 4. El correo: sale el mismo PDF, firmado por la empresa, con un SMTP falso.
-5. El resolvedor único: lo que decide, sin pasar por HTTP. Y que **la pre factura** lleva el logo.
+5. El resolvedor único: lo que decide, sin pasar por HTTP.
 
 Cómo se lee el PDF: `fpdf2` comprime los flujos, así que el texto se busca después de descomprimirlos, y el logo
 se cuenta como los objetos `/Subtype /Image` (cada imagen del documento es uno).
@@ -35,7 +35,7 @@ from PIL import Image
 from app.models import TipoComprobante
 from app.servicios import emisor_del_pdf as emisor_de_cargo
 from tests.conftest import CUIT_EMISOR, URL_CORE, arca_responde, cargar_empresa, configurar_arca
-from tests.test_comprobantes import facturar, orden, pre_factura
+from tests.test_comprobantes import facturar, orden
 
 #: El nombre de la empresa que carga `cargar_empresa` (la fixture `emisor`). Ficticio.
 EMPRESA = "Transportes de Prueba"
@@ -170,12 +170,11 @@ def test_si_el_pdf_no_sale_la_emision_no_se_deshace_y_el_pdf_se_arma_al_pedirlo(
         raise RuntimeError("fpdf se cayó")
 
     monkeypatch.setattr(pdf_generator, "generate_pdf_factura", falla)
-    pf = pre_factura(cliente, datos, [orden(cliente, datos, "1000.00")]).json()
-    r = cliente.post(f"/api/pre-facturas/{pf['id']}/facturar")
+    r = facturar(cliente, datos, [orden(cliente, datos, "1000.00")])
     assert r.status_code == 201, r.text
     comp = r.json()
     assert comp["cae"], "el comprobante quedó con su CAE"
-    assert cliente.get(f"/api/pre-facturas/{pf['id']}").json()["estado"] == "facturado"
+    assert cliente.get(f"/api/comprobantes/{comp['id']}").json()["comprobante"]["cae"] == comp["cae"]
     assert not factura_del_motor(comp["id"])["pdf_path"]
 
     # Cuando el generador vuelve, el endpoint lo arma al vuelo y **no** lo guarda: es lo que dice el motor.
@@ -382,27 +381,11 @@ def test_enviar_sin_correo_o_si_el_servidor_falla(cliente, datos, smtp_falso, mo
     assert r.status_code == 502 and "sin red" in r.text
 
 
-# ── 5. El resolvedor único, y la pre factura ────────────────────────────────
+# ── 5. El resolvedor único ──────────────────────────────────────────────────
 
 
 def test_crear_app_registra_el_resolvedor_en_el_motor(cliente):
     assert emisor_del_motor.resolvedor_registrado() is emisor_de_cargo.resolvedor
-
-
-@pytest.mark.con_emisor
-def test_la_pre_factura_lleva_el_logo_y_la_empresa(cliente, datos):
-    """El mismo resolvedor que los comprobantes: antes la pre factura armaba su emisor aparte y sin logo."""
-    pf = pre_factura(cliente, datos, [orden(cliente, datos, "1000.00")]).json()
-    sin_logo = cliente.get(f"/api/pre-facturas/{pf['id']}/pdf").content
-    assert imagenes_del_pdf(sin_logo) == 0
-
-    cargar_logo(cliente)
-    con_logo = cliente.get(f"/api/pre-facturas/{pf['id']}/pdf")
-    assert con_logo.status_code == 200
-    assert imagenes_del_pdf(con_logo.content) == 1
-    texto = texto_del_pdf(con_logo.content)
-    assert EMPRESA in texto and CUIT_EMISOR in texto
-    assert "Calle Falsa 123, Suipacha" in texto
 
 
 def test_el_resolvedor_sin_empresa_cargada_no_agrega_nada(cliente, sesion):
@@ -411,7 +394,7 @@ def test_el_resolvedor_sin_empresa_cargada_no_agrega_nada(cliente, sesion):
 
 
 def test_el_resolvedor_da_la_empresa_para_cualquier_documento(cliente, sesion):
-    """Hay un solo emisor: un comprobante, una pre factura, una de otro producto o un `emisor_id` ajeno, lo mismo."""
+    """Hay un solo emisor: un comprobante, un documento de otro producto o un `emisor_id` ajeno, lo mismo."""
     cargar_logo(cliente)
     esperado = emisor_de_cargo.emisor_de(sesion, {})
     assert esperado["nombre"] == EMPRESA + " SRL" and esperado["cuit"] == CUIT_EMISOR

@@ -58,13 +58,14 @@ def _en_forma_del_motor(sesion: Session, comprobante: Comprobante) -> dict:
 
 
 def _previas(sesion: Session, original_id: int) -> list[dict]:
-    """Las notas que ya cuelgan del comprobante, **cualquiera sea su estado**.
+    """Las notas **de crédito** que ya cuelgan del comprobante, **cualquiera sea su estado**.
 
     Cuenta también la que quedó sin CAE: esa ya tiene número, y lo que corresponde es resolverla, no pedir
     otra encima (la regla es del motor; acá sólo se las trae).
     """
     notas = sesion.scalars(
-        select(Comprobante).where(Comprobante.comprobante_asociado_id == original_id)
+        select(Comprobante).where(Comprobante.comprobante_asociado_id == original_id,
+                                  Comprobante.tipo.in_(comprobantes.TIPOS_NOTA))
     )
     # Con su `total`: es lo que el motor suma para el tope acumulado. Sin él contaría cada previa como el
     # comprobante entero, que es el comportamiento de la fase 1 (cualquier nota bloqueaba a la siguiente).
@@ -73,9 +74,13 @@ def _previas(sesion: Session, original_id: int) -> list[dict]:
 
 
 def notas_de(sesion: Session, original_id: int) -> list[Comprobante]:
-    """Las notas de crédito que cuelgan de un comprobante, en el orden en que se emitieron."""
+    """Las notas de crédito que cuelgan de un comprobante, en el orden en que se emitieron.
+
+    Sólo las de **crédito**: las de débito también cuelgan de él (ADR-048) pero suman en vez de acreditar, y contarlas
+    acá bajaría el saldo acreditable (`servicios/notas_de_debito.py`)."""
     return list(sesion.scalars(
-        select(Comprobante).where(Comprobante.comprobante_asociado_id == original_id)
+        select(Comprobante).where(Comprobante.comprobante_asociado_id == original_id,
+                                  Comprobante.tipo.in_(comprobantes.TIPOS_NOTA))
         .order_by(Comprobante.fecha, Comprobante.id)
     ))
 
@@ -202,7 +207,7 @@ def avisar_autorizada(nota: Comprobante, original: Comprobante) -> None:
     permite reconstruirla; no reemplaza a una herramienta de conciliación (riesgo R1 del diseño).
     """
     log.warning(
-        "nota de credito autorizada por ARCA: %s cae=%s sobre %s (comprobante %s)",
+        "nota autorizada por ARCA: %s cae=%s sobre %s (comprobante %s)",
         etiqueta(nota.tipo, nota.punto_venta, nota.numero), nota.cae,
         etiqueta(original.tipo, original.punto_venta, original.numero), original.id,
     )

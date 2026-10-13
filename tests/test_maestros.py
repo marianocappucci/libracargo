@@ -232,5 +232,5 @@ def test_la_tabla_de_razones_sociales_y_sus_columnas_ya_no_existen(engine):
 
     insp = inspect(engine)
     assert "razones_sociales" not in insp.get_table_names()
-    for tabla in ("ordenes_carga", "comprobantes_cargo", "pre_facturas_cargo", "comprobante_de_apertura"):
+    for tabla in ("ordenes_carga", "comprobantes_cargo", "comprobante_de_apertura"):
         assert "razon_social_id" not in {c["name"] for c in insp.get_columns(tabla)}, tabla

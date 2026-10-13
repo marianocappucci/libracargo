@@ -174,7 +174,9 @@ def test_la_0016_pasa_los_comprobantes_a_facturas_sin_mover_nada(base_de_antes, 
         assert _sql(con, "SELECT id, comprobante_id, debe, haber FROM movimientos_cuenta ORDER BY id"
                     ).all() == movimientos_antes
 
-    # Y el producto lo lee como antes.
+    # Y el producto lo lee como antes. Con la cadena entera: el modelo lee columnas que llegaron después de la `0016`
+    # (`sin_ordenes`, `0030`), y el comprobante ya no se mira en `comprobantes_legado`.
+    _alembic("head", subir=True)
     sesion.expire_all()
     c11 = sesion.get(Comprobante, 11)
     assert c11.anulado is True and c11.neto == Decimal("500.00") and c11.fecha.isoformat() == "2026-08-02"

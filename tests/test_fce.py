@@ -17,7 +17,7 @@ from app.models import Tercero, TipoComprobante
 from app.models.enums import CondicionIVA
 from app.servicios import comprobantes, emision_arca
 from tests.conftest import cargar_empresa
-from tests.test_comprobantes import facturar, orden, pre_factura
+from tests.test_comprobantes import facturar, orden
 from tests.test_emision_arca import CUIT, _arca_responde, _configurar_arca
 
 CBU = "0123456789012345678901"          # 22 dígitos
@@ -30,7 +30,7 @@ VENCIMIENTO = (HOY + timedelta(days=30)).isoformat()
 
 
 def _facturar(cliente, datos, ordenes, *, tipo="fce_a", vencimiento=VENCIMIENTO):
-    """Genera la pre factura y la factura por ARCA; devuelve la respuesta de lo último que se hizo."""
+    """Factura las órdenes por ARCA (directo, ADR-048); devuelve la respuesta."""
     return facturar(cliente, datos, ordenes, tipo=tipo, fecha=FECHA, vencimiento=vencimiento)
 
 
@@ -187,9 +187,9 @@ def test_el_vencimiento_no_puede_estar_ya_vencido_aunque_la_fecha_sea_atrasada(
     pedidos = _arca_responde(monkeypatch)
     a = orden(cliente, datos, "1000.00")
 
-    r = pre_factura(cliente, datos, [a], tipo="fce_a",
-                    fecha=(HOY - timedelta(days=3)).isoformat(),
-                    vencimiento=(HOY - timedelta(days=1)).isoformat())
+    r = facturar(cliente, datos, [a], tipo="fce_a",
+                 fecha=(HOY - timedelta(days=3)).isoformat(),
+                 vencimiento=(HOY - timedelta(days=1)).isoformat())
 
     assert r.status_code == 422, r.text
     assert "anterior a hoy" in r.text
@@ -231,8 +231,8 @@ def test_una_fce_a_un_cliente_sin_un_cuit_valido_se_rechaza_antes_de_ir_a_arca(
 
 
 def test_una_fce_sin_arca_habilitado_no_se_factura(cliente, datos):
-    """Una FCE sin CAE no existe: sin certificado de ARCA la pre factura se genera y espera, y no hay camino
-    de «registrar con el número que tengo»."""
+    """Una FCE sin CAE no existe: sin certificado de ARCA no se emite nada, y no hay camino de «registrar con el
+    número que tengo»."""
     cargar_empresa(cliente)
     _receptor_con_cuit(cliente, datos)
     a = orden(cliente, datos, "1000.00")
@@ -242,7 +242,7 @@ def test_una_fce_sin_arca_habilitado_no_se_factura(cliente, datos):
     assert r.status_code == 409, r.text
     assert "ARCA no está configurado" in r.text
     assert cliente.get("/api/comprobantes").json() == []
-    assert cliente.get("/api/pre-facturas").json()["counts"]["pendiente"] == 1
+    assert cliente.get(f"/api/ordenes/{a['id']}").json()["estado"] == "pendiente"
 
 
 def test_si_arca_rechaza_la_fce_no_queda_comprobante(cliente, datos, empresa_con_fce, monkeypatch):
