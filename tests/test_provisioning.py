@@ -222,24 +222,62 @@ def test_la_instancia_de_dev_corre_las_mismas_migraciones_que_el_deploy(script):
 
 
 def test_el_producto_declara_planes_con_sus_modulos():
-    """El backoffice asigna un plan al dar de alta: sin esto, el alta falla."""
+    """El backoffice asigna un plan al dar de alta: sin esto, el alta falla.
+
+    Desde el ADR-049 el plan es uno solo (`unico`), sin precio y sin módulos:
+    el core no se gatea y `reportes`/`auditoria` nunca gatearon nada.
+    """
     import plans
 
-    assert plans.PLANES, "sin planes el alta de un cliente no tiene qué asignar"
+    assert plans.PLANES == ["unico"], "el producto tiene un solo plan (ADR-049)"
     assert set(plans.PLAN_MODULOS) == set(plans.PLANES), (
         "hay un plan sin módulos declarados, o al revés")
     assert set(plans.PLAN_LABELS) == set(plans.PLANES)
     assert set(plans.PLAN_PRECIOS) == set(plans.PLANES)
 
-    # Los planes son acumulativos: cada uno trae lo del anterior. Si algún día
-    # dejan de serlo será una decisión, no un descuido.
-    basico, estandar, premium = (set(plans.PLAN_MODULOS[p]) for p in
-                                 ("basico", "estandar", "premium"))
-    assert basico <= estandar <= premium
+    # «Consultar precio»: no hay número publicado y no se inventa uno.
+    assert plans.PLAN_PRECIOS == {"unico": None}
+    assert plans.PLAN_LABELS == {"unico": "Plan único"}
 
-    # Todo módulo de un plan tiene nombre para mostrar: el backoffice los lista.
-    assert set(plans.MODULOS) == premium
-    assert set(plans.MODULO_LABELS) == set(plans.MODULOS)
+    # El core no se gatea: ni el plan ni la lista de módulos reparten nada, y
+    # los retirados no vuelven a la lista sin que sea una decisión.
+    assert plans.PLAN_MODULOS == {"unico": set()}
+    assert plans.MODULOS == []
+    assert plans.MODULO_LABELS == {}
+    assert plans.MODULOS_RETIRADOS == {"reportes", "auditoria"}
+    assert not plans.MODULOS_RETIRADOS & set(plans.MODULOS)
+
+    # Un plan retirado apunta a uno vigente, y ninguno sigue estando vigente.
+    assert plans.PLANES_RETIRADOS == {"basico": "unico", "estandar": "unico", "premium": "unico"}
+    assert not set(plans.PLANES_RETIRADOS) & set(plans.PLANES)
+    assert set(plans.PLANES_RETIRADOS.values()) <= set(plans.PLANES)
+
+
+def test_un_plan_retirado_se_resuelve_como_unico_y_uno_desconocido_no():
+    """Las instancias guardan `plan = premium` en su `cliente.json`.
+
+    Ni el deploy (`panel_admin.py actualizar` no mira el plan) ni el backoffice
+    pueden tropezar con eso: se resuelve como el plan único, igual que el motor
+    (`resolver_plan`) lo hace en el alta, cuyo default es `basico`.
+    """
+    from libracore.provisioning import resolver_plan
+
+    import plans
+
+    for viejo in ("basico", "estandar", "premium"):
+        assert plans.plan_vigente(viejo) == "unico", viejo
+        assert plans.modulos_de_plan(viejo) == plans.modulos_de_plan("unico") == set(), viejo
+        assert resolver_plan(plans, viejo) == "unico", viejo
+
+    # Sin plan (el alta sin elegir) y el default `basico` del motor: `unico`.
+    assert resolver_plan(plans, "") == "unico"
+    assert resolver_plan(plans, None) == "unico"
+
+    # Un typo no se adivina: no es un plan retirado, no hay a qué mapearlo.
+    assert plans.plan_vigente("inexistente") == "inexistente"
+    assert plans.modulos_de_plan("inexistente") == set()
+    with pytest.raises(ValueError):
+        resolver_plan(plans, "inexistente")
 
 
 def test_el_backoffice_puede_listar_los_planes():
@@ -249,7 +287,13 @@ def test_el_backoffice_puede_listar_los_planes():
     (medido en LibraClub el 2026-09-15, mismo hueco acá). Se prueba por el
     camino del motor, `planes_info()`, y no sólo la función suelta — lo que
     importa es el contrato que el motor espera.
+
+    La ruta misma (`GET /api/planes`) es de `libra-backoffice` y devuelve
+    `planes_info()` tal cual: acá se prueba lo que le llega, incluido que sea
+    serializable a JSON con `precio: null`.
     """
+    import json
+
     from libracore.admin import services
 
     import plans
@@ -264,9 +308,25 @@ def test_el_backoffice_puede_listar_los_planes():
     services._require_configured = lambda: None
     try:
         info = services.planes_info()
+        # El plan de una instancia vieja se busca por el vigente, sin lanzar.
+        vigente_de_premium = services.plan_vigente("premium")
     finally:
         services._require_configured = original
-    assert [i["key"] for i in info] == plans.PLANES
+    assert [i["key"] for i in info] == plans.PLANES == ["unico"]
+
+    (unico,) = info
+    assert unico["label"] == "Plan único"
+    assert unico["precio"] is None, "no hay precio publicado: el backoffice lo muestra sin importe"
+    assert unico["modulos"] == []
+    assert unico["adicional"] is None
+    # El add-on del producto sigue siendo lo único gateable (y a cotizar).
+    assert [a["clave"] for a in unico["adicionales"]] == ["resguardo_externo"]
+    assert unico["adicionales"][0]["precio"] is None
+
+    # Lo que devuelve la ruta tiene que poder serializarse (null, no NaN ni set).
+    assert json.loads(json.dumps(info)) == info
+    assert vigente_de_premium == "unico"
+    assert vigente_de_premium in [i["key"] for i in info]
 
 
 def test_la_instancia_de_dev_declara_el_SMTP_que_el_motor_va_a_buscar():
@@ -328,3 +388,26 @@ def test_clientes_dir_sale_del_motor_y_obedece_LIBRA_CLIENTES_DIR(script, tmp_pa
             assert modulo.CLIENTES_DIR == get_config().clientes_dir
     finally:
         importlib.reload(modulo)  # ya sin la variable: deja el módulo como lo encontró
+
+
+def test_aplicar_plan_en_db_existe_y_aplica_el_plan_vigente(monkeypatch):
+    """🔴 El alta de una instancia corre `plans.aplicar_plan_en_db` dentro del contenedor.
+
+    LibraCargo no la definía: sin ella el alta terminaba en `AltaIncompleta`. Con el plan único no hay módulos que
+    gatear, así que no prende ni apaga nada; un plan retirado se aplica como `unico`; uno desconocido levanta
+    `ValueError` (no «todo apagado» por un typo).
+    """
+    import libracore.provisioning as prov
+
+    import plans
+
+    llamadas = []
+    monkeypatch.setattr(prov, "apply_plan_modules", lambda db_path, **kw: llamadas.append((db_path, kw)))
+
+    plans.aplicar_plan_en_db("postgresql://x/y", "unico")
+    plans.aplicar_plan_en_db("postgresql://x/y", "premium")  # retirado: el reemplazo
+    assert [c[1]["plan"] for c in llamadas] == ["unico", "unico"]
+    assert all(c[1]["active_modules"] == set() and c[1]["all_modules"] == set() for c in llamadas)
+
+    with pytest.raises(ValueError, match="Plan desconocido"):
+        plans.aplicar_plan_en_db("postgresql://x/y", "inventado")

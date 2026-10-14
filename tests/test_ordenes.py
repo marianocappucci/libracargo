@@ -306,6 +306,24 @@ def test_anular_no_borra_el_cargo_lo_revierte(cliente, maestros):
     assert movs[1]["fecha"] == o["fecha"]
 
 
+def test_anular_dos_veces_no_revierte_el_cargo_dos_veces(cliente, maestros):
+    """🔴 Medido el 2026-10-14: el segundo `DELETE` contestaba 200 y asentaba otro contraasiento.
+
+    La cuenta del fletero quedaba en tres líneas y con saldo **-700**: la agencia
+    le «debía» un cargo que nunca existió. Un doble clic en «Anular» alcanzaba.
+    """
+    o = cliente.post("/api/ordenes", json=con_fletero(maestros)).json()
+    assert cliente.delete(f"/api/ordenes/{o['id']}").status_code == 200
+
+    r = cliente.delete(f"/api/ordenes/{o['id']}")
+    assert r.status_code == 409, r.text
+    assert "anulada" in r.json()["detail"]
+
+    saldo, movs = cuenta(cliente, "fletero", maestros["fletero"])
+    assert saldo == Decimal("0.00")
+    assert len(movs) == 2
+
+
 def test_el_pago_al_fletero_cancela_el_cargo_de_la_orden(cliente, maestros):
     """El circuito entero: la orden carga y el pago descarga.
 
