@@ -94,6 +94,15 @@ COPY migrations ./migrations
 # traian (`COPY . .`).
 COPY scripts ./scripts
 
+# `plans.py` adentro de la imagen (2026-10-14): el alta de una instancia nueva corre
+# `import plans; plans.aplicar_plan_en_db(...)` DENTRO del contenedor
+# (`libracore.provisioning.nuevo_cliente._aplicar_plan_en_contenedor`, con `/app` en el
+# `sys.path`) y el restore/`set_plan` también. La imagen no lo traía (medido en el
+# contenedor de Suitrans: `find / -name plans.py` vacío): el alta terminaba en
+# `AltaIncompleta` aunque `plans.py` definiera la función. Los otros productos lo traen
+# porque hacen `COPY . .`.
+COPY plans.py ./plans.py
+
 # Horneado FUERA de /app a propósito: el docker-compose de dev monta `./:/app`
 # entero para el reload de Python, y eso taparía cualquier build copiado
 # adentro. `app/asgi.py` mira primero acá.

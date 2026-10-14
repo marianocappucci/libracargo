@@ -411,3 +411,17 @@ def test_aplicar_plan_en_db_existe_y_aplica_el_plan_vigente(monkeypatch):
 
     with pytest.raises(ValueError, match="Plan desconocido"):
         plans.aplicar_plan_en_db("postgresql://x/y", "inventado")
+
+
+def test_la_imagen_trae_plans_py():
+    """🔴 El alta de una instancia corre `import plans` DENTRO del contenedor, con `/app` en el `sys.path`.
+
+    El Dockerfile copiaba `app`, `migrations` y `scripts` pero no `plans.py`: la imagen no lo tenía y el alta
+    terminaba en `AltaIncompleta` aunque `plans.aplicar_plan_en_db` existiera.
+    """
+    dockerfile = (pathlib.Path(__file__).resolve().parent.parent / "Dockerfile").read_text(encoding="utf-8")
+    copias = [ln for ln in dockerfile.splitlines() if ln.strip().startswith("COPY ") and "--from=" not in ln]
+    assert any(re.search(r"(^|\s)plans\.py(\s|$)", ln) for ln in copias), (
+        "el Dockerfile no copia plans.py a la imagen: el alta de una instancia no puede aplicar el plan"
+    )
+
