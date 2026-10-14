@@ -3,6 +3,14 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Plan único sin precio y «Anular» una orden pide confirmación
+
+- **Plan único** (decisión del humano 2026-10-14, ADR-049, mismo criterio que VentaLibra). `plans.py` pasa de Básico / Estándar / Premium a un solo plan, `unico` («Plan único»), **sin precio** (`PLAN_PRECIOS = {"unico": None}`: LibraCargo publica «Consultar precio»; los 15.000 / 25.000 / 40.000 nunca fueron un precio publicado). Los módulos `reportes` y `auditoria` **nunca gatearon nada** y quedan como retirados (`MODULOS_RETIRADOS`); el único gate real sigue siendo el add-on `resguardo_externo`. Un plan guardado como `basico`, `estandar` o `premium` (Suitrans y la demo tienen `premium` en su `cliente.json`) se resuelve como `unico` (`PLANES_RETIRADOS`, `plan_vigente`), sin tocar la instancia.
+- **«Anular» una orden pide confirmación** (`Ordenes`): «¿Anular la orden Nº …?» con qué pasa (no se borra, se revierte el cargo del fletero, no se deshace), «Sí, anular la orden» / «No», el foco en «No», el botón deshabilitado mientras anula y el error del servidor en la pantalla. `ConfirmDialog` suma `cancelLabel` y `pending` (opcionales).
+- **`plans.aplicar_plan_en_db`** (hueco anterior, resuelto): `plans.py` nunca la definió y el motor la llama al dar de alta una instancia; sin ella el alta terminaba en `AltaIncompleta`. Ahora existe como en el resto de la familia (con el plan único no prende ni apaga nada).
+- **Fix:** anular una orden **ya anulada** asentaba un segundo contraasiento en la cuenta del fletero (saldo negativo, medido). Ahora es un 409 «la orden ya esta anulada», y el botón de una anulada está deshabilitado.
+- Sin migración, sin cambio de pin.
+
 ## [Unreleased] — Se factura directo por ARCA: se retiran las pre facturas, «Nueva factura» y la nota de débito
 
 - **Decisión del humano (2026-10-13, ADR-048, que reemplaza a la ADR-032).** *Facturar pendientes* **ya no genera una pre factura: emite el comprobante por ARCA en el momento** (`POST /api/comprobantes/desde-ordenes`), con una confirmación antes porque no se deshace. Se retiran las pantallas `PreFacturas`, `PreFactura` y `EditarPreFactura`, `/api/pre-facturas`, la reserva de órdenes (los filtros `reservada` y `pre_factura_id` de `GET /api/ordenes`) y todo lo propio de la pre factura. Un enlace viejo a `/pre-facturas` cae en Comprobantes.

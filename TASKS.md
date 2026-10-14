@@ -32,10 +32,8 @@ esto no es un historial.
 
 ## Deuda asumida a propósito
 
-- **Los planes de `plans.py` son un punto de partida, no una decisión tomada.**
-  Precios alineados con el resto de la familia y el core sin gatear —reportes en
-  estándar, log de actividad en premium—. Falta que el negocio diga qué se cobra
-  aparte de verdad; cuando lo diga, se cambia ese archivo y nada más.
+- **El plan es uno solo y sin precio** (ADR-049, 2026-10-14): `unico`, «Consultar precio». Falta
+  que el negocio defina el precio; cuando lo haga, se carga en `PLAN_PRECIOS` de `plans.py` y nada más.
 - **El backoffice no expone `smtp` ni `demos`**: este producto todavía no tiene
   pantalla de configuración de correo ni instancia de demo pública. Están fuera
   de `FEATURES` a propósito — declararlas sin que existan del otro lado daría

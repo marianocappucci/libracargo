@@ -4,7 +4,7 @@ import { DataTable, sortableHeader } from 'libra-ui/data-table'
 import { IconoIndicador } from 'libra-ui/IconoIndicador'
 import { SelectBuscable } from 'libra-ui/SelectBuscable'
 import { Ban, ClipboardList, Eye, Pencil, Plus, Printer } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { UseFormReturn } from 'react-hook-form'
 import { useForm } from 'react-hook-form'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -18,6 +18,7 @@ import { aOpcionLocalidad } from '@/api/localidades'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { AdjuntosDeOrden } from '@/components/AdjuntosDeOrden'
 import { CambiarEtapa } from '@/components/CambiarEtapa'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ElegirLocalidad } from '@/components/ElegirLocalidad'
 import { SeccionFlete } from '@/components/FleteDeOrden'
 import { KilosDelDetalle, SeccionKilos } from '@/components/KilosDeOrden'
@@ -44,6 +45,19 @@ const COLUMNA_OPCIONAL = {
 const nombreDe = (
   lista: { id: number; etiqueta: string }[] | undefined, id: number | null,
 ) => lista?.find((o) => o.id === id)?.etiqueta ?? ''
+
+/** Qué pasa al anular, dicho como lo hace `DELETE /api/ordenes/{id}`: no se borra, se revierte el cargo del fletero y no vuelve atrás. */
+function descripcionDeAnular(orden: Orden, cliente: string) {
+  return [
+    cliente ? `Cliente: ${cliente}.` : '',
+    'La orden queda anulada: no se borra, sigue en el listado como «Anulada» y ya no se puede modificar ni reactivar.',
+    'Si tiene un cargo en la cuenta corriente del fletero, se le registra el contraasiento por el mismo importe.',
+    'Queda en el log de actividad y no se puede deshacer.',
+    orden.estado === 'facturada'
+      ? 'Está facturada: el sistema no la anula mientras el comprobante siga vigente (primero hay que anular el comprobante).'
+      : '',
+  ].filter(Boolean).join(' ')
+}
 
 function Campo({ form, nombre, etiqueta, tipo = 'text' }: {
   form: Form; nombre: keyof EntradaOrden; etiqueta: string; tipo?: string
@@ -148,6 +162,10 @@ export default function Ordenes() {
   const [abierto, setAbierto] = useState(false)
   const [editando, setEditando] = useState<Orden | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // La orden que se está por anular, a la espera del «Sí»; y si ya se mandó el pedido (un doble clic no anula dos veces).
+  const [porAnular, setPorAnular] = useState<Orden | null>(null)
+  const [anulando, setAnulando] = useState(false)
+  const anulandoYa = useRef(false)
 
   const form = useForm<EntradaOrden, unknown, DatosOrden>({
     resolver: zodResolver(esquemaOrden),
@@ -223,13 +241,22 @@ export default function Ordenes() {
     }
   })
 
+  /** Anular no se deshace (la orden queda `anulada` y no se modifica más) y mueve la cuenta del fletero: se pide confirmación. */
   async function anular(orden: Orden) {
+    if (anulandoYa.current) return
+    anulandoYa.current = true
     setError(null)
+    setAnulando(true)
     try {
       await api.anular(orden.id)
       recargar()
     } catch (e) {
+      // El 409 de «está facturada» y cualquier otro llegan a la pantalla, no se pierden detrás del diálogo.
       setError(mensajeDeError(e))
+    } finally {
+      anulandoYa.current = false
+      setAnulando(false)
+      setPorAnular(null)
     }
   }
 
@@ -291,8 +318,10 @@ export default function Ordenes() {
                   onClick={() => abrir(row.original)}>
             <Pencil className="size-4" />
           </Button>
+          {/* Una anulada no se anula otra vez: el servidor la rechaza (409) y la pantalla no ofrece el botón. */}
           <Button variant="ghost" size="icon" aria-label="Anular"
-                  onClick={() => anular(row.original)}>
+                  disabled={row.original.estado === 'anulada' || anulando}
+                  onClick={() => setPorAnular(row.original)}>
             <Ban className="size-4" />
           </Button>
         </div>
@@ -471,6 +500,16 @@ export default function Ordenes() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={porAnular !== null}
+        onOpenChange={(v) => { if (!v) setPorAnular(null) }}
+        title={porAnular ? `¿Anular la orden Nº ${String(porAnular.id).padStart(8, '0')}?` : ''}
+        description={porAnular ? descripcionDeAnular(porAnular, nombreDe(opciones?.clientes, porAnular.cliente_id)) : undefined}
+        confirmLabel="Sí, anular la orden"
+        cancelLabel="No"
+        pending={anulando}
+        onConfirm={() => { if (porAnular) void anular(porAnular) }} />
 
       {aImprimir && (
         <OrdenImpresa orden={aImprimir} opciones={opciones} empresa={empresa} />
