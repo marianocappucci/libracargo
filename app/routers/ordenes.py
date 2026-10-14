@@ -179,6 +179,10 @@ def anular(id_: int, sesion: Session = Depends(obtener_sesion),
         raise HTTPException(
             409, "la orden esta facturada: primero hay que anular el comprobante"
         )
+    if orden.estado is EstadoOrden.ANULADA:
+        # Sin esto, un segundo DELETE (un doble clic, dos pestañas) volvía a correr `revertir_comision`: el cargo del
+        # fletero seguía ahí (`debe > 0`) y la cuenta quedaba con DOS contraasientos y el saldo en negativo.
+        raise HTTPException(409, "la orden ya esta anulada")
     antes = auditoria.instantanea(orden)
     # El contraasiento se arma ANTES de marcarla anulada: lee el cargo vigente,
     # y `sincronizar_comision` no vuelve a crearlo porque una orden anulada no
