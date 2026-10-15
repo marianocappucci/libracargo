@@ -29,6 +29,7 @@ from libracore.arca_router import build_arca_router
 from libracore.candados import una_vez_al_arrancar
 from libracore.config_router import build_backup_router
 from libracore.db import core as libracore_core
+from libracore.docs_api import cerrar_docs_de_la_api
 from libracore.errores import instalar_registro_de_errores
 from libracore.geografia import build_geo_router
 from libracore.resguardo_enlace import build_resguardo_enlace_router
@@ -246,6 +247,7 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
         description="Gestión de agencia de cargas — familia Libra",
         version="0.1.0",
     )
+    cerrar_docs_de_la_api(app)
     # El router de `libraauth` los lee de acá por nombre: sin estos dos, el
     # login devuelve 500 al primer request y no al arrancar.
     app.state.users = usuarios
