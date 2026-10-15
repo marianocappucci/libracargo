@@ -76,6 +76,16 @@ git -C "$CHECKOUT" show "$RAMA_DEL_SEED":scripts/seed_demo.py > "$SEED_LOCAL" \
   || { log "ABORTA: no esta scripts/seed_demo.py en $RAMA_DEL_SEED."; exit 6; }
 [ -s "$SEED_LOCAL" ] || { log "ABORTA: el seed salio vacio."; exit 7; }
 log "seed listo desde $RAMA_DEL_SEED ($(wc -l < "$SEED_LOCAL") lineas)"
+# 🔴 El seed lee archivos de `scripts/datos/` relativos a si mismo (el tarifario de referencia, ADR-042): adentro del
+# contenedor quedan en `/tmp/datos/`. Del 2026-10-13 al 15 el reset copiaba solo el `.py` y el seed moria en
+# `FileNotFoundError: /tmp/datos/tarifa-referencia-2026-04-10.csv`, con la base ya vaciada. Se traen de la misma rama.
+DATOS_LOCAL=/tmp/seed-libracargo-demo-datos
+rm -rf "$DATOS_LOCAL" && mkdir -p "$DATOS_LOCAL"
+for f in $(git -C "$CHECKOUT" ls-tree --name-only "$RAMA_DEL_SEED" scripts/datos/); do
+  git -C "$CHECKOUT" show "$RAMA_DEL_SEED:$f" > "$DATOS_LOCAL/$(basename "$f")" \
+    || { log "ABORTA: no se pudo leer $f de $RAMA_DEL_SEED."; exit 8; }
+done
+log "datos del seed: $(ls "$DATOS_LOCAL" | wc -l) archivo(s)"
 
 # --- 1. El sidecar --------------------------------------------------------
 # [LIBRACARGO] Este producto es PostgreSQL siempre, asi que no hay motor que
@@ -267,6 +277,8 @@ fi
 # `.venv-scripts` del checkout) no sirve aca adentro: esa ruta no existe en el
 # contenedor.
 docker cp "$SEED_LOCAL" "$CONTENEDOR:/tmp/seed.py"
+docker exec --user root "$CONTENEDOR" rm -rf /tmp/datos
+docker cp "$DATOS_LOCAL" "$CONTENEDOR:/tmp/datos"
 docker exec -i "$CONTENEDOR" sh -c "
   python3 /tmp/seed.py \
     --url $URL_PUBLICA \
@@ -278,7 +290,8 @@ docker exec -i "$CONTENEDOR" sh -c "
 # "Operation not permitted" y, con `set -e`, **el script sale 1 despues de
 # haber sembrado bien**. El cron registraria un rojo todas las noches por un
 # archivo temporal, y --peor-- el control final de abajo no llegaria a correr.
-docker exec --user root "$CONTENEDOR" rm -f /tmp/seed.py || true
+docker exec --user root "$CONTENEDOR" rm -rf /tmp/seed.py /tmp/datos || true
+rm -rf "$DATOS_LOCAL"
 
 # --- 6. Y que la demo siga siendo una demo --------------------------------
 # El ultimo control: que el visitante pueda entrar. Todo lo de arriba puede
