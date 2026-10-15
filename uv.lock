@@ -781,7 +781,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
     { name = "libraauth", extras = ["migrations"], git = "https://github.com/marianocappucci/libraauth.git?rev=v0.50.0" },
-    { name = "libracore", extras = ["migrations"], git = "https://github.com/marianocappucci/libracore.git?rev=v1.167.0" },
+    { name = "libracore", extras = ["migrations"], git = "https://github.com/marianocappucci/libracore.git?rev=v1.168.0" },
     { name = "pdfplumber", specifier = ">=0.11" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.9" },
@@ -799,8 +799,8 @@ provides-extras = ["motores", "migracion", "dev"]
 
 [[package]]
 name = "libracore"
-version = "1.167.0"
-source = { git = "https://github.com/marianocappucci/libracore.git?rev=v1.167.0#900e307220b8faf82f99ce8718fe2da49f9afb62" }
+version = "1.168.0"
+source = { git = "https://github.com/marianocappucci/libracore.git?rev=v1.168.0#e41c9e3dabcfd8df946fa6dd929fb2bd68181008" }
 dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },

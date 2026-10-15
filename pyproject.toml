@@ -78,7 +78,8 @@ dependencies = [
     # v1.162.0 -> v1.163.0 (2026-10-13, propuesta; ADR-049 de libracore): `libracore.notas_de_debito` (la nota de debito por importe, con costuras como la de credito) y `importe_valido`/`armar_nota(leyenda=, por_importe=)`/`una_nota_a_la_vez(clase=)` aditivos en `notas_de_credito`. La usa la nota de debito de este producto (ADR-048). Sin migracion del motor. `uv.lock` se regenera cuando exista el tag.
     # v1.163.0 -> v1.164.0 (2026-10-14): cada envio por mail de un comprobante o un presupuesto deja rastro (`envios_email`, ADR-050 de libracore): `GET .../{id}/envios`, `envios_email` en el detalle y `envio_email` en el listado. **Migracion `0026_envios_email`** (tabla nueva) en la cadena de `libracore-migrar`.
     # v1.164.0 -> v1.166.0 (2026-10-14): incluye v1.165.0 (un proceso sin el almacen de secretos dice la causa) y `GET /api/facturas?envio=enviada|sin_enviar` filtra el listado por el rastro de envios por mail (ADR-051 de libracore). Sin migracion.
-    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.167.0",
+    # v1.167.0 -> v1.168.0 (2026-10-15, propuesta; ADR-053 de libracore): `libracore.docs_api.cerrar_docs_de_la_api`: `/docs`, `/redoc` y `/openapi.json` sólo con `ENV=development` (o `LIBRA_DOCS_API=1`); en un cliente real y en la demo dan 404. Sin migracion. `uv.lock` se regenera cuando exista el tag.
+    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.168.0",
 ]
 
 # Los motores de la familia entran en F1, desde repos privados por deploy key.
