@@ -68,3 +68,37 @@ def test_la_semilla_de_la_demo_corre_y_deja_ordenes_pendientes_para_facturar(cli
     assert {o["cliente_id"] for o in pendientes} and len({o["cliente_id"] for o in pendientes}) == 3
     # Y la pre factura ya no existe en el producto.
     assert cliente.get("/api/pre-facturas").status_code in (404, 405)
+
+
+# ── 🔴 La demo no queda con datos fiscales reales (ADR-061 de libracore) ─────────────────────────────────────────
+
+
+def test_el_texto_de_la_semilla_no_tiene_cuit_de_forma_real():
+    """Un CUIT con verificador válido y fuera del rango reservado `99999xxx` no se puede distinguir de uno real; los
+    inventados que no cierran el verificador no existen en el padrón y no cuentan. La empresa de la demo incluida."""
+    from libracore.demo import auditar_literales
+
+    hallazgos = auditar_literales(
+        (Path(RAIZ) / "scripts" / "seed_demo.py").read_text(encoding="utf-8"), "scripts/seed_demo.py")
+    assert hallazgos == [], "\n".join(str(h) for h in hallazgos)
+
+
+def test_la_semilla_de_la_demo_no_deja_datos_fiscales_reales_en_la_base(cliente, monkeypatch, capsys):
+    """Lo que quedó en las dos bases después de sembrar: el CUIT de «Datos de la empresa» (`configuracion_empresa`),
+    el de terceros y choferes, los titulares de CPE y lo que el motor guarda (`arca_config`, `config.json`)."""
+    from libracore.db import core
+    from libracore.db.core import conectar
+    from libracore.db.url_de_instancia import url_de_instancia
+    from libracore.demo import auditar_datos_fiscales
+
+    _sembrar(cliente, monkeypatch, capsys)
+    monkeypatch.setenv("DEMO_MODE", "1")
+    dominio = conectar(url_de_instancia("libracargo"))
+    try:
+        with core.get_connection() as conn:
+            hallazgos = auditar_datos_fiscales(
+                conn, conn_producto=dominio, empresa=[("configuracion_empresa", "cuit")],
+                terceros=[("terceros", "cuit"), ("choferes", "cuit"), ("choferes", "dni"), ("titulares_cpe", "cuit")])
+    finally:
+        dominio.close()
+    assert hallazgos == [], "\n".join(str(h) for h in hallazgos)

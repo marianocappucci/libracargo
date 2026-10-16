@@ -15,11 +15,32 @@ export const CONDICIONES_IVA = [
  *  formulario además de desde el botón de la fila. */
 export const ACTIVO: Campo = { nombre: 'activo', etiqueta: 'Activo', tipo: 'booleano' }
 
+/** De la condición frente al IVA que informa el padrón de ARCA a la del enum de este producto. Sin equivalente
+ *  («IVA No Responsable», «No Alcanzado»): `undefined`, y la condición queda como estaba. */
+export function condicionDeArca(condicion: string): string | undefined {
+  const mapa: Record<string, string> = {
+    'Responsable Inscripto': 'responsable_inscripto',
+    Monotributista: 'monotributo',
+    'IVA Exento': 'exento',
+    'Consumidor Final': 'consumidor_final',
+  }
+  return mapa[condicion]
+}
+
 const GRUPO_ROLES = 'Roles (puede tener más de uno)'
 
 export const CAMPOS_TERCERO: Campo[] = [
   { nombre: 'razon_social', etiqueta: 'Razón social' },
-  { nombre: 'cuit', etiqueta: 'CUIT' },
+  // «Consultar en ARCA» completa razón social, dirección y condición de IVA (no pisa lo ya escrito sin preguntar).
+  { nombre: 'cuit', etiqueta: 'CUIT',
+    consultaArca: {
+      destino: {
+        nombre: { campo: 'razon_social', etiqueta: 'Razón social' },
+        domicilio: { campo: 'direccion', etiqueta: 'Dirección' },
+        iva: { campo: 'condicion_iva', etiqueta: 'Condición de IVA' },
+      },
+      ivaDe: condicionDeArca,
+    } },
   { nombre: 'condicion_iva', etiqueta: 'Condición de IVA', tipo: 'opciones',
     opciones: CONDICIONES_IVA },
   // Los tres roles juntos y arriba: en el legado eran tres maestros separados,
