@@ -30,7 +30,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { SelectLocalidad, SelectProvincia } from '@/components/CamposGeo'
-import { ConsultarEnArca, type DestinoDeArca } from '@/components/ConsultarEnArca'
+import { ConsultarEnArca, type DestinoDeArca } from 'libra-ui/configuracion/ConsultarEnArca'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
