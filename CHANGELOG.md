@@ -3,6 +3,10 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Pines: libracore v1.170.0, libraauth v0.51.0 y libra-ui v0.153.0
+
+- Pines: **libracore `v1.170.0`** (antes `v1.168.0`), **libraauth `v0.51.0`** (antes `v0.50.0`) y **libra-ui `v0.153.0`** (antes `v0.152.1`). **Sin migración.** libracore `v1.169.0` suma `soltar_fk` (ADR-056; sin efecto en este producto, la usa LibraDesk). libracore `v1.170.0`: `delete_client` bloquea la baja de un cliente con cuenta corriente (`cc_pagos`, `cc_debitos`, `recibos` y `cc_asientos` con rol cliente; ADR-057) con un `ValueError` que dice que se puede desactivar. libraauth `v0.51.0`: el responsable puede aceptar por adelantado la próxima versión de los Términos (ADR-024). libra-ui `v0.153.0`: tras el gate de Términos, un aviso no bloqueante «Aceptar / Más tarde» (tarjeta abajo a la derecha, ADR-066). Efecto en este producto: ninguno en la baja, que usa sus propios terceros y no `delete_client` del motor.
+
 ## [Unreleased] — Plan único sin precio y «Anular» una orden pide confirmación
 
 - **Plan único** (decisión del humano 2026-10-14, ADR-049, mismo criterio que VentaLibra). `plans.py` pasa de Básico / Estándar / Premium a un solo plan, `unico` («Plan único»), **sin precio** (`PLAN_PRECIOS = {"unico": None}`: LibraCargo publica «Consultar precio»; los 15.000 / 25.000 / 40.000 nunca fueron un precio publicado). Los módulos `reportes` y `auditoria` **nunca gatearon nada** y quedan como retirados (`MODULOS_RETIRADOS`); el único gate real sigue siendo el add-on `resguardo_externo`. Un plan guardado como `basico`, `estandar` o `premium` (Suitrans y la demo tienen `premium` en su `cliente.json`) se resuelve como `unico` (`PLANES_RETIRADOS`, `plan_vigente`), sin tocar la instancia.
