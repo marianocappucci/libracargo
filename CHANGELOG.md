@@ -3,6 +3,13 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Todo campo donde se elige un cliente ofrece darlo de alta ahí mismo (libra-ui v0.158.1)
+
+- Pin: **libra-ui `v0.158.1`** (antes `v0.157.0`): suma `libra-ui/SelectCliente` y la guarda `libra-ui/auditoria-de-clientes` (ADR-071 del kit). **Sin migración y sin cambio de backend.** El `package-lock.json` suma también `@playwright/test` y `playwright` `1.64.1` (antes `1.63.0`): el kit los declara como peer opcional `^1.64.0`.
+- **«Agregar nuevo cliente» en el campo «Cliente»** (decisión del humano, 2026-10-16: que no vuelva a pasar que un cliente no cargado obligue a salir de lo que se está cargando). Pasan a `SelectCliente`: la **orden** (`Ordenes`), **Nueva factura**, **Facturar pendientes** y el **cliente vinculado de un titular de carta de porte** (`FichaDeTitular`). El alta pide nombre, CUIT, condición frente al IVA, teléfono y email y manda `POST /api/terceros` con `es_cliente: true` (`api/clientes.ts`, el único lugar que arma el cuerpo); el cliente queda elegido y entra a las listas de la pantalla sin recargar. La condición frente al IVA pasa de los textos del kit al enum del servidor; «No Alcanzado» e «IVA No Responsable» no tienen equivalente y no se mandan (el servidor usa Consumidor Final). Un CUIT que ya es de otra entidad (ADR-040) da el 409 de siempre, que se muestra dentro del panel.
+- **No ofrecen alta** (marcados `cliente-sin-alta` con su motivo): los filtros de órdenes y de reportes (cliente y tipo de cuenta), la apertura de la cuenta corriente y el «Tercero» de Caja, que es de cualquier rol y no se puede adivinar cuál.
+- Guarda `src/test/campos-de-cliente.test.ts` (con `Elegir` como envoltorio conocido) y tests de comportamiento del alta en `Ordenes.cliente-nuevo.test.tsx` y `NuevaFactura.test.tsx`.
+
 ## [Unreleased] — Pines: libracore v1.173.0 y libra-ui v0.156.0, consulta de CUIT en ARCA y demo sin datos fiscales reales
 
 - Pines: **libracore `v1.173.0`** (antes `v1.170.0`) y **libra-ui `v0.156.0`** (antes `v0.153.0`); libraauth sigue en `v0.51.0`. **Sin migración.** libracore `v1.171.0` (ADR-058): un cobro no puede superar lo que falta (409). `v1.172.0` (ADR-059 y ADR-060): las notas de crédito con CAE restan de lo pendiente y el cobro puede entrar por el turno de caja; efecto en este producto: ninguno, no monta `build_comprobantes_router` con turno ni tiene caja propia de cobro. `v1.173.0` (ADR-061, `libracore.demo`): una demo no habla con ARCA ni muestra datos fiscales reales. libra-ui `v0.154.0` (sin desbordes a 390 px y contraste AA en insignias), `v0.155.0` (ADR-068: «pendiente» del motor y facturas «Acreditada») y `v0.156.0` (ADR-069: el error de la consulta de CUIT lleva al tutorial de Padrón A13).

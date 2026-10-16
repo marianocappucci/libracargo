@@ -376,6 +376,7 @@ export default function Reporte() {
             </Campo>
           </>
         )}
+        {/* cliente-sin-alta: filtro de un reporte; no crea nada, sólo acota el resultado a un cliente que ya existe */}
         {tiene('cliente') && (
           <Elegir id="f-cliente" etiqueta="Cliente" vacio="Todos"
                   valor={texto('cliente_id')} opciones={opciones?.clientes ?? []}

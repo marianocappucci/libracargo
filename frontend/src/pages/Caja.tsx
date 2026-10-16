@@ -281,6 +281,9 @@ export default function Caja() {
                    alCambiar={(v) => set({ concepto: v })} />
             <Texto id="m-importe" etiqueta="Importe" valor={borrador.importe}
                    alCambiar={(v) => set({ importe: v })} />
+            {/* cliente-sin-alta: es un tercero de cualquier rol (cliente, fletero o proveedor) y el rol se elige aparte en «Cuenta del tercero».
+                Un alta desde acá tendría que adivinar el rol —un ingreso puede ser de un cliente o la devolución de un proveedor— y dejaría
+                un tercero en la lista equivocada; para cargar uno nuevo se usa Entidades. */}
             <Elegir id="m-tercero" etiqueta="Tercero" valor={borrador.tercero_id}
                     vacio="Ninguno (gasto general)" opciones={terceros}
                     alCambiar={(v) => set({ tercero_id: v })} />
