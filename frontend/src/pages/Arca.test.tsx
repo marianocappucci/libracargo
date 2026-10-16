@@ -13,7 +13,7 @@
  *  que importa de él —que la emisión encuentre la fila aunque el slug no
  *  coincida— se prueba del lado del backend, que es donde vive la regla.
  */
-import { render, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 const get = vi.fn()
@@ -36,5 +36,14 @@ describe('la pantalla de ARCA', () => {
     expect(rutas).toContain('/api/arca/estado')
     // El default del kit. Si aparece, alguien sacó el `basePath`.
     expect(rutas.some((r) => r?.startsWith('/config/arca'))).toBe(false)
+  })
+
+  it('trae el tutorial de Padrón A13, el servicio que necesita «Consultar en ARCA», nombrando a este producto', async () => {
+    get.mockImplementation(async () => null)
+    render(<FacturacionArca />)
+
+    const tutorial = (await screen.findByText(/consultar datos de clientes por CUIT/)).closest('details')!
+    // Es a donde apunta el enlace del error de la consulta (`URL_TUTORIAL_PADRON`): el ancla la pone el kit.
+    expect(tutorial).toHaveTextContent('el certificado que ya configuraste en LibraCargo')
   })
 })
