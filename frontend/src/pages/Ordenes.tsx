@@ -3,15 +3,17 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
 import { IconoIndicador } from 'libra-ui/IconoIndicador'
 import { SelectBuscable } from 'libra-ui/SelectBuscable'
+import { SelectCliente } from 'libra-ui/SelectCliente'
 import { Ban, ClipboardList, Eye, Pencil, Plus, Printer } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { UseFormReturn } from 'react-hook-form'
 import { useForm } from 'react-hook-form'
 import { Link, useSearchParams } from 'react-router-dom'
 
-import type { Filtros, Opciones, Orden } from '@/api/ordenes'
+import type { Filtros, Opcion, Opciones, Orden } from '@/api/ordenes'
 import { ETAPAS, cargarOpciones, ordenes as api } from '@/api/ordenes'
 import { formatearKilos } from '@/api/cartas-porte'
+import { ALTA_DE_CLIENTE, aOpcionDeSelect, conClienteNuevo, crearCliente, opcionesCliente } from '@/api/clientes'
 import { useConfiguracion } from '@/api/configuracion'
 import type { Localidad } from '@/api/localidades'
 import { aOpcionLocalidad } from '@/api/localidades'
@@ -118,6 +120,35 @@ function Elegir({ form, nombre, etiqueta, opciones, opcional }: {
   )
 }
 
+/** El cliente de la orden: el buscador de siempre y, al lado, el alta de uno nuevo sin salir de la orden (ADR-071 del kit, ADR-050 de este producto).
+ *  Lo recién creado se suma a las listas de la pantalla (`alCrear`) y queda elegido. Con el panel de alta abierto ocupa las dos columnas. */
+function ElegirCliente({ form, nombre, etiqueta, opciones, alCrear }: {
+  form: Form
+  nombre: keyof EntradaOrden
+  etiqueta: string
+  opciones: Opcion[]
+  alCrear: (c: Opcion) => void
+}) {
+  const [conPanel, setConPanel] = useState(false)
+  const error = form.formState.errors[nombre]
+  const valor = form.watch(nombre)
+  return (
+    <div className={`grid min-w-0 gap-1 ${conPanel ? 'md:col-span-2' : ''}`}>
+      <SelectCliente
+        id={nombre} etiqueta={etiqueta}
+        value={valor === undefined || valor === null ? '' : String(valor)}
+        onChange={(v) => form.setValue(nombre, v as never, { shouldValidate: true })}
+        opciones={opcionesCliente(opciones)}
+        crear={async (d) => { const c = await crearCliente(d); alCrear(c); return aOpcionDeSelect(c) }}
+        {...ALTA_DE_CLIENTE} onPanelChange={setConPanel}
+        placeholder="Elegir…" emptyMessage="No hay ninguno con ese nombre." ariaLabel={etiqueta}
+        aria-invalid={error ? true : undefined}
+      />
+      {error && <p className="text-destructive text-xs">{String(error.message)}</p>}
+    </div>
+  )
+}
+
 /** Origen y destino: el selector que busca en el maestro y en el catálogo de Argentina y del Mercosur, y deja cargar un paraje (ADR-041).
  *  La localidad que se trae del catálogo o se carga a mano se suma a la lista del formulario (`alIncorporar`) para que
  *  su nombre se pueda mostrar, y se elige. */
@@ -181,6 +212,11 @@ export default function Ordenes() {
       const hay = o.localidades.some((x) => x.id === l.id)
       return { ...o, localidades: hay ? o.localidades.map((x) => (x.id === l.id ? nueva : x)) : [...o.localidades, nueva] }
     })
+  }, [])
+
+  // El cliente dado de alta desde el campo «Cliente» entra a las listas (formulario, filtro de la grilla, nombres de la grilla) sin volver a pedirlas.
+  const incorporarCliente = useCallback((c: Opcion) => {
+    setOpciones((o) => (o ? conClienteNuevo(o, c) : o))
   }, [])
 
   useEffect(() => {
@@ -368,8 +404,8 @@ export default function Ordenes() {
           <form onSubmit={guardar} className="grid gap-3 md:grid-cols-2">
             <Campo form={form} nombre="fecha" etiqueta="Fecha" tipo="date" />
             <Campo form={form} nombre="remito" etiqueta="Remito" />
-            <Elegir form={form} nombre="cliente_id" etiqueta="Cliente"
-                    opciones={opciones?.clientes ?? []} />
+            <ElegirCliente form={form} nombre="cliente_id" etiqueta="Cliente"
+                           opciones={opciones?.clientes ?? []} alCrear={incorporarCliente} />
             <Elegir form={form} nombre="fletero_id" etiqueta="Fletero"
                     opciones={opciones?.fleteros ?? []} opcional />
             <ElegirLocalidadDeOrden form={form} nombre="origen_id" etiqueta="Origen"

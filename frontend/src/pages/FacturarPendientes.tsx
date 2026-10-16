@@ -18,12 +18,14 @@
  * mandarle el link a alguien sin perder dónde estaba.
  */
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
+import { SelectCliente } from 'libra-ui/SelectCliente'
 import { ArrowLeft } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import type { AvisoFce, CuentasFce, TipoComprobante } from '@/api/comprobantes'
 import { comprobantes, etiquetaDeCuenta, sumarImportes } from '@/api/comprobantes'
+import { ALTA_DE_CLIENTE, aOpcionDeSelect, conClienteNuevo, crearCliente, opcionesCliente } from '@/api/clientes'
 import type { Opciones, Orden } from '@/api/ordenes'
 import { cargarOpciones, ordenes as apiOrdenes } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
@@ -98,6 +100,8 @@ export default function FacturarPendientes() {
   const [params, setParams] = useSearchParams()
   const navegar = useNavigate()
   const [opciones, setOpciones] = useState<Opciones | null>(null)
+  // Con el panel de alta de cliente abierto, el campo ocupa toda la fila.
+  const [altaAbierta, setAltaAbierta] = useState(false)
   const [borrador, setBorrador] = useState<Borrador>(VACIO)
   const [pendientes, setPendientes] = useState<Orden[]>([])
   const [elegidas, setElegidas] = useState<number[]>([])
@@ -318,13 +322,20 @@ export default function FacturarPendientes() {
         <div className="grid gap-3 md:grid-cols-3">
           <Campo id="n-fecha" etiqueta="Fecha" tipo="date" valor={borrador.fecha}
                  alCambiar={(v) => set({ fecha: v })} />
-          <Elegir id="n-cliente" etiqueta="Cliente" vacio="Elegir…"
-                  valor={clienteId} opciones={opciones?.clientes ?? []}
-                  alCambiar={(v) => {
-                    setConfirmando(false)
-                    setElegidas([])
-                    setParams(v ? { cliente: v } : {}, { replace: true })
-                  }} />
+          <SelectCliente
+            id="n-cliente" etiqueta="Cliente" value={clienteId} opciones={opcionesCliente(opciones?.clientes ?? [])}
+            onChange={(v) => {
+              setConfirmando(false)
+              setElegidas([])
+              setParams(v ? { cliente: v } : {}, { replace: true })
+            }}
+            crear={async (d) => {
+              const c = await crearCliente(d)
+              setOpciones((o) => (o ? conClienteNuevo(o, c) : o))
+              return aOpcionDeSelect(c)
+            }}
+            {...ALTA_DE_CLIENTE} onPanelChange={setAltaAbierta} className={altaAbierta ? 'md:col-span-3' : undefined}
+            placeholder="Elegir…" emptyMessage="No hay ninguno con ese nombre." ariaLabel="Cliente" />
           <Eleccion id="n-tipo" etiqueta="Tipo" valor={borrador.tipo}
                     alCambiar={(v) => set({
                       tipo: v,
