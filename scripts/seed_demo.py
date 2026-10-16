@@ -166,10 +166,11 @@ cereal = crear("/api/tipos-carga", {"nombre": "Cereal", "unidad_default": "kg"},
 general = crear("/api/tipos-carga", {"nombre": "Carga general", "unidad_default": "bultos"},
                 "Carga general")
 
-# La empresa de la demo: el único emisor (ADR-035). Ficticia, como todo lo de la demo —nombre y CUIT inventados,
-# con dígito verificador válido—: nunca los de una persona o empresa real.
+# La empresa de la demo: el único emisor (ADR-035). Ficticia, como todo lo de la demo —nombre y CUIT inventados—:
+# nunca los de una persona o empresa real. El CUIT es del rango reservado `99999xxx` (ADR-061 de libracore): uno con
+# verificador válido fuera de ese rango no se distingue de uno real. Es el de `app/empresa_demo.py`, que el PDF usa.
 codigo, salida = pedir("PUT", "/api/configuracion", {
-    "razon_social": "Transportes del Plata Demo SRL", "cuit": "30-55667788-9",
+    "razon_social": "Transportes del Plata Demo SRL", "cuit": "30-99999903-0",
     "condicion_iva": "responsable_inscripto", "domicilio": "Av. Demo 1234",
     "localidad": "Rosario", "provincia": "Santa Fe"})
 if codigo != 200:

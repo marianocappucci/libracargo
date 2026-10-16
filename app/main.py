@@ -28,6 +28,7 @@ from libracore import config_manager
 from libracore.arca_router import build_arca_router
 from libracore.candados import una_vez_al_arrancar
 from libracore.config_router import build_backup_router
+from libracore.consultar_cuit_router import build_consultar_cuit_router
 from libracore.db import core as libracore_core
 from libracore.docs_api import cerrar_docs_de_la_api
 from libracore.errores import instalar_registro_de_errores
@@ -38,7 +39,7 @@ from libracore.security_headers import CSP_SPA, SecurityHeadersMiddleware
 from libracore.smtp_router import build_smtp_probe_router
 from libracore.tema_router import build_tema_admin_router, build_tema_router
 
-from app import db
+from app import db, empresa_demo
 from app.addons import require_addon
 from app.auth import (
     UserRepository,
@@ -218,6 +219,11 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     # (ADR-034; el motor lo pide así, libracore ADR-031). Sin esta línea los PDF salen con el membrete global de
     # la instancia —sin el logo de la base ni los datos de la empresa— y nada falla: es el defecto que se corrige.
     emisor_del_pdf_de_cargo.registrar()
+
+    # La empresa ficticia de la demo (ADR-038 y ADR-061 de libracore): con `DEMO_MODE=1` el emisor del PDF es esta y no
+    # la de la base. Sin esta línea el PDF de la demo dice «Empresa Demo SRL», la genérica del motor. Fuera de una
+    # demo no cambia nada.
+    empresa_demo.registrar()
 
     # 🔴 Las dos siembras de abajo son «si no existe, crear», y con `uvicorn --workers N` (ADR-044 de libracore; hoy N
     # = 1) cada worker corre este arranque: las dos preguntas «¿existe?» se contestan «no» antes de que ninguna haya
@@ -408,6 +414,17 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
             al_cambiar=auditoria_arca.construir_hook(db.fabrica_de_sesiones()),
         ),
         dependencies=[Depends(require_admin)],
+    )
+
+    # Consulta de CUIT en el padrón de ARCA (`GET /api/consultar-cuit/{cuit}`): el router del motor, el que usan
+    # Contalibra, Restolibra y VentaLibra. Completa razón social, domicilio y condición de IVA del alta de un
+    # tercero (cliente, fletero, proveedor) a partir del CUIT. Lee la fila activa de `arca_config` (la que escribe
+    # el router de arriba, en la base de core) y autentica contra `ws_sr_padron_a13` con el par de la facturación;
+    # sin certificados contesta 503, y si ARCA no delegó ese servicio al certificado, 403 con el paso a seguir.
+    # Va con `require_staff`, la misma guarda que los routers de los maestros: es lo que acompaña al alta de un
+    # tercero, que la hace cualquier usuario de la instancia (no sólo el admin).
+    app.include_router(
+        build_consultar_cuit_router(usuario_actual=get_current_user), dependencies=[Depends(require_staff)],
     )
 
     # El catálogo de provincias y localidades: 24 y 4.027, de LibraCore. Es de

@@ -17,7 +17,7 @@ import { ApiError } from 'libra-ui/api-client'
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
 import { Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 
 import type { Maestro, Recurso } from '@/api/maestros'
 import { clienteDe } from '@/api/maestros'
@@ -30,6 +30,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { SelectLocalidad, SelectProvincia } from '@/components/CamposGeo'
+import { ConsultarEnArca, type DestinoDeArca } from '@/components/ConsultarEnArca'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
@@ -48,6 +49,9 @@ export type Campo = {
   /** Los campos seguidos con el mismo `grupo` se dibujan juntos, dentro de un recuadro con este título (los tres
    *  roles de una entidad: una misma persona o empresa puede tener más de uno). */
   grupo?: string
+  /** En el campo del CUIT: agrega debajo el botón «Consultar en ARCA», que completa estos campos del formulario con el
+   *  padrón. Sin `iva`, la condición de IVA no se toca. */
+  consultaArca?: { destino: DestinoDeArca; ivaDe?: (condicionDeArca: string) => string | undefined }
 }
 
 /** Lo que recibe quien quiere dibujar el error de guardado a su manera (el CUIT repetido de Clientes, Proveedores y Fleteros). */
@@ -407,9 +411,16 @@ export function AbmMaestro<T extends Maestro>({
           <div className="grid gap-3">
             {agrupar(campos).map((bloque) => {
               const campoDe = (c: Campo) => (
-                <CampoForm key={c.nombre} campo={c} valor={borrador[c.nombre]}
-                           borrador={borrador as Record<string, unknown>}
-                           alCambiar={(v) => setBorrador((b) => ({ ...b, [c.nombre]: v }))} />
+                <Fragment key={c.nombre}>
+                  <CampoForm campo={c} valor={borrador[c.nombre]}
+                             borrador={borrador as Record<string, unknown>}
+                             alCambiar={(v) => setBorrador((b) => ({ ...b, [c.nombre]: v }))} />
+                  {c.consultaArca && (
+                    <ConsultarEnArca cuit={borrador[c.nombre]} valores={borrador} destino={c.consultaArca.destino}
+                                     ivaDe={c.consultaArca.ivaDe} porDefecto={editando ? undefined : defaults}
+                                     alAplicar={(cambios) => setBorrador((b) => ({ ...b, ...cambios }))} />
+                  )}
+                </Fragment>
               )
               if (!bloque.grupo) return campoDe(bloque.campos[0])
               return (

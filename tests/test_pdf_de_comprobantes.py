@@ -47,7 +47,7 @@ EMPRESA = "Transportes de Prueba"
 def texto_del_pdf(contenido: bytes) -> str:
     """Todo el texto dibujado, sin comprimir. Los acentos vienen como escapes octales (`\\351`) y se vuelven letras."""
     partes = []
-    for flujo in re.findall(rb"stream\r?\n(.*?)\r?\nendstream", contenido, re.S):
+    for flujo in re.findall(rb"stream\r?\n(.*?)\nendstream", contenido, re.S):
         try:
             partes.append(zlib.decompress(flujo).decode("latin-1"))
         except zlib.error:
