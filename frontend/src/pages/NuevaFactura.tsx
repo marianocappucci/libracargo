@@ -19,11 +19,13 @@
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { SelectCliente } from 'libra-ui/SelectCliente'
 
 import type { Concepto, CuentasFce, OpcionesDeTipo, TipoComprobante } from '@/api/comprobantes'
 import {
   ALICUOTAS_DE_IVA, NOMBRE_DE_TIPO, comprobantes, etiquetaDeCuenta, previsualizarFactura,
 } from '@/api/comprobantes'
+import { ALTA_DE_CLIENTE, aOpcionDeSelect, conClienteNuevo, crearCliente, opcionesCliente } from '@/api/clientes'
 import { cargarOpciones } from '@/api/ordenes'
 import type { Opciones } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
@@ -80,6 +82,8 @@ export default function NuevaFactura() {
   const [params, setParams] = useSearchParams()
   const navegar = useNavigate()
   const [opciones, setOpciones] = useState<Opciones | null>(null)
+  // Con el panel de alta de cliente abierto, el campo ocupa toda la fila.
+  const [altaAbierta, setAltaAbierta] = useState(false)
   const [fecha, setFecha] = useState(hoyEnArgentina())
   const [tipo, setTipo] = useState<TipoComprobante | ''>('')
   const [vencimiento, setVencimiento] = useState('')
@@ -229,12 +233,19 @@ export default function NuevaFactura() {
         <div className="grid gap-3 md:grid-cols-3">
           <Campo id="nf-fecha" etiqueta="Fecha" tipo="date" valor={fecha}
                  alCambiar={(v) => { setConfirmando(false); setFecha(v) }} />
-          <Elegir id="nf-cliente" etiqueta="Cliente" vacio="Elegir…"
-                  valor={clienteId} opciones={opciones?.clientes ?? []}
-                  alCambiar={(v) => {
-                    setConfirmando(false)
-                    setParams(v ? { cliente: v } : {}, { replace: true })
-                  }} />
+          <SelectCliente
+            id="nf-cliente" etiqueta="Cliente" value={clienteId} opciones={opcionesCliente(opciones?.clientes ?? [])}
+            onChange={(v) => {
+              setConfirmando(false)
+              setParams(v ? { cliente: v } : {}, { replace: true })
+            }}
+            crear={async (d) => {
+              const c = await crearCliente(d)
+              setOpciones((o) => (o ? conClienteNuevo(o, c) : o))
+              return aOpcionDeSelect(c)
+            }}
+            {...ALTA_DE_CLIENTE} onPanelChange={setAltaAbierta} className={altaAbierta ? 'md:col-span-3' : undefined}
+            placeholder="Elegir…" emptyMessage="No hay ninguno con ese nombre." ariaLabel="Cliente" />
           <div className="grid min-w-0 gap-1">
             <Label htmlFor="nf-tipo">Tipo</Label>
             {/* select-cerrado: las clases de comprobante que ARCA acepta para esta empresa y este cliente (dos o tres). */}

@@ -86,6 +86,26 @@ async function emitir() {
 describe('Nueva factura', () => {
   beforeEach(() => { get.mockReset(); post.mockReset() })
 
+  it('🔑 el cliente que no está cargado se da de alta ahí mismo (con CUIT y condición de IVA) y queda elegido para la factura', async () => {
+    responder()
+    post.mockResolvedValue({ id: 77, razon_social: 'Cereales del Sur', cuit: '30-71234567-8', es_cliente: true })
+    await abrir('/comprobantes/nueva', false)
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar nuevo cliente' }))
+    const panel = await screen.findByRole('group', { name: 'Nuevo cliente' })
+    fireEvent.change(within(panel).getByLabelText('Nombre *'), { target: { value: 'Cereales del Sur' } })
+    fireEvent.change(within(panel).getByLabelText('CUIT'), { target: { value: '30-71234567-8' } })
+    fireEvent.click(within(panel).getByRole('combobox', { name: 'Condición frente al IVA' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Responsable Inscripto' }))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Crear cliente' }))
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/api/terceros', {
+      razon_social: 'Cereales del Sur', es_cliente: true, cuit: '30-71234567-8', condicion_iva: 'responsable_inscripto',
+    }))
+    // Queda elegido, y la pantalla pide las clases de comprobante de ESE cliente.
+    await waitFor(() => expect(screen.getByLabelText('Cliente')).toHaveValue('Cereales del Sur'))
+    await waitFor(() => expect(get).toHaveBeenCalledWith(expect.stringContaining('/api/comprobantes/tipos?cliente_id=77')))
+  })
+
   it('es una pantalla con su título, y no un modal', async () => {
     responder()
     await abrir()

@@ -59,6 +59,7 @@ export function FiltrosOrdenes({ valor, opciones, alCambiar }: Props) {
         <Input id="f-hasta" type="date" value={valor.hasta ?? ''}
                onChange={(e) => set({ hasta: e.target.value || undefined })} />
       </div>
+      {/* cliente-sin-alta: filtro del listado de órdenes; no crea nada, sólo acota la grilla a los clientes que ya existen */}
       <Select id="f-cliente" etiqueta="Cliente" valor={valor.cliente_id}
               opciones={o?.clientes ?? []} alCambiar={(v) => set({ cliente_id: v })} />
       <Select id="f-fletero" etiqueta="Fletero" valor={valor.fletero_id}

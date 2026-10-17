@@ -154,7 +154,9 @@ export default function CuentaCorriente() {
         <div className="grid min-w-0 gap-1 md:col-span-2">
           <Label htmlFor="cc-tercero">{etiquetaDelRol}</Label>
           {/* Siempre el campo donde se escribe, sea cual sea el largo de la lista:
-              con diez fleteros también se busca por letras. */}
+              con diez fleteros también se busca por letras.
+              cliente-sin-alta: abre la cuenta corriente de un tercero que ya existe (y que ya tiene movimientos); no es un campo donde
+              se carga un dato, así que dar de alta uno nuevo acá abriría una cuenta vacía. */}
           <SelectBuscable
             buscarEscribiendo
             id="cc-tercero"

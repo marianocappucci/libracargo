@@ -9,14 +9,15 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BadgeEstado } from 'libra-ui/badge-estado'
+import { SelectCliente } from 'libra-ui/SelectCliente'
 
 import type { QuienEmite, Titular } from '@/api/cartas-porte'
 import {
   cartasPorte, enmascararCuit, etiquetaDeDelegacion, formatearCuit, tonoDeDelegacion,
 } from '@/api/cartas-porte'
+import { ALTA_DE_CLIENTE, aOpcionDeSelect, crearCliente, opcionesCliente } from '@/api/clientes'
 import { listarPorRol } from '@/api/maestros'
 import { mensajeDeError } from '@/components/AbmMaestro'
-import { Elegir } from '@/components/Elegir'
 import { InstruccionesDeDelegacion } from '@/components/InstruccionesDeDelegacion'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
@@ -178,9 +179,16 @@ function Formulario({ titular, partida, esAdmin, motivo, alCerrar, alCambiar }: 
         </fieldset>
 
         <div className="sm:col-span-2">
-          <Elegir id="titular-entidad" etiqueta="Cliente" vacio="El que tenga este CUIT"
-                  valor={terceroId} opciones={clientes} alCambiar={setTerceroId}
-                  deshabilitado={!puedeEscribir} />
+          <SelectCliente
+            id="titular-entidad" etiqueta="Cliente" value={terceroId} onChange={setTerceroId}
+            opciones={opcionesCliente(clientes, 'El que tenga este CUIT')}
+            crear={async (d) => {
+              const c = await crearCliente(d)
+              setClientes((l) => (l.some((x) => x.id === c.id) ? l : [...l, c]))
+              return aOpcionDeSelect(c)
+            }}
+            {...ALTA_DE_CLIENTE} disabled={!puedeEscribir}
+            placeholder="El que tenga este CUIT" emptyMessage="No hay ninguno con ese nombre." ariaLabel="Cliente" />
           {titular?.tercero && (
             <p className="text-muted-foreground mt-1 text-xs">
               Vinculado a{' '}
