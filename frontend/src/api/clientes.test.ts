@@ -25,15 +25,16 @@ describe('terceroDeCliente', () => {
     expect(iva('Consumidor Final')).toBe('consumidor_final')
   })
 
-  it('«No Alcanzado» e «IVA No Responsable» no tienen equivalente: no viajan y el servidor usa su valor por defecto', () => {
-    for (const c of ['No Alcanzado', 'IVA No Responsable']) {
+  it('«No Alcanzado» no tiene equivalente: no viaja y el servidor usa su valor por defecto', () => {
+    for (const c of ['No Alcanzado']) {
       expect(terceroDeCliente({ ...base, condicionIva: c })).not.toHaveProperty('condicion_iva')
     }
   })
 
   it('🔴 cada condición del kit está contemplada: si el kit suma una, este test obliga a decidir qué hace acá', () => {
     const conEquivalente = ['Responsable Inscripto', 'Monotributista', 'IVA Exento', 'Consumidor Final']
-    const sinEquivalente = ['No Alcanzado', 'IVA No Responsable']
+    // «IVA No Responsable» salió del kit en v0.158.2 (ADR-072).
+    const sinEquivalente = ['No Alcanzado']
     expect([...IVA_CONDITIONS].sort()).toEqual([...conEquivalente, ...sinEquivalente].sort())
   })
 })

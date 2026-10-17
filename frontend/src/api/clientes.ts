@@ -17,9 +17,9 @@ export const ALTA_DE_CLIENTE = { campos: CAMPOS_DE_ALTA_DE_CLIENTE, etiquetaDocu
 
 /** El cuerpo de `POST /api/terceros` para un cliente nuevo. Lo que no se pidió o quedó vacío no viaja.
  *
- *  La condición frente al IVA llega con los textos del kit (`IVA_CONDITIONS`) y se pasa al enum del servidor. «No Alcanzado» e «IVA No
- *  Responsable» no tienen equivalente: no se manda y el servidor usa su valor por defecto (Consumidor Final), como hace la consulta
- *  al padrón de ARCA (`condicionDeArca`). */
+ *  La condición frente al IVA llega con los textos del kit (`IVA_CONDITIONS`) y se pasa al enum del servidor. «No Alcanzado» no tiene
+ *  equivalente: no se manda y el servidor usa su valor por defecto (Consumidor Final), como hace la consulta al padrón de ARCA
+ *  (`condicionDeArca`). */
 export function terceroDeCliente(d: ClienteNuevo): Record<string, unknown> {
   const iva = d.condicionIva ? condicionDeArca(d.condicionIva) : undefined
   return {
