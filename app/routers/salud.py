@@ -27,8 +27,12 @@ router = APIRouter(tags=["salud"])
 # Se declaran las dos en vez de renombrar porque no pueden divergir: es la misma
 # función. Lo que no se hace es dejar una sola y que el provisioning apunte a la
 # otra.
-@router.get("/salud")
-@router.get("/health")
+#
+# 🔑 **`GET` y `HEAD`.** Un monitor de uptime (uptime-kuma) sondea con `HEAD`, y
+# `@router.get` a secas lo contestaba con 405: la instancia figuraba caída estando
+# sana. FastAPI no deriva el `HEAD` del `GET`.
+@router.api_route("/salud", methods=["GET", "HEAD"])
+@router.api_route("/health", methods=["GET", "HEAD"])
 def salud(sesion: Session = Depends(obtener_sesion)) -> dict[str, object]:
     """Falla cerrado: si la base no responde, la sonda no dice 'ok'."""
     sesion.execute(text("SELECT 1"))
