@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -106,7 +106,7 @@ async function conTerceros(rotulo: string) {
 
 describe('CuentaCorriente', () => {
   beforeEach(() => { get.mockReset() })
-  afterEach(() => { vi.restoreAllMocks() })
+  afterEach(() => { cleanup(); vi.restoreAllMocks() })  // desmontar antes de vaciar los mocks (ver EmitirCartaDePorte.test.tsx)
 
   it('🔴 avisa cuando los dos caminos NO coinciden', async () => {
     // Es la razon de que el endpoint devuelva los dos numeros. Si la pantalla
@@ -158,7 +158,7 @@ describe('CuentaCorriente', () => {
 
 describe('las pestañas Clientes, Fleteros y Proveedores', () => {
   beforeEach(() => { get.mockReset(); responder() })
-  afterEach(() => { vi.restoreAllMocks() })
+  afterEach(() => { cleanup(); vi.restoreAllMocks() })  // desmontar antes de vaciar los mocks (ver EmitirCartaDePorte.test.tsx)
 
   it('son tres, abre en Clientes y no queda el selector «Cuenta» de antes', async () => {
     montar()
@@ -258,7 +258,7 @@ describe('las pestañas Clientes, Fleteros y Proveedores', () => {
 
 describe('los enlaces a una cuenta', () => {
   beforeEach(() => { get.mockReset(); responder() })
-  afterEach(() => { vi.restoreAllMocks() })
+  afterEach(() => { cleanup(); vi.restoreAllMocks() })  // desmontar antes de vaciar los mocks (ver EmitirCartaDePorte.test.tsx)
 
   it('🔑 ?rol=fletero&tercero=2 abre la pestaña Fleteros con ese fletero y su cuenta', async () => {
     // Es lo que escriben el tablero y los reportes de saldos (`irA.cuenta`).
@@ -317,7 +317,7 @@ describe('los enlaces a una cuenta', () => {
 
 describe('el campo donde se escribe el tercero', () => {
   beforeEach(() => { get.mockReset(); responder() })
-  afterEach(() => { vi.restoreAllMocks() })
+  afterEach(() => { cleanup(); vi.restoreAllMocks() })  // desmontar antes de vaciar los mocks (ver EmitirCartaDePorte.test.tsx)
 
   it('🔑 es un campo de texto aunque la lista sea corta: se busca por letras siempre', async () => {
     // `Elegir` sólo ponia buscador desde 12 opciones; con 3 clientes habia un
@@ -403,7 +403,7 @@ describe('el campo donde se escribe el tercero', () => {
 
 describe('imprimir la cuenta', () => {
   beforeEach(() => { get.mockReset(); responder() })
-  afterEach(() => { vi.restoreAllMocks() })
+  afterEach(() => { cleanup(); vi.restoreAllMocks() })  // desmontar antes de vaciar los mocks (ver EmitirCartaDePorte.test.tsx)
 
   it('el botón aparece con una cuenta a la vista y la hoja lleva el tercero, el rol y los saldos', async () => {
     // Lo que importa es lo que hay en el DOM **en el momento de imprimir**: el navegador fotografia eso.
