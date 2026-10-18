@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import threading
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -34,7 +35,8 @@ from app.models.cartas_porte import (
 )
 from app.servicios import catalogo_cpe, refresco_cpe
 from tests.conftest import cargar_empresa, config_de_prueba, rearmar_en
-from tests.test_cartas_porte import TRANSPORTISTA, _traer, arca, cpe  # noqa: F401
+from tests.test_cartas_porte import TRANSPORTISTA, _traer, arca  # noqa: F401
+from tests.test_cartas_porte import cpe as cpe_con_fechas_fijas
 from tests.test_retirar_pre_facturas import _alembic
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -43,6 +45,16 @@ RUTA = "/api/cartas-porte"
 
 def _hace(**tiempo) -> datetime:
     return datetime.now(UTC) - timedelta(**tiempo)
+
+
+def cpe(ctg: int = 10100000001, **kwargs) -> arca_wscpe.CartaDePorte:
+    """La CPE de `test_cartas_porte`, pero emitida ayer y que vence pasado mañana, **relativo a hoy**.
+
+    La de allá tiene fechas fijas (septiembre de 2026): el día que pasan 30 días de su vencimiento, el refresco
+    programado la deja de consultar (`DIAS_VENCIDA`) y estos tests se ponen rojos sin que el código haya cambiado.
+    """
+    return replace(cpe_con_fechas_fijas(ctg, **kwargs), fecha_emision=datetime.now(UTC) - timedelta(days=1),
+                   fecha_vencimiento=datetime.now(UTC) + timedelta(days=2))
 
 
 @pytest.fixture
