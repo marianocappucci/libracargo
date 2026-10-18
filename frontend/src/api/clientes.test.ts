@@ -2,7 +2,7 @@
 import { IVA_CONDITIONS } from 'libra-ui/facturas'
 import { describe, expect, it } from 'vitest'
 
-import { arregloDe, conClienteNuevo, terceroDeCliente } from './clientes'
+import { arregloDe, conClienteNuevo, conTerceroNuevo, terceroConRol, terceroDeCliente } from './clientes'
 
 const base = { nombre: 'Cereales del Sur', documento: '', condicionIva: '', telefono: '', email: '' }
 
@@ -56,5 +56,31 @@ describe('arregloDe (CUIT repetido, ADR-052)', () => {
     expect(arregloDe(repetido(['proveedor'], false))).toBe('sumar-rol')
     expect(arregloDe(repetido(['cliente', 'fletero'], false))).toBe('reactivar')
     expect(arregloDe(repetido(['cliente']))).toBe('elegir')
+  })
+})
+
+describe('el alta en otro rol (el «Tercero» de Caja, ADR-053)', () => {
+  const repetido = (roles: ('cliente' | 'fletero' | 'proveedor')[], activo = true) =>
+    ({ mensaje: '', existente: { id: 2, razon_social: 'Transportes del Sur', roles, activo } })
+
+  it('el cuerpo lleva el rol pedido y nada más de roles; los datos son los mismos que los de un cliente', () => {
+    expect(terceroConRol({ ...base, documento: '30-71234567-8' }, 'fletero')).toEqual({
+      razon_social: 'Cereales del Sur', es_fletero: true, cuit: '30-71234567-8',
+    })
+    expect(terceroConRol(base, 'proveedor')).toEqual({ razon_social: 'Cereales del Sur', es_proveedor: true })
+    expect(terceroConRol(base, 'cliente')).toEqual(terceroDeCliente(base))
+  })
+
+  it('el arreglo del CUIT repetido mira el rol pedido, no el de cliente', () => {
+    expect(arregloDe(repetido(['cliente']), 'fletero')).toBe('sumar-rol')
+    expect(arregloDe(repetido(['fletero']), 'fletero')).toBe('elegir')
+    expect(arregloDe(repetido(['proveedor'], false), 'proveedor')).toBe('reactivar')
+  })
+
+  it('el nuevo entra a la lista de su rol y a la de terceros, una sola vez, y no a la de clientes', () => {
+    const c = { id: 77, etiqueta: 'Gomería Ficticia' }
+    const vacio = { clientes: [], fleteros: [], proveedores: [], terceros: [] }
+    expect(conTerceroNuevo(conTerceroNuevo(vacio, c, 'proveedor'), c, 'proveedor'))
+      .toEqual({ clientes: [], fleteros: [], proveedores: [c], terceros: [c] })
   })
 })
