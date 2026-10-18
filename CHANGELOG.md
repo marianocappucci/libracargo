@@ -3,6 +3,10 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Rotación sin corte del token de servicio (libraauth v0.52.0)
+
+- `docker-compose.yml` y `.env.example` declaran **`LIBRA_SERVICE_TOKEN_ANTERIOR`** con default vacío: mientras está definida, la instancia acepta el token nuevo y el anterior (`panel_admin.py token-servicio <slug> --rotar|--cerrar`, ADR-071 de libracore). Sin el pin de libraauth `v0.52.0` la variable no hace nada. Sin migración, sin cambio de código.
+
 ## [Unreleased] — Alta de cliente en el lugar: sumarle el rol a la entidad que ya tiene el CUIT (ADR-052)
 
 - **«Sumar el rol de cliente a X» desde el campo «Cliente».** Si el CUIT del cliente nuevo ya es de un fletero o un proveedor (ADR-040), en vez de sólo mostrar el 409 se pregunta si sumarle el rol de cliente; al aceptar se le suma (`POST /api/terceros/{id}/roles/cliente`, que también la reactiva) y queda elegida, sin cargar una segunda entidad con el mismo CUIT. Si ya es un cliente de baja se ofrece reactivarlo; si es un cliente activo, elegirlo. Al cancelar, el panel muestra el mensaje como antes y lo cargado no se pierde. En la orden, Nueva factura, Facturar pendientes y el cliente vinculado de un titular de CPE.
