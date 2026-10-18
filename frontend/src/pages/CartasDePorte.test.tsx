@@ -181,6 +181,30 @@ describe('Cartas de porte · listado', () => {
     expect(within(detalle).getByText('05-10-2026 16:00')).toBeInTheDocument()
   })
 
+  it('el listado muestra el grano por su nombre, y por su código mientras no se bajó la tabla de ARCA (ADR-051)', async () => {
+    responder({ lista: [carta(1, { grano: 'SOJA' }), carta(2)] })
+    abrir()
+    await screen.findByText('10123456781')
+    expect(screen.getByRole('columnheader', { name: 'Grano' })).toBeInTheDocument()
+    expect(screen.getByText('SOJA')).toBeInTheDocument()
+    expect(screen.getByText('Grano 15')).toBeInTheDocument()
+  })
+
+  it('el detalle traduce localidad y provincia, y el listado no pide nada de ARCA para eso (ADR-051)', async () => {
+    responder({ lista: [carta(1, {
+      grano: 'MAIZ', provincia_origen: 'CORDOBA', localidad_origen: 'MARCOS JUAREZ',
+      provincia_destino: 'SANTA FE', localidad_destino: 'ROSARIO',
+    })] })
+    abrir()
+    fireEvent.click(await screen.findByText('10123456781'))
+    const detalle = await screen.findByRole('dialog')
+    expect(within(detalle).getByText('30-44444444-1 · MARCOS JUAREZ, CORDOBA')).toBeInTheDocument()
+    expect(within(detalle).getByText('30-55555555-8 · ROSARIO, SANTA FE · Planta 9')).toBeInTheDocument()
+    expect(within(detalle).getByText('MAIZ · cosecha 25/26')).toBeInTheDocument()
+    // Los nombres vienen en la misma respuesta de la lista: no se piden los catálogos de ARCA para leerlos.
+    expect(get.mock.calls.some(([ruta]) => String(ruta).includes('/catalogos/'))).toBe(false)
+  })
+
   it('🔑 una carta anulada dice desde cuándo, en hora de Argentina: su PDF es del día de la emisión', async () => {
     responder({ lista: [carta(1, {
       estado: 'AN', estado_descripcion: 'Anulada', tiene_pdf: true, fecha_inicio_estado: '2026-10-07T18:45:00+00:00',

@@ -71,6 +71,9 @@ class CartaPorteOut(BaseModel):
     destinatario: Parte
     dominios: list[str]
     cod_grano: int | None
+    #: Cómo llama ARCA a esos códigos (ADR-051). Vacíos si todavía no se bajó la tabla de ARCA: la pantalla muestra
+    #: entonces el código, como antes.
+    grano: str | None = None
     cosecha: int | None
     peso_bruto: int | None
     peso_tara: int | None
@@ -82,6 +85,10 @@ class CartaPorteOut(BaseModel):
     cod_localidad_origen: int | None
     cod_provincia_destino: int | None
     cod_localidad_destino: int | None
+    provincia_origen: str | None = None
+    localidad_origen: str | None = None
+    provincia_destino: str | None = None
+    localidad_destino: str | None = None
     planta_destino: int | None
     #: La emitió LibraCargo (ADR-043): sólo esas se pueden anular desde acá.
     emitida: bool = False

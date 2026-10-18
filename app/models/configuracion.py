@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, CheckConstraint, Enum, Integer, LargeBinary, String, Text
+from datetime import datetime
+
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Auditable, Base
@@ -69,6 +71,16 @@ class ConfiguracionEmpresa(Base, Auditable):
     #: administrador a propósito. En homologación no hace falta.
     cpe_emision_habilitada: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
                                                          server_default="false")
+
+    #: Refrescar solas las Cartas de Porte abiertas (ADR-051): un cron del host corre
+    #: `scripts/refrescar_cartas_porte.py` y el script **sólo consulta** a ARCA. Apagado por omisión, aparte de la
+    #: emisión: leer no es emitir, y tenerlo prendido no habilita nada fiscal.
+    cpe_refresco_habilitado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                                          server_default="false")
+    #: Cuándo corrió por última vez el refresco programado (con el interruptor prendido) y qué pasó. Sirve para ver
+    #: desde la pantalla que el cron del host existe: sin su línea no falla nada, sólo deja de refrescar.
+    cpe_refresco_ultima_corrida: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cpe_refresco_resumen: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     __table_args__ = (
         CheckConstraint("id = 1", name="ck_configuracion_una_sola_fila"),

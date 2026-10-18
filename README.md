@@ -40,6 +40,26 @@ alembic upgrade head
 pytest -q
 ```
 
+## Tareas programadas
+
+Una, y **no corre sola**: vive en el cron del host de la instancia, y sin su línea el producto no falla, simplemente
+deja de hacer esa parte del trabajo (ADR-051).
+
+| Script | Cada | Qué pasa si no está |
+|---|---|---|
+| `scripts/refrescar_cartas_porte.py` | 30 min | Las cartas de porte abiertas sólo se actualizan con el botón «Actualizar abiertas» |
+
+```bash
+*/30 * * * * docker exec libracargo-<instancia> python /app/scripts/refrescar_cartas_porte.py >> /var/log/libracargo_cpe_refresco.log 2>&1
+```
+
+- **Sólo consulta a ARCA** (no emite ni anula) y está **apagado de fábrica**: además de la línea del cron, un administrador
+  prende «Refrescar solas las cartas de porte abiertas» en Configuración / ARCA. La pantalla muestra cuándo corrió por
+  última vez. En una demo, sin certificado de «CTG y Carta de Porte» o con otra corrida en curso, termina sin hacer nada y
+  lo dice en una línea.
+- Un cron nuevo lleva su log a `/etc/logrotate.d/libra-crons` (lista explícita, no un glob), y se verifica en las tres
+  capas del README de LibraClub: a mano, con el `env -i` del cron, y viéndolo disparar solo.
+
 ## Documentación relacionada
 
 - [ROADMAP.md](ROADMAP.md) · [TASKS.md](TASKS.md) · [ARCHITECTURE.md](ARCHITECTURE.md)

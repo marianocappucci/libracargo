@@ -119,6 +119,36 @@ class PlantillaCpe(Base):
     updated_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+#: Los tipos de la tabla `catalogo_cpe`.
+CATALOGO_GRANO = "grano"
+CATALOGO_PROVINCIA = "provincia"
+CATALOGO_LOCALIDAD = "localidad"
+
+
+class CatalogoCpe(Base):
+    """Lo que ARCA llama cada código de grano, provincia y localidad de la CPE (ADR-051), para leerlo sin ir a ARCA.
+
+    Es una **copia de las tablas de WSCPE** (`consultarTiposGrano`, `consultarProvincias`,
+    `consultarLocalidadesPorProvincia`), por ambiente: se llena sola, la primera vez que hace falta, con el ticket que
+    ya tiene quien consulta una CPE. La localidad es **de una provincia** (el código 4211 puede repetirse en otra), y
+    por eso `cod_provincia` forma parte de la clave; para el grano y la provincia vale 0.
+    """
+
+    __tablename__ = "catalogo_cpe"
+
+    ambiente: Mapped[str] = mapped_column(String(15), primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(10), primary_key=True)
+    cod_provincia: Mapped[int] = mapped_column(Integer, primary_key=True, default=0, server_default="0")
+    codigo: Mapped[int] = mapped_column(Integer, primary_key=True)
+    nombre: Mapped[str] = mapped_column(String(200), nullable=False)
+    actualizado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(f"tipo IN ('{CATALOGO_GRANO}', '{CATALOGO_PROVINCIA}', '{CATALOGO_LOCALIDAD}')",
+                        name="ck_catalogo_cpe_tipo"),
+    )
+
+
 #: Quién emite la Carta de Porte de un titular (ADR-044): este sistema, por la delegación del titular en ARCA, o él.
 EMITE_NOSOTROS = "nosotros"
 EMITE_TITULAR = "titular"

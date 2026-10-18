@@ -155,7 +155,8 @@ def test_upgrade_downgrade_upgrade(base_limpia):
         # Y a 22 con la `0027` (`plantillas_cpe`, ADR-043).
         # Y a 23 con la `0028` (`titulares_cpe`, ADR-044).
         # Y bajó a 21 con la `0029`, que borra `pre_facturas_cargo` y `pre_factura_ordenes` (ADR-048).
-        assert tablas - del_motor == 21
+        # Y subió a 22 con la `0031` (`catalogo_cpe`, ADR-051).
+        assert tablas - del_motor == 22
         eng.dispose()
     finally:
         if original:

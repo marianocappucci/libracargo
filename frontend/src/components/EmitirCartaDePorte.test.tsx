@@ -4,7 +4,7 @@
  *  el único envío, y sobre todo: tras un 502/500 NO se ofrece reintentar, porque emitir de nuevo es duplicar una carta
  *  de porte real. Las reglas de fondo son del servidor y su texto se muestra tal cual.
  */
-import { configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -137,6 +137,11 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  // Primero se desmonta y recién después se restauran los mocks. Los hooks `afterEach` corren en pila: sin este `cleanup()` el
+  // de Testing Library corre DESPUÉS de `restoreAllMocks`, que en Vitest 3 también vacía el `vi.fn()` de `api.get`. Si el test
+  // termina antes de que React dispare los efectos de las localidades o las plantas (en el CI lento pasa), el efecto llama a
+  // `api.get` ya sin implementación y revienta con «Cannot read properties of undefined (reading 'then')».
+  cleanup()
   vi.useRealTimers()
   vi.restoreAllMocks()
 })

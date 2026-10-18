@@ -80,6 +80,16 @@ def test_health_es_la_misma_sonda_que_salud(cliente):
         "las dos rutas tienen que dar la misma forma: son el mismo handler")
 
 
+@pytest.mark.parametrize("ruta", ["/salud", "/health"])
+def test_head_contesta_como_get_y_sin_cuerpo(cliente, ruta):
+    """Un monitor de uptime (uptime-kuma) sondea con `HEAD`; `@router.get` a secas lo contestaba con 405
+    (`Allow: GET`) y la instancia figuraba caída estando sana. FastAPI no deriva el `HEAD` del `GET`."""
+    head = cliente.head(ruta)
+    assert head.status_code == 200, f"HEAD {ruta} dio {head.status_code} (Allow: {head.headers.get('allow')})"
+    assert head.content == b""
+    assert head.headers["content-type"] == cliente.get(ruta).headers["content-type"]
+
+
 @pytest.mark.usefixtures("_cadena_de_auth")
 def test_health_tambien_falla_cerrado():
     """El control de la de arriba, por la ruta nueva.

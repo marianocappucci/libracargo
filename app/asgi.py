@@ -67,7 +67,13 @@ if FRONTEND_DIST.is_dir():
         name="frontend-assets",
     )
 
-    @app.get("/{ruta:path}", include_in_schema=False)
+    # 🔴 `GET` **y `HEAD`**. Con `@app.get` a secas, `HEAD /` daba 405 (`Allow:
+    # GET`): FastAPI no deriva el HEAD del GET como hace Starlette con sus rutas.
+    # Y HEAD es lo que usan los monitores de uptime (uptime-kuma) y algunos
+    # navegadores y proxies para ver si el sitio está vivo: una instancia sana
+    # figuraba caída. Starlette descarta el cuerpo de la respuesta a un HEAD, así
+    # que es el mismo handler (ADR-069 de libracore).
+    @app.api_route("/{ruta:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def spa(ruta: str):
         if es_ruta_de_api(ruta):
             raise HTTPException(404, "no existe esa ruta")

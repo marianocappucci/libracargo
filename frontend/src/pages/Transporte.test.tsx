@@ -6,7 +6,7 @@
  *  acá: tienen sus tests (`Clientes.test.tsx`, `Proveedores.test.tsx`), y los enlaces viejos, el suyo
  *  (`test/menu-y-enlaces-de-transporte.test.tsx`).
  */
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -67,7 +67,7 @@ beforeEach(() => {
   window.localStorage.clear()
 })
 
-afterEach(() => { vi.restoreAllMocks() })
+afterEach(() => { cleanup(); vi.restoreAllMocks() })  // desmontar antes de vaciar los mocks (ver EmitirCartaDePorte.test.tsx)
 
 describe('Transporte · pestañas y URL', () => {
   it('🔴 tiene SÓLO Fleteros, Choferes y Vehículos —en ese orden—, y sin parámetro abre Fleteros', async () => {
