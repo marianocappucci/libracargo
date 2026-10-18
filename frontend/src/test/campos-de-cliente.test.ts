@@ -6,6 +6,7 @@
 //
 // `Elegir` (components/Elegir.tsx) es el envoltorio del producto sobre `SelectBuscable`: el lector no ve por adentro, así que se lo suma a
 // `componentes`. Un campo de cliente tiene que ser `SelectCliente`; un *filtro* se exceptúa con «cliente-sin-alta: <motivo>».
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { auditarCamposDeCliente, camposDeClienteEn, describirCamposSinAlta } from 'libra-ui/auditoria-de-clientes'
@@ -24,6 +25,14 @@ describe('los campos de cliente ofrecen el alta', () => {
     expect(r.campos).toBeGreaterThan(0)
     expect(r.conAlta).toBeGreaterThanOrEqual(4)      // Ordenes, NuevaFactura, FacturarPendientes y la ficha del titular
     expect(r.marcados).toBeGreaterThanOrEqual(2)     // el filtro de órdenes y el de cliente del reporte
+  })
+
+  it('🔴 el «Tercero» de Caja tiene alta en el lugar, en el rol de la cuenta (ADR-053): ya no es la excepción de ADR-050', () => {
+    // Elige terceros de cualquier rol, así que el guard no lo cuenta como campo de cliente: se lo fija acá, leyendo el fuente.
+    const caja = readFileSync(join(SRC, 'pages', 'Caja.tsx'), 'utf8')
+    expect(caja).toMatch(/<SelectCliente[^>]*id="m-tercero"/)
+    expect(caja).toContain('useAltaDeCliente(borrador.rol')
+    expect(caja).not.toContain('cliente-sin-alta')
   })
 
   it('🔴 el guard ve a través de `Elegir`: un cliente elegido con él, sin alta ni marca, es una infracción', () => {
