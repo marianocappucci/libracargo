@@ -6,7 +6,7 @@ import { api } from 'libra-ui/api-client'
 import type { CampoDeAlta, ClienteNuevo } from 'libra-ui/SelectCliente'
 
 import type { Opcion } from '@/api/ordenes'
-import type { Maestro } from '@/api/maestros'
+import { cuitRepetido, sumarRol, type CuitRepetido, type Maestro } from '@/api/maestros'
 import { condicionDeArca } from '@/pages/maestros/definiciones'
 
 /** Qué se pide al dar de alta un cliente acá: se le factura, así que el CUIT y la condición frente al IVA van además del contacto. */
@@ -32,10 +32,44 @@ export function terceroDeCliente(d: ClienteNuevo): Record<string, unknown> {
   }
 }
 
+type TerceroDevuelto = Maestro & { razon_social: string; cuit?: string | null }
+
+const aOpcion = (t: TerceroDevuelto): Opcion => ({ id: t.id, etiqueta: t.razon_social, ...(t.cuit ? { detalle: t.cuit } : {}) })
+
 /** Da de alta el cliente y devuelve la opción con la misma forma que las de `cargarOpciones` (el CUIT va como `detalle`). */
 export async function crearCliente(d: ClienteNuevo): Promise<Opcion> {
-  const t = await api.post<Maestro & { razon_social: string; cuit?: string | null }>('/api/terceros', terceroDeCliente(d))
-  return { id: t.id, etiqueta: t.razon_social, ...(t.cuit ? { detalle: t.cuit } : {}) }
+  return aOpcion(await api.post<TerceroDevuelto>('/api/terceros', terceroDeCliente(d)))
+}
+
+/** Qué hay que hacer con la entidad que ya tiene el CUIT para usarla de cliente: sumarle el rol, reactivarla (es un cliente dado de baja) o
+ *  nada (ya es un cliente activo, y alcanza con elegirla). */
+export type ArregloDeCuitRepetido = 'sumar-rol' | 'reactivar' | 'elegir'
+
+export function arregloDe(r: CuitRepetido): ArregloDeCuitRepetido {
+  if (!r.existente.roles.includes('cliente')) return 'sumar-rol'
+  return r.existente.activo ? 'elegir' : 'reactivar'
+}
+
+/** El alta en el lugar cuando el CUIT ya es de otra entidad (ADR-040, ADR-052): el servidor contesta 409 con la entidad existente y, si quien
+ *  carga acepta (`confirmar`), se le suma el rol de cliente —que también la reactiva— y se devuelve **ella** como el cliente elegido, en vez de
+ *  cargar una segunda con el mismo CUIT. Si no acepta, o el error es otro, el error sigue de largo y el panel del kit lo muestra como siempre.
+ *
+ *  Una entidad que ya es cliente activo no se toca: se elige. */
+export async function crearOSumarRol(
+  d: ClienteNuevo, confirmar: (r: CuitRepetido, arreglo: ArregloDeCuitRepetido) => Promise<boolean>,
+): Promise<Opcion> {
+  try {
+    return await crearCliente(d)
+  } catch (e) {
+    const r = cuitRepetido(e)
+    if (!r) throw e
+    const arreglo = arregloDe(r)
+    if (!(await confirmar(r, arreglo))) throw e
+    if (arreglo === 'elegir') {
+      return { id: r.existente.id, etiqueta: r.existente.razon_social, ...(d.documento ? { detalle: d.documento } : {}) }
+    }
+    return aOpcion(await sumarRol(r.existente.id, 'cliente') as TerceroDevuelto)
+  }
 }
 
 /** La opción del buscador del kit para una opción de este producto. */

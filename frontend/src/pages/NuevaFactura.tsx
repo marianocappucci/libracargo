@@ -25,7 +25,8 @@ import type { Concepto, CuentasFce, OpcionesDeTipo, TipoComprobante } from '@/ap
 import {
   ALICUOTAS_DE_IVA, NOMBRE_DE_TIPO, comprobantes, etiquetaDeCuenta, previsualizarFactura,
 } from '@/api/comprobantes'
-import { ALTA_DE_CLIENTE, aOpcionDeSelect, conClienteNuevo, crearCliente, opcionesCliente } from '@/api/clientes'
+import { ALTA_DE_CLIENTE, aOpcionDeSelect, conClienteNuevo, opcionesCliente } from '@/api/clientes'
+import { useAltaDeCliente } from '@/components/useAltaDeCliente'
 import { cargarOpciones } from '@/api/ordenes'
 import type { Opciones } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
@@ -84,6 +85,7 @@ export default function NuevaFactura() {
   const [opciones, setOpciones] = useState<Opciones | null>(null)
   // Con el panel de alta de cliente abierto, el campo ocupa toda la fila.
   const [altaAbierta, setAltaAbierta] = useState(false)
+  const alta = useAltaDeCliente()
   const [fecha, setFecha] = useState(hoyEnArgentina())
   const [tipo, setTipo] = useState<TipoComprobante | ''>('')
   const [vencimiento, setVencimiento] = useState('')
@@ -240,12 +242,13 @@ export default function NuevaFactura() {
               setParams(v ? { cliente: v } : {}, { replace: true })
             }}
             crear={async (d) => {
-              const c = await crearCliente(d)
+              const c = await alta.crear(d)
               setOpciones((o) => (o ? conClienteNuevo(o, c) : o))
               return aOpcionDeSelect(c)
             }}
             {...ALTA_DE_CLIENTE} onPanelChange={setAltaAbierta} className={altaAbierta ? 'md:col-span-3' : undefined}
             placeholder="Elegir…" emptyMessage="No hay ninguno con ese nombre." ariaLabel="Cliente" />
+          {alta.dialogo}
           <div className="grid min-w-0 gap-1">
             <Label htmlFor="nf-tipo">Tipo</Label>
             {/* select-cerrado: las clases de comprobante que ARCA acepta para esta empresa y este cliente (dos o tres). */}

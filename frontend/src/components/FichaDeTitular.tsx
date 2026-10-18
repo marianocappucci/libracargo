@@ -15,7 +15,8 @@ import type { QuienEmite, Titular } from '@/api/cartas-porte'
 import {
   cartasPorte, enmascararCuit, etiquetaDeDelegacion, formatearCuit, tonoDeDelegacion,
 } from '@/api/cartas-porte'
-import { ALTA_DE_CLIENTE, aOpcionDeSelect, crearCliente, opcionesCliente } from '@/api/clientes'
+import { ALTA_DE_CLIENTE, aOpcionDeSelect, opcionesCliente } from '@/api/clientes'
+import { useAltaDeCliente } from '@/components/useAltaDeCliente'
 import { listarPorRol } from '@/api/maestros'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { InstruccionesDeDelegacion } from '@/components/InstruccionesDeDelegacion'
@@ -69,6 +70,7 @@ function Formulario({ titular, partida, esAdmin, motivo, alCerrar, alCambiar }: 
   const [error, setError] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
   const [confirmandoBorrar, setConfirmandoBorrar] = useState(false)
+  const alta = useAltaDeCliente()
 
   // Para vincular a mano con una entidad. Es un extra: si el pedido falla, la ficha sigue (se vincula por CUIT).
   useEffect(() => {
@@ -183,12 +185,13 @@ function Formulario({ titular, partida, esAdmin, motivo, alCerrar, alCambiar }: 
             id="titular-entidad" etiqueta="Cliente" value={terceroId} onChange={setTerceroId}
             opciones={opcionesCliente(clientes, 'El que tenga este CUIT')}
             crear={async (d) => {
-              const c = await crearCliente(d)
+              const c = await alta.crear(d)
               setClientes((l) => (l.some((x) => x.id === c.id) ? l : [...l, c]))
               return aOpcionDeSelect(c)
             }}
             {...ALTA_DE_CLIENTE} disabled={!puedeEscribir}
             placeholder="El que tenga este CUIT" emptyMessage="No hay ninguno con ese nombre." ariaLabel="Cliente" />
+          {alta.dialogo}
           {titular?.tercero && (
             <p className="text-muted-foreground mt-1 text-xs">
               Vinculado a{' '}
