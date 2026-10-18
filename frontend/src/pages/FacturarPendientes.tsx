@@ -25,7 +25,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import type { AvisoFce, CuentasFce, TipoComprobante } from '@/api/comprobantes'
 import { comprobantes, etiquetaDeCuenta, sumarImportes } from '@/api/comprobantes'
-import { ALTA_DE_CLIENTE, aOpcionDeSelect, conClienteNuevo, crearCliente, opcionesCliente } from '@/api/clientes'
+import { ALTA_DE_CLIENTE, aOpcionDeSelect, conClienteNuevo, opcionesCliente } from '@/api/clientes'
+import { useAltaDeCliente } from '@/components/useAltaDeCliente'
 import type { Opciones, Orden } from '@/api/ordenes'
 import { cargarOpciones, ordenes as apiOrdenes } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
@@ -102,6 +103,7 @@ export default function FacturarPendientes() {
   const [opciones, setOpciones] = useState<Opciones | null>(null)
   // Con el panel de alta de cliente abierto, el campo ocupa toda la fila.
   const [altaAbierta, setAltaAbierta] = useState(false)
+  const alta = useAltaDeCliente()
   const [borrador, setBorrador] = useState<Borrador>(VACIO)
   const [pendientes, setPendientes] = useState<Orden[]>([])
   const [elegidas, setElegidas] = useState<number[]>([])
@@ -330,12 +332,13 @@ export default function FacturarPendientes() {
               setParams(v ? { cliente: v } : {}, { replace: true })
             }}
             crear={async (d) => {
-              const c = await crearCliente(d)
+              const c = await alta.crear(d)
               setOpciones((o) => (o ? conClienteNuevo(o, c) : o))
               return aOpcionDeSelect(c)
             }}
             {...ALTA_DE_CLIENTE} onPanelChange={setAltaAbierta} className={altaAbierta ? 'md:col-span-3' : undefined}
             placeholder="Elegir…" emptyMessage="No hay ninguno con ese nombre." ariaLabel="Cliente" />
+          {alta.dialogo}
           <Eleccion id="n-tipo" etiqueta="Tipo" valor={borrador.tipo}
                     alCambiar={(v) => set({
                       tipo: v,
