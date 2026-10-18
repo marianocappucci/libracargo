@@ -1219,7 +1219,7 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
   - **Un filtro no lleva alta**: acota un listado o un reporte a clientes que ya existen y no crea nada. Se marca `cliente-sin-alta: <motivo>` y la guarda (`src/test/campos-de-cliente.test.ts`, `auditarCamposDeCliente` con `componentes: ['Elegir']`) exige el motivo.
   - **El «Tercero» de Caja no lleva alta**: es de cualquier rol y el rol se elige aparte («Cuenta del tercero»). Un alta ahí tendría que adivinar cuál (un ingreso puede ser de un cliente o la devolución de un proveedor) y dejaría al tercero en la lista equivocada. Para cargar uno nuevo se usa Entidades.
 - Consecuencias: sin migración y sin cambio de backend. Un `Elegir` nuevo que elija un cliente rompe el test de la guarda hasta que pase a `SelectCliente` o se marque con su motivo.
-  - 🔸 Un CUIT que ya es de un fletero o proveedor contesta 409 «sumale el rol»; el panel de alta muestra el mensaje pero no ofrece sumar el rol desde ahí (se hace en Entidades). Si se pide, se puede resolver en `crearCliente` con `sumarRol`.
+  - ✅ Un CUIT que ya es de un fletero o proveedor contesta 409 «sumale el rol»; el panel de alta mostraba el mensaje pero no ofrecía sumar el rol desde ahí (se hacía en Entidades). **Resuelto en ADR-052.**
 
 ## ADR-051 — CPE fase 2: las cartas abiertas se refrescan solas (un cron, apagado) y los códigos de ARCA se leen con su nombre
 
@@ -1245,3 +1245,19 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
   - 🔸 El primer traer que baja las tablas hace de 3 a 5 llamadas más a ARCA dentro del mismo pedido (grano, provincias y una por provincia nueva); las siguientes ninguna.
   - 🔸 Los nombres se muestran como los da ARCA (en mayúsculas, `CAP.FEDERAL`): igual que en los selectores de la emisión.
   - 🔸 Lo mejor para la familia sería un catálogo de las tablas de WSCPE en `libracore` (ver el informe de la tarea); acá queda la costura de este producto.
+
+
+## ADR-052 — El alta de un cliente en el lugar ofrece sumarle el rol a la entidad que ya tiene el CUIT
+
+- Estado: propuesta (ítem 19 de la cola autónoma del 2026-10-17), a la espera de revisión. Cierra el 🔸 de ADR-050.
+- Fecha: 2026-10-18
+- Contexto: en el alta de un cliente desde un campo «Cliente» (ADR-050, `SelectCliente` del kit), un CUIT que ya es de otra entidad contesta 409 «El CUIT … ya es de «X» (fletero). Sumale el rol en vez de cargarla de nuevo.» (ADR-040). El panel mostraba el mensaje y había que ir a Entidades, sumar el rol y volver.
+- **Qué ya existía** (`reglas/producto.md`): el 409 ya trae la entidad existente en el cuerpo (`detail.existente`: id, razón social, roles, activo); `POST /api/terceros/{id}/roles/{rol}` le suma un rol y la reactiva; `cuitRepetido` y `sumarRol` (`api/maestros.ts`) los usa la pantalla de Entidades (`TercerosPorRol`, «Sumarle el rol de …»); `ConfirmDialog` del producto. El kit (`SelectCliente`/`AltaDeCliente`, v0.162.0) sólo muestra el texto del error dentro de su panel: no tiene un lugar para una acción. Las entidades con roles son propias de LibraCargo, así que la lógica queda acá y no en el motor.
+- Decisión:
+  1. **Sin cambio de backend**: el 409 ya trae el id.
+  2. `api/clientes.ts` suma `crearOSumarRol(d, confirmar)`: intenta el alta; ante el 409 de CUIT repetido pregunta (`confirmar`) y, si se acepta, le suma el rol de cliente a la existente y la devuelve como la opción elegida. Si no se acepta, o el error es otro, el error sigue de largo y el panel lo muestra como antes, con lo cargado.
+  3. Tres casos según la existente (`arregloDe`): **no es cliente** → «Sumar el rol de cliente a «X»»; **es cliente de baja** → «Reactivarlo y elegirlo» (la misma llamada, que reactiva); **es cliente activo** → «Elegirlo», sin llamar al servidor.
+  4. La pregunta es el `ConfirmDialog` del producto encima del panel, desde un hook (`components/useAltaDeCliente.tsx`) que usan los cuatro campos con alta: la orden, Nueva factura, Facturar pendientes y el cliente vinculado de un titular de CPE.
+- Consecuencias: sin migración, sin cambio de backend y sin cambio de pin.
+  - 🔸 Costura posible en el kit (no se tocó): que `AltaDeCliente` acepte que `crear` tire un error con una acción (p. ej. `{ detail, accion: { etiqueta, hacer: () => Promise<OpcionSelect> } }`) y la muestre como botón dentro del panel, al lado del mensaje. Evitaría el diálogo encima del panel y serviría a otros productos con entidades de varios roles; hoy ninguno lo pide.
+  - 🔸 El «Tercero» de Caja sigue sin alta en el lugar (ADR-050): el rol no se deduce del campo y eso pide una decisión de producto.

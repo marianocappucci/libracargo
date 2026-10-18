@@ -3,6 +3,11 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Alta de cliente en el lugar: sumarle el rol a la entidad que ya tiene el CUIT (ADR-052)
+
+- **«Sumar el rol de cliente a X» desde el campo «Cliente».** Si el CUIT del cliente nuevo ya es de un fletero o un proveedor (ADR-040), en vez de sólo mostrar el 409 se pregunta si sumarle el rol de cliente; al aceptar se le suma (`POST /api/terceros/{id}/roles/cliente`, que también la reactiva) y queda elegida, sin cargar una segunda entidad con el mismo CUIT. Si ya es un cliente de baja se ofrece reactivarlo; si es un cliente activo, elegirlo. Al cancelar, el panel muestra el mensaje como antes y lo cargado no se pierde. En la orden, Nueva factura, Facturar pendientes y el cliente vinculado de un titular de CPE.
+- Sin migración, sin cambio de backend (el 409 ya traía la entidad existente) y sin cambio de pin.
+
 ## [Unreleased] — CPE fase 2: las cartas abiertas se refrescan solas y los códigos de ARCA se leen con su nombre (ADR-051)
 
 - **Refresco programado de las cartas de porte abiertas.** `scripts/refrescar_cartas_porte.py` (para el cron del host, `*/30 * * * *`, ver README) vuelve a consultar a ARCA las cartas abiertas —sin kilos de descarga y sin estado final— y actualiza estado, kilos y la fecha de la última consulta. **Sólo consulta: no emite ni anula nada.** Apagado de fábrica: interruptor propio «Refrescar solas las cartas de porte abiertas» (administradores, Configuración / ARCA, junto al de la emisión real) y la pantalla muestra cuándo corrió por última vez. No corre en una demo, sin certificado ni con el interruptor apagado, y lo dice sin error. Candado de base (no corren dos a la vez, tampoco con `WEB_CONCURRENCY` > 1), por lotes de hasta 200, sin repetir lo consultado hace menos de 15 minutos ni las vencidas hace más de 30 días. Un error en una carta se registra y sigue con las demás.

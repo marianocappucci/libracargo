@@ -13,7 +13,8 @@ import { Link, useSearchParams } from 'react-router-dom'
 import type { Filtros, Opcion, Opciones, Orden } from '@/api/ordenes'
 import { ETAPAS, cargarOpciones, ordenes as api } from '@/api/ordenes'
 import { formatearKilos } from '@/api/cartas-porte'
-import { ALTA_DE_CLIENTE, aOpcionDeSelect, conClienteNuevo, crearCliente, opcionesCliente } from '@/api/clientes'
+import { ALTA_DE_CLIENTE, aOpcionDeSelect, conClienteNuevo, opcionesCliente } from '@/api/clientes'
+import { useAltaDeCliente } from '@/components/useAltaDeCliente'
 import { useConfiguracion } from '@/api/configuracion'
 import type { Localidad } from '@/api/localidades'
 import { aOpcionLocalidad } from '@/api/localidades'
@@ -130,16 +131,18 @@ function ElegirCliente({ form, nombre, etiqueta, opciones, alCrear }: {
   alCrear: (c: Opcion) => void
 }) {
   const [conPanel, setConPanel] = useState(false)
+  const alta = useAltaDeCliente()
   const error = form.formState.errors[nombre]
   const valor = form.watch(nombre)
   return (
     <div className={`grid min-w-0 gap-1 ${conPanel ? 'md:col-span-2' : ''}`}>
+      {alta.dialogo}
       <SelectCliente
         id={nombre} etiqueta={etiqueta}
         value={valor === undefined || valor === null ? '' : String(valor)}
         onChange={(v) => form.setValue(nombre, v as never, { shouldValidate: true })}
         opciones={opcionesCliente(opciones)}
-        crear={async (d) => { const c = await crearCliente(d); alCrear(c); return aOpcionDeSelect(c) }}
+        crear={async (d) => { const c = await alta.crear(d); alCrear(c); return aOpcionDeSelect(c) }}
         {...ALTA_DE_CLIENTE} onPanelChange={setConPanel}
         placeholder="Elegir…" emptyMessage="No hay ninguno con ese nombre." ariaLabel={etiqueta}
         aria-invalid={error ? true : undefined}

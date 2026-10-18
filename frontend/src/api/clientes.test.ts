@@ -2,7 +2,7 @@
 import { IVA_CONDITIONS } from 'libra-ui/facturas'
 import { describe, expect, it } from 'vitest'
 
-import { conClienteNuevo, terceroDeCliente } from './clientes'
+import { arregloDe, conClienteNuevo, terceroDeCliente } from './clientes'
 
 const base = { nombre: 'Cereales del Sur', documento: '', condicionIva: '', telefono: '', email: '' }
 
@@ -44,5 +44,17 @@ describe('conClienteNuevo', () => {
   it('suma el cliente a la lista de clientes y a la de terceros, una sola vez', () => {
     const o = conClienteNuevo(conClienteNuevo({ clientes: [], terceros: [], otra: 1 }, c), c)
     expect(o).toEqual({ clientes: [c], terceros: [c], otra: 1 })
+  })
+})
+
+describe('arregloDe (CUIT repetido, ADR-052)', () => {
+  const repetido = (roles: ('cliente' | 'fletero' | 'proveedor')[], activo = true) =>
+    ({ mensaje: '', existente: { id: 2, razon_social: 'Transportes del Sur', roles, activo } })
+
+  it('a quien no es cliente se le suma el rol; a un cliente de baja se lo reactiva; a uno activo se lo elige', () => {
+    expect(arregloDe(repetido(['fletero']))).toBe('sumar-rol')
+    expect(arregloDe(repetido(['proveedor'], false))).toBe('sumar-rol')
+    expect(arregloDe(repetido(['cliente', 'fletero'], false))).toBe('reactivar')
+    expect(arregloDe(repetido(['cliente']))).toBe('elegir')
   })
 })
