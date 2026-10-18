@@ -155,3 +155,53 @@ def test_las_dos_politicas_son_distintas(cliente):
     index = cliente.get("/").headers.get("cache-control", "")
     asset = cliente.get(f"/assets/{ASSET}").headers.get("cache-control", "")
     assert index and asset and index != asset, f"index={index!r} asset={asset!r}"
+
+
+# ── HEAD ────────────────────────────────────────────────────────────────────
+#
+# Los monitores de uptime (uptime-kuma) y algunos navegadores y proxies sondean
+# con `HEAD`. FastAPI **no** deriva el `HEAD` del `GET` (Starlette sí, en sus
+# rutas; `APIRoute` no): con `@app.get` a secas, `HEAD /` daba 405 con `Allow:
+# GET` y una instancia sana figuraba caída. Van acá porque necesitan lo mismo
+# que los tests de arriba: la app ASGI de verdad con un `dist` presente.
+
+
+@pytest.mark.parametrize("ruta", ["/", "/ordenes/nueva", "/prueba-de-cache.txt"])
+def test_head_de_la_spa_responde_como_get_y_sin_cuerpo(cliente, ruta):
+    get = cliente.get(ruta)
+    head = cliente.head(ruta)
+    assert get.status_code == 200
+    assert head.status_code == 200, f"HEAD {ruta} dio {head.status_code} (Allow: {head.headers.get('allow')})"
+    assert head.content == b""
+    assert head.headers["content-type"] == get.headers["content-type"]
+    assert head.headers["cache-control"] == get.headers["cache-control"] == "no-cache, must-revalidate"
+
+
+def test_head_de_una_ruta_de_api_inexistente_es_404(cliente):
+    """El control: HEAD no abre un camino por el que la API devuelva el `index.html`."""
+    assert cliente.get("/api/inexistente").status_code == 404
+    assert cliente.head("/api/inexistente").status_code == 404
+
+
+def test_head_de_health_lo_contesta_la_sonda_y_no_la_spa(cliente):
+    """Con la SPA montada, un `HEAD /health` sin ruta propia lo atiende el catch-all: 200 con el `index.html`.
+
+    Da verde y miente (la sonda no corrió), así que se mira el tipo de contenido: el de `/health` es JSON."""
+    for ruta in ("/health", "/salud"):
+        get = cliente.get(ruta)
+        head = cliente.head(ruta)
+        assert get.status_code == 200, ruta
+        assert head.status_code == 200, f"HEAD {ruta} dio {head.status_code} (Allow: {head.headers.get('allow')})"
+        assert head.content == b""
+        assert head.headers["content-type"] == get.headers["content-type"] == "application/json", ruta
+
+
+@pytest.mark.parametrize("metodo", ["get", "head"])
+def test_la_doble_barra_no_escapa_del_dist(cliente, metodo):
+    """`//etc/hostname` llega al handler como `/etc/hostname`, una ruta absoluta: `dist / ruta` la
+    reemplazaría entera. `archivo_publico` resuelve y exige que quede adentro del `dist`."""
+    r = getattr(cliente, metodo)("//etc/hostname")
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"], "sirvió un archivo de afuera del dist"
+    if metodo == "get":
+        assert "<title>LibraCargo</title>" in r.text
