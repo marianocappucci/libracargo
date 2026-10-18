@@ -18,7 +18,8 @@ import { Link } from 'react-router-dom'
 
 import type { CartaPorte, ResumenDeActualizar } from '@/api/cartas-porte'
 import {
-  cartasPorte, esEstadoFinal, formatearCuit, formatearDiaDelInstante, formatearKilos, nombreOCuit, tonoDeEstado,
+  cartasPorte, esEstadoFinal, etiquetaDeGrano, formatearCuit, formatearDiaDelInstante, formatearKilos, nombreOCuit,
+  tonoDeEstado,
 } from '@/api/cartas-porte'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { AccionesDelTitulo } from '@/components/AccionesDelTitulo'
@@ -178,6 +179,7 @@ export function ListadoDeCartasDePorte() {
           </div>
         )
       } },
+    { id: 'grano', header: 'Grano', accessorFn: (c: CartaPorte) => etiquetaDeGrano(c) },
     { id: 'dominios', header: 'Dominios',
       accessorFn: (c: CartaPorte) => c.dominios.join(', ') || '—' },
     { id: 'kilos', header: 'Kg carga', meta: { className: 'tabular-nums' },

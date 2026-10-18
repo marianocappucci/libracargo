@@ -15,6 +15,7 @@ salió y se actualiza siempre contra ése.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import UTC, datetime
 
 from libracore import arca_credenciales, arca_wscpe
@@ -24,11 +25,17 @@ from sqlalchemy.orm import Session
 
 from app.models import AccionAuditoria, OrdenCarga, Tercero
 from app.models.cartas_porte import CartaPorte, CartaPortePdf
-from app.servicios import auditoria
+from app.servicios import auditoria, catalogo_cpe
 from app.servicios.emision_arca import EMPRESA_ARCA
+
+logger = logging.getLogger(__name__)
 
 #: Los estados en los que una CPE ya no cambia: no se vuelve a consultar al «actualizar las abiertas».
 ESTADOS_CERRADOS = frozenset({"AN", "RE", "DE"})
+
+#: Lo que cambia con **cada** consulta aunque ARCA conteste lo mismo: la hora y el XML entero. No va a la auditoría,
+#: o el refresco programado dejaría un asiento por carta por corrida con un diff que no dice nada (ADR-051).
+RUIDO_DE_AUDITORIA = frozenset({"consultada_en", "respuesta_arca"})
 
 #: Tope de CTG por pedido. Cada uno es una llamada a ARCA dentro del mismo request.
 MAX_POR_LOTE = 50
@@ -179,10 +186,17 @@ def guardar(sesion: Session, usuario: dict | None, cpe: arca_wscpe.CartaDePorte,
             fila.orden_carga_id = orden_carga_id
         fila.updated_by = _usuario_id(usuario)
         sesion.flush()
+        # 🔑 Se relee: ARCA manda las fechas con -03:00 y la base las devuelve en UTC. Es el mismo instante, pero
+        # como texto (el diff de la auditoría) es otro, y cada consulta parecía una modificación de tres fechas.
+        sesion.refresh(fila)
         auditoria.registrar(sesion, usuario, "carta_porte", fila.id, AccionAuditoria.MODIFICACION,
-                            antes=antes, despues=fila)
+                            antes=_sin_ruido(antes), despues=_sin_ruido(auditoria.instantanea(fila)))
     _guardar_pdf(sesion, fila, cpe.pdf)
     return fila
+
+
+def _sin_ruido(instantanea: dict) -> dict:
+    return {k: v for k, v in instantanea.items() if k not in RUIDO_DE_AUDITORIA}
 
 
 def _exigir_orden(sesion: Session, orden_carga_id: int) -> None:
@@ -219,6 +233,7 @@ def traer(sesion: Session, usuario: dict | None, ctgs: list[int], cuit_represent
                 # Sin delegación falla igual para todos: no tiene sentido pedir los demás.
                 raise
             resultados.append({"ctg": ctg, "id": None, "error": e.detalle})
+    completar_catalogo(sesion, [r["id"] for r in resultados if r["id"] is not None], lambda _amb: ticket)
     return resultados
 
 
@@ -237,21 +252,62 @@ def abiertas(sesion: Session) -> list[CartaPorte]:
         .order_by(CartaPorte.id)))
 
 
-def actualizar_abiertas(sesion: Session, usuario: dict | None) -> dict:
-    """Refresca todas las abiertas, una por una y cada una en su transacción. Devuelve el resumen."""
+def actualizar_abiertas(sesion: Session, usuario: dict | None, filas: list[CartaPorte] | None = None) -> dict:
+    """Refresca las abiertas (o las `filas` que se pasen), cada una en su transacción. Devuelve el resumen.
+
+    Una que falla no frena a las demás: ARCA caída, una delegación que falta, un corte de red o una respuesta rara se
+    anotan en `errores` y se sigue. Si no se pudo ni sacar el ticket de un ambiente, no se vuelve a intentar para cada
+    carta de ese ambiente: es el mismo error para todas.
+    """
+    filas = abiertas(sesion) if filas is None else filas
+    # Los datos de cada una se toman antes: un `rollback` vence los objetos y releerlos fuera del `try` rompería todo.
+    pendientes = [(f.id, f.nro_ctg, f.ambiente) for f in filas]
     tickets: dict[str, dict] = {}
+    sin_ticket: dict[str, Rechazo] = {}
     actualizadas, errores = 0, []
-    for fila in abiertas(sesion):
+    for id_, ctg, ambiente in pendientes:
         try:
-            if fila.ambiente not in tickets:
-                tickets[fila.ambiente] = _ticket(fila.ambiente)
-            actualizar(sesion, usuario, fila, tickets[fila.ambiente])
+            fila = sesion.get(CartaPorte, id_)
+            if fila is None:  # la borraron mientras tanto
+                continue
+            if ambiente in sin_ticket:
+                raise sin_ticket[ambiente]
+            if ambiente not in tickets:
+                try:
+                    tickets[ambiente] = _ticket(ambiente)
+                except Rechazo as e:
+                    sin_ticket[ambiente] = e
+                    raise
+            actualizar(sesion, usuario, fila, tickets[ambiente])
             sesion.commit()
             actualizadas += 1
         except Rechazo as e:
             sesion.rollback()
-            errores.append({"ctg": fila.nro_ctg, "error": e.detalle})
+            errores.append({"ctg": ctg, "error": e.detalle})
+        except Exception as e:  # un corte de red o un XML raro en una carta no se lleva a las demás
+            sesion.rollback()
+            logger.exception("CPE %s: no se pudo actualizar", ctg)
+            errores.append({"ctg": ctg, "error": f"no se pudo actualizar: {e}"})
+    completar_catalogo(sesion, [i for i, _, _ in pendientes], lambda amb: tickets.get(amb) or _ticket(amb))
     return {"actualizadas": actualizadas, "errores": errores}
+
+
+def completar_catalogo(sesion: Session, ids, ticket_de=None) -> int:
+    """Pide a ARCA los nombres de grano, provincia y localidad que le falten a las cartas `ids` (ADR-051).
+
+    Se llama después de traer o actualizar, cuando ya hay un ticket en la mano (`ticket_de(ambiente)`; sin él, el que
+    está en la caché de disco del motor). Mejor esfuerzo: nunca levanta.
+    """
+    ids = [i for i in ids if i is not None]
+    if not ids:
+        return 0
+    try:
+        filas = list(sesion.scalars(select(CartaPorte).where(CartaPorte.id.in_(ids))))
+        return catalogo_cpe.completar(sesion, filas, ticket_de or _ticket)
+    except Exception:  # los nombres son un adorno: la carta ya quedó guardada
+        sesion.rollback()
+        logger.exception("CPE: no se completó el catálogo de códigos")
+        return 0
 
 
 def vincular_orden(sesion: Session, usuario: dict | None, fila: CartaPorte, orden_carga_id: int | None) -> None:

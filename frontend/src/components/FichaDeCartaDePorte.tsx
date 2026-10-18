@@ -6,7 +6,7 @@ import { BadgeEstado } from 'libra-ui/badge-estado'
 
 import type { CartaPorte, Parte } from '@/api/cartas-porte'
 import {
-  esEstadoFinal, formatearCuit, formatearInstante, formatearKilos, nombreOCuit, tonoDeEstado,
+  esEstadoFinal, etiquetaDeGrano, formatearCuit, formatearInstante, formatearKilos, nombreOCuit, tonoDeEstado,
 } from '@/api/cartas-porte'
 import { formatearImporte } from '@/components/esquema-orden'
 
@@ -17,14 +17,34 @@ function parteConCuit(parte: Parte): string {
   return parte.nombre?.trim() ? `${parte.nombre.trim()} (${cuit})` : cuit
 }
 
-/** El lugar de carga o de descarga: el CUIT y los códigos de provincia y localidad que informa ARCA. */
-function lugar(parte: Parte, provincia: number | null, localidad: number | null, planta?: number | null): string {
-  const codigos = [
-    provincia != null && `Provincia ${provincia}`,
-    localidad != null && `Localidad ${localidad}`,
-    planta != null && `Planta ${planta}`,
-  ].filter(Boolean)
-  return [parte.cuit ? parteConCuit(parte) : null, ...codigos].filter(Boolean).join(' · ') || '—'
+/** Un código de ARCA con su nombre, si se lo bajó (ADR-051): `Rosario`; sin nombre, `Localidad 4211`. */
+function conNombre(nombre: string | null | undefined, etiqueta: string, codigo: number | null): string | null {
+  if (nombre) return nombre
+  return codigo != null ? `${etiqueta} ${codigo}` : null
+}
+
+/** El lugar de carga o de descarga: el CUIT, la localidad y la provincia que informa ARCA. Con los dos nombres se lee
+ *  `Rosario, Santa Fe`; si falta alguno, cada uno va aparte y el que no tiene nombre muestra su código. */
+function lugar(
+  parte: Parte,
+  provincia: { codigo: number | null; nombre?: string | null },
+  localidad: { codigo: number | null; nombre?: string | null },
+  planta?: number | null,
+): string {
+  const prov = conNombre(provincia.nombre, 'Provincia', provincia.codigo)
+  const loc = conNombre(localidad.nombre, 'Localidad', localidad.codigo)
+  const geografia = provincia.nombre && localidad.nombre ? [`${localidad.nombre}, ${provincia.nombre}`] : [prov, loc]
+  const partes = [parte.cuit ? parteConCuit(parte) : null, ...geografia, planta != null && `Planta ${planta}`]
+  return partes.filter(Boolean).join(' · ') || '—'
+}
+
+/** `Soja · cosecha 25/26`. La cosecha de ARCA es `2526`; cualquier otra cosa se muestra tal cual. */
+function granoYCosecha(carta: CartaPorte): string {
+  const tieneGrano = Boolean(carta.grano) || carta.cod_grano != null
+  const grano = tieneGrano ? etiquetaDeGrano(carta) : null
+  const c = carta.cosecha != null ? String(carta.cosecha) : ''
+  const cosecha = c.length === 4 ? `cosecha ${c.slice(0, 2)}/${c.slice(2)}` : c ? `cosecha ${c}` : null
+  return [grano, cosecha].filter(Boolean).join(' · ') || '—'
 }
 
 function Dato({ etiqueta, children, ancho }: { etiqueta: string; children: React.ReactNode; ancho?: boolean }) {
@@ -60,17 +80,22 @@ export function FichaDeCartaDePorte({ carta }: { carta: CartaPorte }) {
         <Dato etiqueta="Emisión">{formatearInstante(carta.fecha_emision)}</Dato>
         <Dato etiqueta="Vencimiento">{formatearInstante(carta.fecha_vencimiento)}</Dato>
         <Dato etiqueta="Partida">{formatearInstante(carta.fecha_partida)}</Dato>
+        {/* Cuándo se le preguntó a ARCA por última vez: lo que se ve es de ese momento (el refresco programado lo renueva). */}
+        {carta.consultada_en && <Dato etiqueta="Última consulta a ARCA">{formatearInstante(carta.consultada_en)}</Dato>}
         <Dato etiqueta="Pagador del flete" ancho>{parteConCuit(carta.pagador_flete)}</Dato>
         <Dato etiqueta="Transportista" ancho>{parteConCuit(carta.transportista)}</Dato>
         <Dato etiqueta="Chofer" ancho>{parteConCuit(carta.chofer)}</Dato>
         <Dato etiqueta="Dominios">{carta.dominios.length ? carta.dominios.join(', ') : '—'}</Dato>
         <Dato etiqueta="Destinatario">{nombreOCuit(carta.destinatario)}</Dato>
         <Dato etiqueta="Origen" ancho>
-          {lugar(carta.origen, carta.cod_provincia_origen, carta.cod_localidad_origen)}
+          {lugar(carta.origen, { codigo: carta.cod_provincia_origen, nombre: carta.provincia_origen },
+                 { codigo: carta.cod_localidad_origen, nombre: carta.localidad_origen })}
         </Dato>
         <Dato etiqueta="Destino" ancho>
-          {lugar(carta.destino, carta.cod_provincia_destino, carta.cod_localidad_destino, carta.planta_destino)}
+          {lugar(carta.destino, { codigo: carta.cod_provincia_destino, nombre: carta.provincia_destino },
+                 { codigo: carta.cod_localidad_destino, nombre: carta.localidad_destino }, carta.planta_destino)}
         </Dato>
+        <Dato etiqueta="Grano" ancho>{granoYCosecha(carta)}</Dato>
         <Dato etiqueta="Kilómetros">{carta.km != null ? formatearKilos(carta.km) : '—'}</Dato>
         <Dato etiqueta="Tarifa">{carta.tarifa != null ? formatearImporte(carta.tarifa) : '—'}</Dato>
       </div>

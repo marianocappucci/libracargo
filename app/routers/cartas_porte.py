@@ -29,7 +29,7 @@ from app.schemas.cartas_porte import (
     VincularIn,
 )
 from app.servicios import cartas_porte as servicio
-from app.servicios import emision_cpe, titulares_cpe
+from app.servicios import catalogo_cpe, emision_cpe, refresco_cpe, titulares_cpe
 
 router = APIRouter(prefix="/api/cartas-porte", tags=["cartas-porte"],
                    dependencies=[Depends(require_staff)])
@@ -52,7 +52,12 @@ def _partes(sesion: Session, cuits: dict[str, str | None]) -> dict[str, Parte]:
     return {k: Parte(cuit=c, nombre=nombres.get(c) if c else None) for k, c in cuits.items()}
 
 
-def _de_fila(sesion: Session, fila: CartaPorte, tiene_pdf: bool) -> CartaPorteOut:
+def _de_fila(sesion: Session, fila: CartaPorte, tiene_pdf: bool,
+             nombres: catalogo_cpe.Traductor | None = None) -> CartaPorteOut:
+    """`nombres` se arma una vez para un listado entero; sin él, uno para esta carta."""
+    if nombres is None:
+        nombres = catalogo_cpe.Traductor(sesion, catalogo_cpe.claves_de_fila(fila))
+    amb = fila.ambiente
     partes = _partes(sesion, {
         "transportista": fila.cuit_transportista, "pagador_flete": fila.cuit_pagador_flete,
         "chofer": fila.cuit_chofer, "origen": fila.cuit_origen, "destino": fila.cuit_destino,
@@ -65,12 +70,16 @@ def _de_fila(sesion: Session, fila: CartaPorte, tiene_pdf: bool) -> CartaPorteOu
         fecha_inicio_estado=fila.fecha_inicio_estado,
         cuit_representada=fila.cuit_representada, ambiente=fila.ambiente, **partes,
         dominios=[d for d in (fila.dominios or "").split(",") if d],
-        cod_grano=fila.cod_grano, cosecha=fila.cosecha,
+        cod_grano=fila.cod_grano, grano=nombres.grano(amb, fila.cod_grano), cosecha=fila.cosecha,
         peso_bruto=fila.peso_bruto, peso_tara=fila.peso_tara, peso_neto=_neto(fila.peso_bruto, fila.peso_tara),
         peso_bruto_descarga=fila.peso_bruto_descarga, peso_tara_descarga=fila.peso_tara_descarga,
         peso_neto_descarga=_neto(fila.peso_bruto_descarga, fila.peso_tara_descarga),
         cod_provincia_origen=fila.cod_provincia_origen, cod_localidad_origen=fila.cod_localidad_origen,
         cod_provincia_destino=fila.cod_provincia_destino, cod_localidad_destino=fila.cod_localidad_destino,
+        provincia_origen=nombres.provincia(amb, fila.cod_provincia_origen),
+        localidad_origen=nombres.localidad(amb, fila.cod_provincia_origen, fila.cod_localidad_origen),
+        provincia_destino=nombres.provincia(amb, fila.cod_provincia_destino),
+        localidad_destino=nombres.localidad(amb, fila.cod_provincia_destino, fila.cod_localidad_destino),
         planta_destino=fila.planta_destino, km=fila.km, tarifa=fila.tarifa, tiene_pdf=tiene_pdf,
         tiene_descarga=fila.peso_bruto_descarga is not None, consultada_en=fila.consultada_en,
         orden_carga_id=fila.orden_carga_id, emitida=bool(fila.emitida),
@@ -84,17 +93,22 @@ def _de_arca(sesion: Session, cpe: arca_wscpe.CartaDePorte, cuit: str, amb: str)
         "origen": cpe.origen.cuit, "destino": cpe.destino.cuit, "destinatario": cpe.destino.cuit_destinatario,
     })
     guardada = sesion.scalar(select(CartaPorte.id).where(CartaPorte.nro_ctg == cpe.nro_ctg))
+    nombres = catalogo_cpe.Traductor(sesion, catalogo_cpe.claves_de_cpe(cpe, amb))
     return CartaPorteOut(
         nro_ctg=cpe.nro_ctg, numero=cpe.numero, estado=cpe.estado, estado_descripcion=cpe.estado_descripcion,
         fecha_emision=cpe.fecha_emision, fecha_vencimiento=cpe.fecha_vencimiento,
         fecha_partida=t.fecha_hora_partida, fecha_inicio_estado=cpe.fecha_inicio_estado,
         cuit_representada=cuit, ambiente=amb, **partes,
-        dominios=list(t.dominios), cod_grano=c.cod_grano, cosecha=c.cosecha,
+        dominios=list(t.dominios), cod_grano=c.cod_grano, grano=nombres.grano(amb, c.cod_grano), cosecha=c.cosecha,
         peso_bruto=c.peso_bruto, peso_tara=c.peso_tara, peso_neto=c.peso_neto,
         peso_bruto_descarga=c.peso_bruto_descarga, peso_tara_descarga=c.peso_tara_descarga,
         peso_neto_descarga=c.peso_neto_descarga,
         cod_provincia_origen=cpe.origen.cod_provincia, cod_localidad_origen=cpe.origen.cod_localidad,
         cod_provincia_destino=cpe.destino.cod_provincia, cod_localidad_destino=cpe.destino.cod_localidad,
+        provincia_origen=nombres.provincia(amb, cpe.origen.cod_provincia),
+        localidad_origen=nombres.localidad(amb, cpe.origen.cod_provincia, cpe.origen.cod_localidad),
+        provincia_destino=nombres.provincia(amb, cpe.destino.cod_provincia),
+        localidad_destino=nombres.localidad(amb, cpe.destino.cod_provincia, cpe.destino.cod_localidad),
         planta_destino=cpe.destino.planta, km=t.km, tarifa=t.tarifa, tiene_pdf=cpe.pdf is not None,
         tiene_descarga=cpe.tiene_descarga, guardada_id=guardada,
     )
@@ -159,13 +173,37 @@ def listar(
     if ctg is not None:
         filas = [f for f in filas if f.nro_ctg == ctg]
     con_pdf = _con_pdf(sesion, (f.id for f in filas))
-    return [_de_fila(sesion, f, f.id in con_pdf) for f in filas]
+    # Los nombres de los códigos, de una vez para todo el listado (no una consulta por carta).
+    nombres = catalogo_cpe.Traductor(sesion, set().union(*(catalogo_cpe.claves_de_fila(f) for f in filas)))
+    return [_de_fila(sesion, f, f.id in con_pdf, nombres) for f in filas]
 
 
 @router.post("/actualizar-abiertas", response_model=ResumenActualizar)
 def actualizar_abiertas(sesion: Session = Depends(obtener_sesion), actual: dict = Depends(get_current_user)):
     """Vuelve a consultar todas las abiertas, hasta que ARCA informe la descarga."""
     return servicio.actualizar_abiertas(sesion, actual)
+
+
+# ── Refresco programado (ADR-051) ───────────────────────────────────────────
+# 🔑 Rutas de dos segmentos, por lo mismo que las de abajo. El refresco en sí lo corre el cron del host
+# (`scripts/refrescar_cartas_porte.py`); acá sólo está el interruptor y cuándo corrió por última vez.
+
+
+class _RefrescoIn(BaseModel):
+    habilitado: bool
+
+
+@router.get("/refresco/estado")
+def estado_del_refresco(sesion: Session = Depends(obtener_sesion)):
+    """Si el refresco programado de las cartas abiertas está prendido y cuándo corrió por última vez."""
+    return refresco_cpe.estado(sesion)
+
+
+@router.put("/refresco/habilitado", dependencies=[Depends(require_admin)])
+def habilitar_refresco(datos: _RefrescoIn, sesion: Session = Depends(obtener_sesion),
+                       actual: dict = Depends(get_current_user)):
+    """Prende o apaga el refresco programado. Sólo un administrador; queda en la auditoría."""
+    return _o_http(refresco_cpe.habilitar, sesion, actual, datos.habilitado)
 
 
 # ── Emitir desde la orden (ADR-043) ─────────────────────────────────────────
@@ -343,6 +381,7 @@ def actualizar(id_: int, sesion: Session = Depends(obtener_sesion), actual: dict
         sesion.rollback()
         raise _rechazo(e) from None
     sesion.commit()
+    servicio.completar_catalogo(sesion, [fila.id])
     return _de_fila(sesion, fila, bool(_con_pdf(sesion, [fila.id])))
 
 

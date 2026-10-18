@@ -25,6 +25,7 @@
 import { ArcaCard } from 'libra-ui/Configuracion'
 
 import { EmisionRealDeCpe } from '@/components/EmisionRealDeCpe'
+import { RefrescoDeCpe } from '@/components/RefrescoDeCpe'
 
 import { useConfiguracion } from '@/api/configuracion'
 
@@ -44,11 +45,12 @@ export function FacturacionArca() {
   // La razón social de los datos de la empresa: prellena el diálogo de «Generar pedido de certificado» (ADR-041 del kit).
   const empresa = useConfiguracion()
   return (
-    // El interruptor de la emisión real (ADR-043) va al pie de la pestaña «CTG y Carta de Porte», junto a los certificados que
-    // habilita (pedido del dueño, 2026-10-10; `alPieDeServicio`, ADR-047 del kit). Sólo lo ven los administradores.
+    // Los interruptores de la CPE van al pie de la pestaña «CTG y Carta de Porte», junto a los certificados que
+    // habilitan (pedido del dueño, 2026-10-10; `alPieDeServicio`, ADR-047 del kit): la emisión real (ADR-043) y el
+    // refresco de las cartas abiertas (ADR-051, que sólo consulta). Sólo los ven los administradores.
     <ArcaCard producto="LibraCargo" basePath="/api/arca" empresa={EMPRESA}
               razonSocial={empresa.razon_social || undefined}
-              alPieDeServicio={{ wscpe: <EmisionRealDeCpe /> }} />
+              alPieDeServicio={{ wscpe: <><EmisionRealDeCpe /><RefrescoDeCpe /></> }} />
   )
 }
 
