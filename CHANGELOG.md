@@ -3,6 +3,14 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — CPE fase 2: las cartas abiertas se refrescan solas y los códigos de ARCA se leen con su nombre (ADR-051)
+
+- **Refresco programado de las cartas de porte abiertas.** `scripts/refrescar_cartas_porte.py` (para el cron del host, `*/30 * * * *`, ver README) vuelve a consultar a ARCA las cartas abiertas —sin kilos de descarga y sin estado final— y actualiza estado, kilos y la fecha de la última consulta. **Sólo consulta: no emite ni anula nada.** Apagado de fábrica: interruptor propio «Refrescar solas las cartas de porte abiertas» (administradores, Configuración / ARCA, junto al de la emisión real) y la pantalla muestra cuándo corrió por última vez. No corre en una demo, sin certificado ni con el interruptor apagado, y lo dice sin error. Candado de base (no corren dos a la vez, tampoco con `WEB_CONCURRENCY` > 1), por lotes de hasta 200, sin repetir lo consultado hace menos de 15 minutos ni las vencidas hace más de 30 días. Un error en una carta se registra y sigue con las demás.
+- **Grano, localidad y provincia con su nombre.** La API suma `grano`, `provincia_origen`, `localidad_origen`, `provincia_destino` y `localidad_destino` junto a los códigos; la ficha dice «Soja · cosecha 25/26» y «Rosario, Santa Fe» (y la «Última consulta a ARCA»), y el listado suma la columna «Grano». Salen de una copia en la base (`catalogo_cpe`) que se llena sola, con el ticket que ya tiene quien consulta, la primera vez que falta un código: al traer, al actualizar y en el refresco. Mostrar no llama a ARCA. Sin el nombre, se ve el código como antes.
+- **Migración `0031`** (aditiva, vacía): `catalogo_cpe` y, en `configuracion_empresa`, `cpe_refresco_habilitado` (apagado), `cpe_refresco_ultima_corrida` y `cpe_refresco_resumen`.
+- **Fix:** cada actualización de una carta dejaba un asiento de auditoría «modificó `fecha_emision`, `fecha_partida` y `fecha_vencimiento`» con el mismo instante (ARCA manda `-03:00`, la base devuelve UTC y el diff comparaba texto). Ahora no deja asiento si no cambió nada; `consultada_en` y la respuesta cruda de ARCA tampoco entran al diff. «Actualizar abiertas» ya no se corta por un error de red en una carta.
+- Sin cambio de pin.
+
 ## [Unreleased] — Todo campo donde se elige un cliente ofrece darlo de alta ahí mismo (libra-ui v0.158.1)
 
 - Pin: **libra-ui `v0.158.1`** (antes `v0.157.0`): suma `libra-ui/SelectCliente` y la guarda `libra-ui/auditoria-de-clientes` (ADR-071 del kit). **Sin migración y sin cambio de backend.** El `package-lock.json` suma también `@playwright/test` y `playwright` `1.64.1` (antes `1.63.0`): el kit los declara como peer opcional `^1.64.0`.

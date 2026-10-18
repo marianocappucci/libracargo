@@ -33,6 +33,9 @@ export type CartaPorte = {
   destinatario: Parte
   dominios: string[]
   cod_grano: number | null
+  /** Cómo llama ARCA a esos códigos (ADR-051). `null`/ausente si todavía no se bajó la tabla de ARCA: la pantalla
+   *  muestra entonces el código, como antes. */
+  grano?: string | null
   cosecha: number | null
   /** Kilos, enteros. `null` mientras ARCA no los informa (los de descarga, hasta que el camión descarga). */
   peso_bruto: number | null
@@ -45,6 +48,10 @@ export type CartaPorte = {
   cod_localidad_origen: number | null
   cod_provincia_destino: number | null
   cod_localidad_destino: number | null
+  provincia_origen?: string | null
+  localidad_origen?: string | null
+  provincia_destino?: string | null
+  localidad_destino?: string | null
   planta_destino: number | null
   km: number | null
   /** Decimal como texto, como todo importe de este producto. */
@@ -77,6 +84,18 @@ export type EstadoDeEmision = {
   ambiente: Ambiente | null
   habilitada: boolean
   puede_emitir: boolean
+}
+
+/** El refresco programado de las cartas abiertas (ADR-051). Lo corre un cron del host; acá sólo se prende y se ve. */
+export type EstadoDeRefresco = {
+  habilitado: boolean
+  /** `null` si no hay certificado de «CTG y Carta de Porte» cargado. */
+  ambiente: Ambiente | null
+  /** ISO con zona; `null` si todavía no corrió con el interruptor prendido. */
+  ultima_corrida: string | null
+  /** Qué pasó en esa corrida: `3 actualizadas, 1 con error`. */
+  resumen: string | null
+  es_demo: boolean
 }
 
 export type OpcionDeArca = { codigo: number; nombre: string }
@@ -256,6 +275,11 @@ export const cartasPorte = {
   /** Sólo un administrador. */
   habilitarEmision: (habilitada: boolean) =>
     api.put<EstadoDeEmision>('/api/cartas-porte/emision/habilitada', { habilitada }),
+  // ── Refresco programado (ADR-051) ──
+  estadoDeRefresco: () => api.get<EstadoDeRefresco>('/api/cartas-porte/refresco/estado'),
+  /** Sólo un administrador. Sólo consulta a ARCA: no emite ni anula nada. */
+  habilitarRefresco: (habilitado: boolean) =>
+    api.put<EstadoDeRefresco>('/api/cartas-porte/refresco/habilitado', { habilitado }),
   propuesta: (ordenId: number, cuitTitular: string) =>
     api.get<Propuesta>(`/api/cartas-porte/emision/propuesta?orden_id=${ordenId}&cuit_titular=${cuitTitular}`),
   /** 🔴 Emite una Carta de Porte en ARCA. No se reintenta sola ni desde la pantalla ante un 502/500: ver el asistente. */
@@ -313,6 +337,12 @@ export function tonoDeEstado(estado: string): 'neutro' | 'curso' | 'atencion' | 
 }
 
 export const esEstadoFinal = (estado: string) => ESTADOS_FINALES.includes(estado)
+
+/** El grano de la carta: su nombre de ARCA (`Soja`) o, mientras no se bajó la tabla, su código (`Grano 23`). */
+export function etiquetaDeGrano(carta: Pick<CartaPorte, 'grano' | 'cod_grano'>): string {
+  if (carta.grano) return carta.grano
+  return carta.cod_grano != null ? `Grano ${carta.cod_grano}` : '—'
+}
 
 // ── CUIT y CTG ────────────────────────────────────────────────────────────
 
