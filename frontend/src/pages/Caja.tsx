@@ -9,9 +9,12 @@ import type { MovimientoCaja, Rol } from '@/api/cuentas'
 import { caja } from '@/api/cuentas'
 import type { Opciones } from '@/api/ordenes'
 import { cargarOpciones } from '@/api/ordenes'
+import { SelectCliente } from 'libra-ui/SelectCliente'
+
+import { ALTA_DE_CLIENTE, aOpcionDeSelect, conTerceroNuevo, LISTA_DEL_ROL, opcionesCliente } from '@/api/clientes'
 import { mensajeDeError } from '@/components/AbmMaestro'
+import { useAltaDeCliente } from '@/components/useAltaDeCliente'
 import { irA } from '@/navegacion'
-import { Elegir } from '@/components/Elegir'
 import { hoyEnArgentina, formatearImporte } from '@/components/esquema-orden'
 import { BadgeEstado } from 'libra-ui/badge-estado'
 import { Button } from '@/components/ui/button'
@@ -37,6 +40,8 @@ type Borrador = {
 
 // La fecha por defecto es la de Argentina, no la de UTC: ver `hoyEnArgentina`.
 // Un cobro cargado de noche nacía con la fecha de mañana.
+const ROLES: Rol[] = ['cliente', 'fletero', 'proveedor']
+
 const VACIO: Borrador = {
   fecha: hoyEnArgentina(), tipo: 'ingreso', concepto: '', descripcion: '',
   tercero_id: '', rol: '', importe: '', medio_pago: 'efectivo', recibo: '',
@@ -62,7 +67,7 @@ function Opcion({ id, etiqueta, valor, alCambiar, deshabilitado, children }: {
     <div className="grid gap-1">
       <Label htmlFor={id}>{etiqueta}</Label>
       {/* select-cerrado: lo usan Tipo, Cuenta del tercero y Medio de pago, de dos a cuatro `<option>` escritos en cada uso. Los datos
-          (el tercero) van por `Elegir`, que se busca escribiendo */}
+          (el tercero) van por `SelectCliente`, que se busca escribiendo */}
       <select id={id} className="h-9 w-full min-w-0 rounded-md border px-2 text-sm"
               disabled={deshabilitado} value={valor}
               onChange={(e) => alCambiar(e.target.value)}>
@@ -106,27 +111,49 @@ export default function Caja() {
   const terceros = opciones?.terceros ?? []
   const set = (c: Partial<Borrador>) => setBorrador((b) => ({ ...b, ...c }))
   const [editando, setEditando] = useState<MovimientoCaja | null>(null)
+  // El alta en el lugar del «Tercero» es en el rol de la cuenta elegida (ADR-053); sin cuenta el campo está deshabilitado y el rol no importa.
+  const alta = useAltaDeCliente(borrador.rol || 'cliente')
+  const [altaAbierta, setAltaAbierta] = useState(false)
+
+  /** Los terceros que tienen ese rol: la lista de la que se elige una vez elegida la cuenta. */
+  const delRol = (r: Rol) => opciones?.[LISTA_DEL_ROL[r]] ?? []
+  const tieneRol = (r: Rol, terceroId: string) => delRol(r).some((t) => String(t.id) === terceroId)
+
+  /** 🔑 **Cuenta primero** (ADR-053). Cambiar la cuenta deja el tercero sólo si tiene ese rol: uno que no lo tiene iría a una cuenta que no es
+   *  suya (el servidor lo rechaza, o peor, abre una cuenta de fletero a un cliente). «Ninguna» es un gasto general y se lleva el tercero. */
+  function elegirCuenta(r: '' | Rol) {
+    setAltaAbierta(false)   // el campo se remonta (su `key` es la cuenta) y el panel de alta se cierra sin avisar
+    setBorrador((b) => ({ ...b, rol: r, tercero_id: r && b.tercero_id && tieneRol(r, b.tercero_id) ? b.tercero_id : '' }))
+  }
 
   /** Abre el diálogo para uno que ya existe, o vacío para uno nuevo.
    *
-   *  🔑 El `rol` no viene en el movimiento —vive en la contrapartida—, así
-   *  que al editar arranca vacío y hay que volver a elegirlo si hay
-   *  tercero. Es la única parte del formulario que no se puede prellenar. */
+   *  🔑 El `rol` no viene en el movimiento —vive en la contrapartida—. Al editar se lo deduce sólo si el tercero tiene **un** rol; si tiene más
+   *  de uno arranca vacío, el tercero se ve (deshabilitado) y hay que elegir la cuenta: si es una de las suyas, el tercero queda. */
   function abrir(m: MovimientoCaja | null) {
     setEditando(m)
     setError(null)
+    setAltaAbierta(false)
+    const terceroId = m?.tercero_id == null ? '' : String(m.tercero_id)
+    const suyos = terceroId ? ROLES.filter((r) => tieneRol(r, terceroId)) : []
     setBorrador(m
       ? {
         fecha: m.fecha, tipo: m.tipo, concepto: m.concepto,
         descripcion: m.descripcion ?? '',
         // Como cadena: es lo que el `<select>` maneja, y el borrador lo
         // convierte a numero recien al guardar.
-        tercero_id: m.tercero_id == null ? '' : String(m.tercero_id),
-        rol: '', importe: m.importe, medio_pago: m.medio_pago,
+        tercero_id: terceroId,
+        rol: suyos.length === 1 ? suyos[0] : '', importe: m.importe, medio_pago: m.medio_pago,
         recibo: m.recibo ?? '',
       }
       : VACIO)
     setAbierto(true)
+  }
+
+  /** Cerrar sin guardar se lleva el error del formulario: si no, quedaba en la pantalla hablando de un movimiento que no se guardó. */
+  function cerrar() {
+    setAbierto(false)
+    setError(null)
   }
 
   async function anular(m: MovimientoCaja) {
@@ -141,6 +168,15 @@ export default function Caja() {
 
   async function guardar() {
     setError(null)
+    // Un par a medias no se manda: el servidor lo rechaza con un 422 que no dice qué falta en esta pantalla.
+    if (borrador.rol && !borrador.tercero_id) {
+      setError('Falta el tercero: elegilo o dalo de alta, o elegí «Ninguna» en la cuenta si es un gasto general.')
+      return
+    }
+    if (borrador.tercero_id && !borrador.rol) {
+      setError('Falta la cuenta del tercero: elegí si es cliente, fletero o proveedor.')
+      return
+    }
     try {
       const cuerpo = {
         ...borrador,
@@ -245,7 +281,8 @@ export default function Caja() {
         </Opcion>
       </div>
 
-      {error && (
+      {/* Con el diálogo abierto el error va adentro: acá quedaba tapado por el diálogo. */}
+      {error && !abierto && (
         <p role="alert" className="mb-4 rounded border border-destructive/40 p-3 text-sm">
           {error}
         </p>
@@ -262,7 +299,7 @@ export default function Caja() {
         emptyMessage={cargando ? 'Cargando…' : 'No hay movimientos en ese rango.'}
       />
 
-      <Dialog open={abierto} onOpenChange={setAbierto}>
+      <Dialog open={abierto} onOpenChange={(a) => { if (!a) cerrar() }}>
         <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
@@ -281,23 +318,39 @@ export default function Caja() {
                    alCambiar={(v) => set({ concepto: v })} />
             <Texto id="m-importe" etiqueta="Importe" valor={borrador.importe}
                    alCambiar={(v) => set({ importe: v })} />
-            {/* cliente-sin-alta: es un tercero de cualquier rol (cliente, fletero o proveedor) y el rol se elige aparte en «Cuenta del tercero».
-                Un alta desde acá tendría que adivinar el rol —un ingreso puede ser de un cliente o la devolución de un proveedor— y dejaría
-                un tercero en la lista equivocada; para cargar uno nuevo se usa Entidades. */}
-            <Elegir id="m-tercero" etiqueta="Tercero" valor={borrador.tercero_id}
-                    vacio="Ninguno (gasto general)" opciones={terceros}
-                    alCambiar={(v) => set({ tercero_id: v })} />
-            {/* Deshabilitado sin tercero: el rol sin tercero es un par
-                incompleto que el backend rechaza, y ofrecerlo invita a
-                mandarlo. */}
+            {/* 🔑 Cuenta primero (ADR-053, decisión del humano 2026-10-18). Antes el tercero —de cualquier rol— iba primero y la cuenta quedaba
+                deshabilitada hasta tenerlo, así que el tercero no podía darse de alta ahí: el rol no se deduce (un ingreso puede ser de un
+                cliente o la devolución de un proveedor). Con la cuenta elegida, el tercero se busca entre los de ese rol y se da de alta en él. */}
             <Opcion id="m-rol" etiqueta="Cuenta del tercero" valor={borrador.rol}
-                    deshabilitado={!borrador.tercero_id}
-                    alCambiar={(v) => set({ rol: v as Rol })}>
-              <option value="">Elegir…</option>
+                    alCambiar={(v) => elegirCuenta(v as '' | Rol)}>
+              <option value="">Ninguna (gasto general)</option>
               <option value="cliente">Cliente</option>
               <option value="fletero">Fletero</option>
               <option value="proveedor">Proveedor</option>
             </Opcion>
+            {/* Sin cuenta, deshabilitado: es un gasto general. Si viene un tercero (al editar uno de varios roles) se lo muestra igual, para
+                que se vea de quién es mientras se elige la cuenta. */}
+            {/* `key`: el kit guarda los recién creados para mostrarlos hasta que estén en la lista del producto; sin remontar al cambiar de
+                cuenta, un fletero recién creado aparecía entre los clientes. */}
+            <SelectCliente
+              key={borrador.rol || 'ninguna'}
+              id="m-tercero" etiqueta="Tercero" value={borrador.tercero_id}
+              opciones={borrador.rol
+                ? opcionesCliente(delRol(borrador.rol))
+                : opcionesCliente(borrador.tercero_id ? terceros : [], 'Ninguno (gasto general)')}
+              onChange={(v) => set({ tercero_id: v })}
+              disabled={!borrador.rol}
+              entidad={borrador.rol || 'tercero'}
+              crear={async (d) => {
+                const rol = borrador.rol as Rol
+                const t = await alta.crear(d)
+                setOpciones((o) => (o ? conTerceroNuevo(o, t, rol) : o))
+                return aOpcionDeSelect(t)
+              }}
+              {...ALTA_DE_CLIENTE} onPanelChange={setAltaAbierta} className={altaAbierta ? 'md:col-span-2' : undefined}
+              placeholder={borrador.rol ? 'Elegir…' : 'Ninguno (gasto general)'}
+              emptyMessage="No hay ninguno con ese nombre." ariaLabel="Tercero" />
+            {alta.dialogo}
             <Opcion id="m-medio" etiqueta="Medio de pago" valor={borrador.medio_pago}
                     alCambiar={(v) => set({ medio_pago: v })}>
               <option value="efectivo">Efectivo</option>
@@ -308,8 +361,11 @@ export default function Caja() {
             <Texto id="m-recibo" etiqueta="Recibo" valor={borrador.recibo}
                    alCambiar={(v) => set({ recibo: v })} />
           </div>
+          {error && (
+            <p role="alert" className="rounded border border-destructive/40 p-3 text-sm">{error}</p>
+          )}
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setAbierto(false)}>Cancelar</Button>
+            <Button variant="ghost" onClick={cerrar}>Cancelar</Button>
             <Button onClick={guardar}>Guardar</Button>
           </DialogFooter>
         </DialogContent>

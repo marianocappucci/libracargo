@@ -3,6 +3,13 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Caja: primero la cuenta, después el tercero, con alta en el lugar (ADR-053)
+
+- **«Cuenta del tercero» va antes que «Tercero»** en el movimiento de caja (decisión del humano, 2026-10-18). La cuenta —«Ninguna (gasto general)», Cliente, Fletero o Proveedor— se elige primero; el tercero, después, entre los de ese rol.
+- **Alta del tercero en el lugar, en el rol de la cuenta**: «Agregar nuevo fletero» (o cliente, o proveedor) da de alta la entidad con ese rol (`POST /api/terceros` con `es_<rol>: true`) y la deja elegida, sin pasar por Entidades. Si el CUIT ya es de otra entidad, ofrece **sumarle ese rol** (o reactivarla, o elegirla si ya lo tiene), como el campo «Cliente» desde ADR-052.
+- Cambiar la cuenta deja el tercero si tiene ese rol y lo limpia si no. Al editar un movimiento, la cuenta se completa sola si el tercero tiene un solo rol. Cuenta sin tercero, o tercero sin cuenta, dicen qué falta antes de guardar; los errores se ven dentro del diálogo.
+- Sin migración, sin cambio de backend y sin cambio de pin.
+
 ## [Unreleased] — Rotación sin corte del token de servicio (libraauth v0.52.0)
 
 - `docker-compose.yml` y `.env.example` declaran **`LIBRA_SERVICE_TOKEN_ANTERIOR`** con default vacío: mientras está definida, la instancia acepta el token nuevo y el anterior (`panel_admin.py token-servicio <slug> --rotar|--cerrar`, ADR-071 de libracore). Sin el pin de libraauth `v0.52.0` la variable no hace nada. Sin migración, sin cambio de código.
@@ -24,7 +31,7 @@ Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 - Pin: **libra-ui `v0.158.1`** (antes `v0.157.0`): suma `libra-ui/SelectCliente` y la guarda `libra-ui/auditoria-de-clientes` (ADR-071 del kit). **Sin migración y sin cambio de backend.** El `package-lock.json` suma también `@playwright/test` y `playwright` `1.64.1` (antes `1.63.0`): el kit los declara como peer opcional `^1.64.0`.
 - **«Agregar nuevo cliente» en el campo «Cliente»** (decisión del humano, 2026-10-16: que no vuelva a pasar que un cliente no cargado obligue a salir de lo que se está cargando). Pasan a `SelectCliente`: la **orden** (`Ordenes`), **Nueva factura**, **Facturar pendientes** y el **cliente vinculado de un titular de carta de porte** (`FichaDeTitular`). El alta pide nombre, CUIT, condición frente al IVA, teléfono y email y manda `POST /api/terceros` con `es_cliente: true` (`api/clientes.ts`, el único lugar que arma el cuerpo); el cliente queda elegido y entra a las listas de la pantalla sin recargar. La condición frente al IVA pasa de los textos del kit al enum del servidor; «No Alcanzado» e «IVA No Responsable» no tienen equivalente y no se mandan (el servidor usa Consumidor Final). Un CUIT que ya es de otra entidad (ADR-040) da el 409 de siempre, que se muestra dentro del panel.
-- **No ofrecen alta** (marcados `cliente-sin-alta` con su motivo): los filtros de órdenes y de reportes (cliente y tipo de cuenta), la apertura de la cuenta corriente y el «Tercero» de Caja, que es de cualquier rol y no se puede adivinar cuál.
+- **No ofrecen alta** (marcados `cliente-sin-alta` con su motivo): los filtros de órdenes y de reportes (cliente y tipo de cuenta), la apertura de la cuenta corriente y el «Tercero» de Caja, que es de cualquier rol y no se puede adivinar cuál (desde ADR-053 se elige la cuenta primero y lleva alta en ese rol).
 - Guarda `src/test/campos-de-cliente.test.ts` (con `Elegir` como envoltorio conocido) y tests de comportamiento del alta en `Ordenes.cliente-nuevo.test.tsx` y `NuevaFactura.test.tsx`.
 
 ## [Unreleased] — Pines: libracore v1.173.0 y libra-ui v0.156.0, consulta de CUIT en ARCA y demo sin datos fiscales reales
