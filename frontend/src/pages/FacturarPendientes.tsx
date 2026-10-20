@@ -401,7 +401,7 @@ export default function FacturarPendientes() {
 
       {/* Pegado abajo: con 82 órdenes en pantalla, un total que hay que ir a
           buscar al final del scroll no se mira antes de confirmar. */}
-      <div className="bg-background sticky bottom-0 flex flex-wrap items-center justify-between gap-3 border-t py-3">
+      <div className="bg-background sticky bottom-[var(--alto-barra-de-estado,0px)] flex flex-wrap items-center justify-between gap-3 border-t py-3">
         <span className="text-sm">
           {aFacturar.length} orden/es elegida/s
         </span>
