@@ -354,7 +354,7 @@ export default function NuevaFactura() {
       </section>
 
       {/* Pegado abajo: el total se mira antes de confirmar. */}
-      <div className="bg-background sticky bottom-0 flex flex-wrap items-center justify-between gap-3 border-t py-3">
+      <div className="bg-background sticky bottom-[var(--alto-barra-de-estado,0px)] flex flex-wrap items-center justify-between gap-3 border-t py-3">
         <span className="text-sm">
           {claseC ? null : <>Neto {formatearImporte(vista.neto)} · IVA {formatearImporte(vista.iva)}</>}
         </span>

@@ -111,6 +111,9 @@ export const Layout = createLayout<Usuario>({
   // El nombre de la empresa, debajo del producto. `libra-ui` lo dibuja con
   // `getUserSubtitle`; en el resto de la familia viene en el usuario, y acá sale
   // de la configuracion de la instancia — que es donde el cliente la edita.
+  // La barra de estado del pie (libra-ui ADR-083, libracore ADR-075): usuario, ARCA, respaldo y versión, de
+  // `GET /api/estado-del-sistema` al cargar y cada pocos minutos.
+  barraDeEstado: true,
   getUserSubtitle: (u) => u.empresa || undefined,
   useAuth: useAuthConEmpresa,
 })
