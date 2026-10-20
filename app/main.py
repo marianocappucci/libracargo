@@ -32,6 +32,7 @@ from libracore.consultar_cuit_router import build_consultar_cuit_router
 from libracore.db import core as libracore_core
 from libracore.docs_api import cerrar_docs_de_la_api
 from libracore.errores import instalar_registro_de_errores
+from libracore.estado_del_sistema import build_estado_del_sistema_router
 from libracore.geografia import build_geo_router
 from libracore.resguardo_enlace import build_resguardo_enlace_router
 from libracore.respaldo import Instancia
@@ -452,6 +453,13 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
             reabrir_conexiones=motor.dispose,
         ),
         dependencies=[Depends(require_admin)],
+    )
+    # La barra de estado del pie (libracore ADR-075, libra-ui ADR-083): usuario, versión, el certificado de ARCA y el
+    # último respaldo, en una consulta. La abre cualquier rol de la instancia; lo que ve cada uno lo decide el motor
+    # (ARCA y respaldo, sólo admin).
+    app.include_router(
+        build_estado_del_sistema_router(usuario_actual=get_current_user, backups_dir=carpeta_de_backups),
+        dependencies=[Depends(require_staff)],
     )
 
     # La copia externa: el cliente enlaza su Google Drive o su Dropbox desde la
