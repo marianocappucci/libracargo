@@ -121,15 +121,17 @@ configure(
     # agarra porque el proceso arranca bien: el error recién ocurre cuando
     # alguien consulta la tabla.
     #
-    # Dos cadenas y en este orden: primero la de LibraCore contra SU base,
-    # después la propia contra la del dominio. Las dos escriben una
-    # `alembic_version` distinta porque están en bases distintas.
+    # Tres cadenas y en este orden: primero la de LibraCore, después la de
+    # LibraAuth y al final la propia. Las tres corren contra la MISMA base (la
+    # del dominio, desde la `0015`) y cada una escribe su propia tabla de versión
+    # (`alembic_version`, la de `libraauth` y `alembic_version_libracargo`).
     #
-    # 🔑 `--prefijo libracargo` no es decorativo: sin él el comando toma
-    # `DATABASE_URL`, que adentro del contenedor apunta a la base del
-    # DOMINIO. Migraría la base equivocada **sin fallar** — crearía las 33
-    # tablas del core al lado de las 21 del dominio, chocando `usuarios` y
-    # `auth_log` con las de `libraauth`, y dejaría la base real sin tocar.
+    # 🔑 `--prefijo libracargo` no es decorativo: es lo que le dice a
+    # `libracore-migrar` de qué producto es la base. Con libracore >= v1.190.1
+    # (`libracargo` en `_UNA_SOLA_BASE`) toma `LIBRACARGO_DATABASE_URL` o
+    # `DATABASE_URL` y **no hace falta** `LIBRACARGO_LIBRACORE_DATABASE_URL`
+    # (ADR-054); si esa variable está, tiene que apuntar a la misma base. Con una
+    # libracore anterior, sin la variable el comando muere con `SinURL`.
     #
     # ⚠️ Va en los DOS scripts a propósito: comparten el `_cfg` global y
     # `tests/test_provisioning.py` los compara campo por campo. Declararlo en

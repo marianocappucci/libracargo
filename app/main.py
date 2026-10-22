@@ -109,52 +109,36 @@ def migrar_secretos(secretos: SecretosRepository) -> dict:
 
 
 def _instancia_a_respaldar(config: Config) -> Instancia:
-    """Qué se lleva el backup de esta instancia: las DOS bases y los certificados.
+    """Qué se lleva el backup de esta instancia: la base y los certificados.
 
     Hasta el 2026-09-02 acá decía que LibraCargo era el caso más simple de la
     familia —una sola base y ningún archivo en disco— y que `directorios=[]` no
-    era un pendiente. Las dos mitades dejaron de ser ciertas el día que la
-    configuración de ARCA pasó al motor:
+    era un pendiente. Desde que la configuración de ARCA pasó al motor hubo dos
+    bases un tiempo, y desde la `0015` (ADR-029) vuelve a haber una; lo que no
+    volvió a ser cierto es lo de los archivos:
 
-    - **Son dos bases.** El schema de LibraCore no puede convivir con el del
-      dominio: los dos declaran `usuarios` y `auth_log`. Ver `Config`.
+    - **Es una base.** El schema de LibraCore vive en la del dominio, así que el
+      dump de la principal ya lo trae todo (las credenciales de ARCA, el libro
+      de comprobantes y los usuarios). No hay base «extra» que declarar, y
+      declarar la misma dos veces haría que las dos cayeran en `libracargo.dump`
+      —`Instancia` lo rechaza al arrancar—.
     - **Y hay archivos en disco.** El certificado y la clave los escribe
       `arca_router` en `CERTS_DIR`, no en una columna.
 
     🔴 **Un backup que traiga una sola mitad no se puede restaurar**, y el modo
     de fallar es el peor: restaurar deja una instancia que **no puede facturar y
-    no lo dice**. Es exactamente la propiedad que la tabla propia protegía
-    guardando el par adentro del dump, y la que se paga de vuelta acá.
+    no lo dice**. Hoy la mitad que puede faltar es la de los certificados.
 
     `CERTS_DIR` sale de `config_manager` y no se arma con
     `config.directorio_de_datos`: tiene que ser **el mismo valor** que el que
     escribe el upload, o el backup respalda una carpeta vacía al lado de la que
     tiene las credenciales.
     """
-    # 🔑 **Una base o dos, según la instancia.** Desde la etapa 3 el core vive en
-    # la base del dominio (una sola URL para las dos variables): ahí el dump de
-    # la principal ya lo trae todo, y declararla dos veces haría que las dos
-    # cayeran en `libracargo.dump` —`Instancia` lo rechaza al arrancar—. Una
-    # instancia que todavía no se unió sigue con su core aparte, y entonces sí
-    # va como extra: un backup con una sola mitad no se puede restaurar.
-    extra = [] if _misma_base(config.database_url, config.database_url_core) else [config.database_url_core]
     return Instancia(
-        # La principal es la del DOMINIO, no la del core: `dumps` nombra a la
-        # principal por `nombre` y a las extra por su base, así que invertirlas
-        # haría que las dos cayeran en `libracargo.dump` dentro del ZIP y la
-        # verificación pasaría igual, sobre un backup con una sola mitad.
         nombre="libracargo",
         postgres_url=config.database_url,
-        postgres_extra=extra,
         directorios=[config_manager.CERTS_DIR],
     )
-
-
-def _misma_base(a: str, b: str) -> bool:
-    """Si dos URLs apuntan a la misma base, aunque una diga `+psycopg` y la otra no."""
-    def _normal(u: str) -> str:
-        return u.replace("postgresql+psycopg://", "postgresql://", 1).split("?", 1)[0].rstrip("/")
-    return _normal(a) == _normal(b)
 
 
 def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> FastAPI:
@@ -165,16 +149,17 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     db.inicializar(config)
     motor = db.engine()
 
-    # LibraCore habla con SU base, que no es la del dominio. Es una conexión
-    # aparte —`libracore.db` es SQL crudo, sin el engine de SQLAlchemy— igual
-    # que en Gestiolibra y MedLibra.
+    # LibraCore habla con la MISMA base que el dominio (una sola desde la `0015`,
+    # ADR-029). Aun así es una conexión aparte —`libracore.db` es SQL crudo, sin
+    # el engine de SQLAlchemy—: se configura con la URL del dominio, que es la
+    # única que hay (`Config` rechaza la variable del core si apunta a otra).
     #
     # 🔴 **Acá NO se llama a `init_core_schema()`**, a diferencia de esos dos.
     # El schema lo crea `libracore-migrar upgrade`, declarado en el deploy y
     # atado por `tests/test_provisioning.py`. Si la app se lo creara sola, un
     # deploy que se olvide de ese paso quedaría invisible — que es exactamente
     # el defecto que este producto pagó el 2026-08-24 con su propia cadena.
-    libracore_core.configure(config.database_url_core)
+    libracore_core.configure(config.database_url)
 
     # Las tablas del motor de auth las crea el motor, con el mismo engine que
     # el dominio: `usuarios` vive en la MISMA base, así que las FK de sus
@@ -195,9 +180,8 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     # de webhook de MercadoPago, y la contrasena SMTP— dejan de vivir en texto
     # plano (libracore v1.108.0 + libraauth v0.46.0, 2026-09-17). Se enchufa
     # ACA porque es donde nace `db.fabrica_de_sesiones()`, que apunta a la base
-    # donde viven las tablas de libraauth (la del DOMINIO: `usuarios` vive en
-    # la misma base que el resto de LibraCargo, no en la de LibraCore — ver
-    # `Config.database_url_core`). La tabla `secretos_instancia` la crea la
+    # donde viven las tablas de libraauth (la del DOMINIO, que es también
+    # la de LibraCore — ver `Config.database_url`). La tabla `secretos_instancia` la crea la
     # revision `0002` de la cadena de libraauth, y `exigir_schema_al_dia()` de
     # arriba ya garantizo que esa cadena esta al dia antes de esta linea.
     #

@@ -19,6 +19,7 @@ from libraauth.testing import crear_schema_de_auth
 from libracore import config_manager, pdf_generator
 from libracore.db import core as libracore_core
 from libracore.db.schema import init_core_schema
+from libracore.db.url_de_instancia import comparte_base_con_el_dominio
 from libracore.testing.pg_por_worker import base_por_worker
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -37,11 +38,9 @@ RAIZ = Path(__file__).resolve().parent.parent
 # `libracore.testing.pg_por_worker` (libracore >= v1.122.0): crea `<base>_gwN` y la
 # borra al salir.
 #
-# Son DOS bases, como siempre (ver `URL_CORE`), asi que son dos `base_por_worker`:
-# `libracargo_test_gwN` y `libracargo_test_core_gwN`. Cada una pide que exista la
-# ORIGINAL (`libracargo_test` la crea el servicio de PostgreSQL del CI;
-# `libracargo_test_core`, el paso "Base de LibraCore" del job: lo mismo que ya
-# hacia falta antes, cuando la suite iba directo a ella).
+# Es UNA base (ver `URL_CORE`): `libracargo_test_gwN`. Pide que exista la ORIGINAL
+# (`libracargo_test` la crea el servicio de PostgreSQL del CI). Hasta el
+# ADR-054 eran dos, y el CI creaba también `libracargo_test_core`.
 #
 # 🔴 **SIN plantillas (`restaurar()`), a proposito.** A diferencia de VentaLibra o
 # LibraCommerce, esta suite NO rearma la base en cada test: arma el schema UNA vez
@@ -62,11 +61,11 @@ RAIZ = Path(__file__).resolve().parent.parent
 # cambiar el estado de partida de los tests de arranque. No paga: lo que da el
 # tiempo aca es xdist.
 #
-# 🔴 Se pisan las dos variables de entorno con la URL del worker ANTES de que
-# nadie las lea: `Config.desde_entorno()`, `migrations/env.py` y varios tests
-# toman `DATABASE_URL` / `LIBRACARGO_LIBRACORE_DATABASE_URL` del entorno. El proceso
-# que lanza a xdist tambien importa este archivo y sus workers heredan su entorno;
-# `base_por_worker` ya lo maneja (guarda la URL original aparte).
+# 🔴 Se pisa `DATABASE_URL` con la URL del worker ANTES de que nadie la lea:
+# `Config.desde_entorno()`, `migrations/env.py` y varios tests la toman del
+# entorno. El proceso que lanza a xdist tambien importa este archivo y sus workers
+# heredan su entorno; `base_por_worker` ya lo maneja (guarda la URL original
+# aparte).
 _PG = base_por_worker(
     "libracargo",
     os.environ.get("DATABASE_URL", "postgresql+psycopg://postgres@127.0.0.1:5433/libracargo_test"),
@@ -79,7 +78,12 @@ os.environ["DATABASE_URL"] = URL
 #: una instancia unida. `usuarios` y `auth_log` son las de `libraauth`, que el
 #: motor comparte, igual que en Contalibra.
 URL_CORE = URL
-os.environ["LIBRACARGO_LIBRACORE_DATABASE_URL"] = URL_CORE
+#: Y **sin** `LIBRACARGO_LIBRACORE_DATABASE_URL` (ADR-054): es la forma de una
+#: instancia nueva. Se la saca del entorno a propósito, para que la suite no
+#: dependa de quién la corre: una variable heredada que apunte a otra base haría
+#: fallar el arranque, que es justo lo que ese ADR pide. La forma de Suitrans
+#: (la variable puesta, igual a `DATABASE_URL`) la cubre `tests/test_config.py`.
+os.environ.pop("LIBRACARGO_LIBRACORE_DATABASE_URL", None)
 
 
 def par_de_arca() -> tuple[bytes, bytes]:
@@ -114,17 +118,27 @@ def par_de_arca() -> tuple[bytes, bytes]:
     )
 
 
-def config_de_prueba(**extra) -> Config:
-    """El `Config` de la suite: la misma URL para el dominio y el core.
+#: 🔴 **Pasa recién con libracore >= v1.190.1.** Marca los tests que corren
+#: `libracore-migrar` (o `libracore.migrar.url_de_core`) SIN
+#: `LIBRACARGO_LIBRACORE_DATABASE_URL`: eso sólo anda cuando `libracargo` está en
+#: `libracore.db.url_de_instancia._UNA_SOLA_BASE` (libracore#426). Con la v1.190.0
+#: del pin el comando muere con `SinURL`. Se evalúa contra el motor instalado, así
+#: que se sale sola al subir el pin: no hay nada que acordarse de sacar.
+requiere_core_en_el_dominio = pytest.mark.skipif(
+    not comparte_base_con_el_dominio("libracargo"),
+    reason="requiere libracore >= v1.190.1 (libracargo en _UNA_SOLA_BASE, libracore#426): "
+           "sin ella libracore-migrar exige LIBRACARGO_LIBRACORE_DATABASE_URL",
+)
 
-    Existe porque `database_url_core` no tiene default —a propósito: caer en la
-    base del dominio es justo el choque que la separación evita— y sin esto
-    cada archivo de test tendría que acordarse de la segunda URL. Catorce
-    copias de la misma línea es de donde salen las divergencias.
+
+def config_de_prueba(**extra) -> Config:
+    """El `Config` de la suite: la base del dominio, que es también la de LibraCore.
+
+    Existe para que cada archivo de test no tenga que acordarse de `entorno` y
+    `debug`: catorce copias de la misma línea es de donde salen las divergencias.
     """
     return Config(**{
         "database_url": os.environ["DATABASE_URL"],
-        "database_url_core": URL_CORE,
         "entorno": "test",
         "debug": False,
         **extra,

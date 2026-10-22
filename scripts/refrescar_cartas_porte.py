@@ -43,8 +43,8 @@ from app.tiempo import ahora  # noqa: E402
 def main() -> int:
     config = Config.desde_entorno()
     db.inicializar(config)
-    # El certificado de `wscpe` está en la base de LibraCore, que es otra conexión que la del dominio.
-    libracore_core.configure(config.database_url_core)
+    # El certificado de `wscpe` está en el schema de LibraCore, que es la misma base que el dominio pero otra conexión.
+    libracore_core.configure(config.database_url)
 
     with db.fabrica_de_sesiones()() as sesion:
         resultado = refresco_cpe.correr(sesion)

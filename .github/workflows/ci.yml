@@ -23,9 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/libracargo_test
-      # La base de LibraCore. La suite la crea en el paso de abajo: el
-      # servicio de PostgreSQL sólo inicializa la de `POSTGRES_DB`.
-      LIBRACARGO_LIBRACORE_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/libracargo_test_core
+      # Sin `LIBRACARGO_LIBRACORE_DATABASE_URL` (ADR-054): LibraCore vive en la
+      # misma base que el dominio, y una variable que apunte a otra hace fallar el arranque.
       TZ: America/Argentina/Buenos_Aires
     steps:
       # El PostgreSQL sale de la Action compartida de libra-web-kit (`postgres-ci-v1`, desde el espejo de ECR;
@@ -145,13 +144,6 @@ jobs:
             esac
           done
 
-      # La segunda base, la de LibraCore. Va antes de instalar para que un
-      # fallo acá se lea como lo que es y no como un test roto.
-      - name: Base de LibraCore
-        if: steps.cambios.outputs.backend == 'true'
-        run: |
-          PGPASSWORD=postgres createdb -h localhost -U postgres libracargo_test_core
-
       # F1 (2026-09-05): el entorno sale de `uv.lock`, no de la resolucion del dia.
       # `--locked` falla si el lock no coincide con pyproject.toml: un pin que se
       # mueve sin regenerar el lock pone rojo aca, no en produccion. El venv entra
@@ -217,8 +209,8 @@ jobs:
         # se saltea entero --por una dependencia que falta en el runner-- deja
         # el job igual de verde que uno que corrio todo.
         #
-        # `-n 4` (pytest-xdist, 4 = vCPU del runner): una base de PostgreSQL por worker, dos por
-        # worker en realidad (tests/conftest.py, libracore.testing.pg_por_worker; reglas/ci.md
+        # `-n 4` (pytest-xdist, 4 = vCPU del runner): una base de PostgreSQL por worker
+        # (tests/conftest.py, libracore.testing.pg_por_worker; reglas/ci.md
         # del wiki). `--cov` y su piso (`fail_under`) no se tocan: coverage combina los
         # workers solo.
         run: pytest -q -rs -n 4 --cov=app --cov-report=term-missing

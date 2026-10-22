@@ -40,6 +40,10 @@ alembic upgrade head
 pytest -q
 ```
 
+LibraCargo corre con **una sola base** (ADR-029): el schema de LibraCore vive en la del dominio y alcanza con
+`DATABASE_URL`. `LIBRACARGO_LIBRACORE_DATABASE_URL` ya no hace falta (ADR-054); si está, tiene que apuntar a la
+misma base, o la app no arranca.
+
 ## Tareas programadas
 
 Una, y **no corre sola**: vive en el cron del host de la instancia, y sin su línea el producto no falla, simplemente
