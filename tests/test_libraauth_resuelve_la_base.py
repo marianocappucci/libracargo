@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
+from tests.conftest import requiere_core_en_el_dominio
 
 PREFIJO = "libracargo"
 COMPOSE = Path(__file__).resolve().parent.parent / "docker-compose.yml"
@@ -34,13 +34,12 @@ def _entorno_del_compose() -> dict[str, str]:
     return entorno
 
 
-def test_el_compose_declara_las_dos_variables_sobre_UNA_base():
-    """Desde la ADR-029 el schema del motor vive en la base del dominio: las dos
-    variables siguen declaradas, pero apuntan a la misma base."""
+def test_el_compose_declara_UNA_sola_variable_de_base():
+    """Desde la ADR-054 el compose de dev no lleva la variable del core: el schema
+    del motor vive en la base del dominio (ADR-029) y `DATABASE_URL` alcanza."""
     entorno = _entorno_del_compose()
-    assert set(entorno) == {"DATABASE_URL", f"{PREFIJO.upper()}_LIBRACORE_DATABASE_URL"}
+    assert set(entorno) == {"DATABASE_URL"}
     assert entorno["DATABASE_URL"].endswith(f"/{PREFIJO}")
-    assert entorno[f"{PREFIJO.upper()}_LIBRACORE_DATABASE_URL"].endswith(f"/{PREFIJO}")
 
 
 def test_libraauth_migrar_resuelve_la_base_del_DOMINIO():
@@ -51,24 +50,25 @@ def test_libraauth_migrar_resuelve_la_base_del_DOMINIO():
     assert url.rsplit("/", 1)[-1] == PREFIJO
 
 
-def test_libracore_migrar_resuelve_la_base_que_declara_su_variable():
-    """Control: `libracore-migrar` toma su base de la variable del core, no de
-    `DATABASE_URL`. En el compose de dev las dos son la del dominio (ADR-029)."""
+@requiere_core_en_el_dominio
+def test_libracore_migrar_resuelve_la_base_del_dominio_con_el_entorno_del_compose():
+    """`libracore-migrar` toma la base del dominio cuando no hay variable del core
+    (`libracargo` en `_UNA_SOLA_BASE`, libracore >= v1.190.1). Con el entorno que
+    declara el compose —sin la variable— resuelve `DATABASE_URL`, no otra base."""
     from libracore.migrar import url_de_core
 
-    entorno = {**_entorno_del_compose(), "DATABASE_URL": "postgresql://u:p@h/otra"}
-    url = url_de_core(PREFIJO, entorno=entorno)
+    url = url_de_core(PREFIJO, entorno=_entorno_del_compose())
     assert url.rsplit("/", 1)[-1] == PREFIJO
 
 
-def test_sin_la_variable_del_core_libracore_migrar_FALLA_y_no_cae_al_dominio():
-    """El riesgo que libracore v1.103.0 cierra: migrar el schema del motor
-    adentro de la base del dominio sin fallar."""
-    from libracore.migrar import SinURL, url_de_core
+def test_la_variable_del_core_puesta_gana_sobre_el_dominio():
+    """Control, y es la forma de Suitrans: con la variable puesta (igual a la del
+    dominio) `libracore-migrar` la usa, con cualquier libracore."""
+    from libracore.migrar import url_de_core
 
-    entorno = {"DATABASE_URL": f"postgresql://u:p@h/{PREFIJO}"}
-    with pytest.raises(SinURL):
-        url_de_core(PREFIJO, entorno=entorno)
+    entorno = {"DATABASE_URL": f"postgresql://u:p@h/{PREFIJO}",
+               f"{PREFIJO.upper()}_LIBRACORE_DATABASE_URL": f"postgresql://u:p@h/{PREFIJO}"}
+    assert url_de_core(PREFIJO, entorno=entorno).rsplit("/", 1)[-1] == PREFIJO
 
 
 def test_el_command_de_dev_migra_auth_con_base_dominio():

@@ -3,6 +3,14 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Se va la variable del core: LibraCore es la base del dominio (ADR-054)
+
+- **La app arranca y factura sin `LIBRACARGO_LIBRACORE_DATABASE_URL`** (2026-10-22; plan «LibraEdge, LibraCargo y LibraClub», PR 4). El schema del motor vive en la base del dominio desde la `0015` (ADR-029); ahora el código también lo dice: `Config.database_url_core` desaparece y `libracore.db.core` se configura con `DATABASE_URL` (la app, el cron de cartas de porte y el `docker exec` del backoffice).
+- **Con la variable puesta e igual a la del dominio no cambia nada** (la forma del compose de Suitrans y de la demo). Igual = mismo servidor, puerto y base; el usuario, la contraseña, el driver y los parámetros no cuentan. **Con la variable a OTRA base, el arranque falla** con un mensaje que nombra las dos bases (sin las URL) y dice cómo salir.
+- El respaldo lleva una base y los certificados; se retira `_misma_base`.
+- `docker-compose.yml`, el CI y el smoke de navegador dejan de declarar la variable; el CI ya no crea `libracargo_test_core`. Tests: `tests/test_config.py` (la variable ausente, igual, escrita distinto, vacía y a otra base) y `tests/test_core_en_la_base_del_dominio.py` (arranca y emite una factura con las tres formas de entorno).
+- 🔴 **Requiere libracore >= v1.190.1** (`libracargo` en `_UNA_SOLA_BASE`, libracore#426) para que `libracore-migrar` caiga a la base del dominio sin la variable; con la v1.190.0 del pin actual hay que subir el pin en la misma rama. Sin migración. No se tocó ningún compose del VPS ni de clientes.
+
 ## [Unreleased] — La barra de estado del pie (libracore ADR-075, libra-ui ADR-083)
 
 - **La barra de estado del pie** (2026-10-20; pedido del humano; libracore ADR-075, libra-ui ADR-083; sin migración). Una línea chica al pie de todas las pantallas con el usuario, el certificado de ARCA que vence en menos de 30 días o venció, el último respaldo y la versión (este producto no tiene LibraEdge: esa parte no se muestra). `app/main.py` monta `build_estado_del_sistema_router` del motor (`GET /api/estado-del-sistema`, con `require_staff`: cualquier rol de la instancia; ARCA, respaldo y versión del motor, sólo el admin) con la carpeta de respaldos. Frontend: `createLayout({ barraDeEstado })`. La barra va fija al pie de la columna del contenido (decisión del humano): los pies `sticky` de `NuevaFactura.tsx` y `FacturarPendientes.tsx` se corren con `bottom-[var(--alto-barra-de-estado,0px)]` para quedar arriba de ella. Tests: `tests/test_estado_del_sistema.py`. Pines: **libracore `v1.187.0`** (antes `v1.186.2`) y **libra-ui `v0.170.0`** (antes `v0.168.0`; trae también el ADR-084 del kit, «Sucursal sin internet» dice que en el local se entra por la copia local). Sin migración.

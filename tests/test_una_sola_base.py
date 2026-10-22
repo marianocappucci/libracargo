@@ -17,11 +17,12 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import text
 
-from tests.conftest import URL, rearmar_en
+from tests.conftest import URL, rearmar_en, requiere_core_en_el_dominio
 
 RAIZ = Path(__file__).resolve().parents[1]
 
@@ -39,7 +40,14 @@ def _alembic() -> AlembicConfig:
     return cfg
 
 
-def test_una_base_de_antes_se_une_y_el_motor_migra_adentro(engine):
+@pytest.mark.parametrize("con_la_variable_del_core", [
+    # Suitrans y la demo, hoy: la variable puesta, igual a `DATABASE_URL`. Anda con cualquier libracore.
+    pytest.param(True, id="con_la_variable_igual_a_la_del_dominio"),
+    # Una instancia nueva y el compose de dev (ADR-054): sin la variable. `libracore-migrar` cae a la base del
+    # dominio recién con libracore >= v1.190.1.
+    pytest.param(False, id="sin_la_variable_del_core", marks=requiere_core_en_el_dominio),
+])
+def test_una_base_de_antes_se_une_y_el_motor_migra_adentro(engine, con_la_variable_del_core):
     # Como estaba una base de antes de la 0015: la clave con el nombre viejo y
     # sin la cadena del motor (la suite crea su schema con el DDL, sin Alembic).
     # Primero se saca la del motor: si otro test ya corrió su cadena, su clave
@@ -71,11 +79,15 @@ def test_una_base_de_antes_se_une_y_el_motor_migra_adentro(engine):
     with engine.connect() as con:
         assert _nombre_de_la_clave(con) == "alembic_version_libracargo_pkc"
 
-    # La cadena del motor, contra la base del DOMINIO: es lo que hace el deploy
-    # de una instancia unida, con las dos variables apuntando a la misma URL.
+    # La cadena del motor, contra la base del DOMINIO: es lo que hace el deploy de una instancia unida, con la
+    # variable del core apuntando a la misma URL (Suitrans) o sin ella (ADR-054).
+    entorno = {k: v for k, v in os.environ.items() if k != "LIBRACARGO_LIBRACORE_DATABASE_URL"}
+    entorno["DATABASE_URL"] = URL
+    if con_la_variable_del_core:
+        entorno["LIBRACARGO_LIBRACORE_DATABASE_URL"] = URL
     r = subprocess.run(
         ["libracore-migrar", "upgrade", "--prefijo", "libracargo"],
-        env={**os.environ, "LIBRACARGO_LIBRACORE_DATABASE_URL": URL, "DATABASE_URL": URL},
+        env=entorno,
         capture_output=True, text=True, timeout=300,
     )
     assert r.returncode == 0, r.stderr[-2000:]

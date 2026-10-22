@@ -12,10 +12,11 @@ nombres. LibraCargo lo necesita desde que declaró su primer add-on
 lo cumplía: el `docker exec` moría con `ImportError` y el backoffice mostraba
 destildado un add-on que estaba prendido en la base.
 
-**No confundir con `app.db`**, que es el engine de SQLAlchemy de la base del
-DOMINIO. Esto habla con la base de **LibraCore**, que es otra: la tabla
-`modulos` vive en la del core y no en la del dominio. Medido en
-`libracargo-demo` el 2026-09-10: la del dominio no la tiene, la del core sí.
+**No confundir con `app.db`**, que es el engine de SQLAlchemy del dominio. Esto
+habla con el schema de **LibraCore** por la conexión SQL cruda de
+`libracore.db.core`. Desde la `0015` (ADR-029) es la misma base que la del
+dominio; hasta entonces eran dos, y la tabla `modulos` sólo existía en la del
+core (medido en `libracargo-demo` el 2026-09-10).
 
 Acá no se copia lógica: se delega en `libracore.db.modulos`, que es la
 implementación única de la familia.
@@ -25,17 +26,18 @@ from __future__ import annotations
 
 from libracore.db import core as libracore_core
 from libracore.db import modulos as _modulos
-from libracore.db.url_de_instancia import url_de_instancia
+
+from app.config import Config
 
 
 def _asegurar_core_configurado() -> None:
-    """Apunta `libracore.db.core` a la base de core de ESTA instancia si nadie lo hizo.
+    """Apunta `libracore.db.core` a la base de ESTA instancia si nadie lo hizo.
 
     Estas funciones tienen dos vidas muy distintas:
 
     - Adentro de la app, `crear_app()` ya configuró el core
-      (`libracore_core.configure(config.database_url_core)`) y acá no hay nada
-      que hacer.
+      (`libracore_core.configure(config.database_url)`) y acá no hay nada que
+      hacer.
     - Bajo el `docker exec` del backoffice no corrió ningún arranque, así que el
       core está sin configurar y `get_connection()` levanta `RuntimeError`. Ese
       es el caso que se tiene que resolver solo, sin bootear la app entera.
@@ -43,14 +45,15 @@ def _asegurar_core_configurado() -> None:
     Se pregunta antes (`esta_configurado()`) para no pisarle la configuración a
     una app viva.
 
-    🔴 **`core=True` no es opcional.** Sin él, `url_de_instancia` busca
-    `LIBRACARGO_DATABASE_URL`, que el contenedor no define —usa `DATABASE_URL`—
-    y con `requerida=True` muere. Y aunque la encontrara, sería la base del
-    DOMINIO, que no tiene `modulos`. Es la misma URL que arma
-    `Config.desde_entorno` para el core.
+    🔴 **La URL sale de `Config.desde_entorno()` y no de `url_de_instancia(...,
+    core=True)`.** El core es la base del dominio (ADR-054): `desde_entorno` la
+    resuelve con los dos nombres (`LIBRACARGO_DATABASE_URL` y `DATABASE_URL`), que
+    es lo que define el contenedor, y rechaza una variable del core que apunte a
+    otra base. Pedir la variable del core acá haría que un contenedor sin ella
+    muriera justo bajo el `docker exec`, que es donde nadie mira el arranque.
     """
     if not libracore_core.esta_configurado():
-        libracore_core.configure(url_de_instancia("libracargo", core=True, requerida=True))
+        libracore_core.configure(Config.desde_entorno().database_url)
 
 
 def get_modulos() -> dict[str, bool]:

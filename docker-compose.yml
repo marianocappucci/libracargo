@@ -88,13 +88,10 @@ services:
       - DATABASE_URL=postgresql+psycopg://libracargo:${LIBRACARGO_POSTGRES_PASSWORD:?hay que definirla en el .env}@libracargo-postgres:5432/libracargo
       # La base de LibraCore **es la del dominio** (ADR-029): una sola base, con
       # `usuarios` y `auth_log` compartidos con `libraauth`, como en Contalibra.
-      # La variable sigue siendo obligatoria —sin ella la app no arranca— y lleva
-      # la misma URL que `DATABASE_URL`. La base `libracargo_core` de antes de la
-      # unión se borró el 2026-10-06, y ya no se crea al inicializar el volumen.
-      #
-      # El nombre lo define `libracore.db.url_de_instancia`, que es también
-      # quien lo lee. No hay una segunda convención que pueda divergir.
-      - LIBRACARGO_LIBRACORE_DATABASE_URL=postgresql+psycopg://libracargo:${LIBRACARGO_POSTGRES_PASSWORD:?hay que definirla en el .env}@libracargo-postgres:5432/libracargo
+      # Por eso acá NO hay una segunda variable (ADR-054): la app,
+      # `libracore-migrar` y `libraauth-migrar` toman `DATABASE_URL`. La base
+      # `libracargo_core` de antes de la unión se borró el 2026-10-06, y ya no se
+      # crea al inicializar el volumen.
       - ENTORNO=dev
       # Como el backoffice (`admin.libracargo.com.ar`) administra los usuarios
       # de esta instancia. **Con default vacio a proposito**, al reves que las

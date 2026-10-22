@@ -18,7 +18,6 @@ from app.config import Config
 
 DOMINIO_NUEVO = "postgresql+psycopg://u:p@h:5432/libracargo"
 DOMINIO_VIEJO = "postgresql+psycopg://u:p@h:5432/libracargo_vieja"
-CORE = "postgresql+psycopg://u:p@h:5432/libracargo_core"
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +27,6 @@ def _sin_variables(monkeypatch):
     for v in ("DATABASE_URL", "LIBRACARGO_DATABASE_URL",
               "LIBRACARGO_LIBRACORE_DATABASE_URL", "DATA_DIR", "ENTORNO"):
         monkeypatch.delenv(v, raising=False)
-    monkeypatch.setenv("LIBRACARGO_LIBRACORE_DATABASE_URL", CORE)
 
 
 def test_una_instancia_NUEVA_arranca_con_el_nombre_normalizado(monkeypatch):
