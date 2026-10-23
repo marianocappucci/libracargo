@@ -780,7 +780,7 @@ El humano eligió la salida A, una sola base, el 2026-10-05.
 La base `libracargo_core` vieja se conserva como respaldo; no se borra sin preguntar.
 
 **Consecuencias.**
-- Una instancia unida y una sin unir conviven: el código mira si las URLs coinciden.
+- Una instancia unida y una sin unir conviven: el código mira si las URLs coinciden. **Ya no (ADR-054):** la variable del core no hace falta y una que apunte a otra base hace fallar el arranque.
 - Lo que siga de la etapa 3 (los comprobantes en `facturas`) sólo corre en instancias unidas.
 
 
@@ -1281,3 +1281,20 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
   - 🔸 Antes se elegía el tercero y después su cuenta, y la lista mostraba a todos; ahora quien no sabe de qué rol es un tercero tiene que elegir la cuenta primero. Es lo pedido.
   - 🔸 La costura del kit de ADR-052 (una acción dentro del panel de alta en vez del diálogo encima) serviría igual acá; sigue sin pedirse.
 
+
+## ADR-054 — Se va la variable del core: LibraCore es la base del dominio
+
+- Estado: aceptada (plan «LibraEdge, LibraCargo y LibraClub», PR 4; decisión del humano de una sola base por producto, 2026-10-22; libracore ADR-078). Cierra la deuda que dejó ADR-029.
+- Fecha: 2026-10-22
+- Contexto: LibraCargo es una sola base desde el 2026-10-05 (ADR-029, migración `0015`, `libracore-unir-bases`), pero el código seguía pidiendo `LIBRACARGO_LIBRACORE_DATABASE_URL` (`Config.desde_entorno` moría sin ella), los composes llevaban dos variables con la misma URL y `_instancia_a_respaldar` comparaba las dos para decidir si había una base «extra». Ese «una o dos» ya no existe en este producto.
+- **Qué ya existía** (`reglas/producto.md`): `libracore.db.url_de_instancia._UNA_SOLA_BASE`, que desde libracore v1.190.1 (libracore#426) incluye a `libracargo`: `libracore-migrar --prefijo libracargo` y `libraauth-migrar` caen a la base del dominio cuando no hay variable del core. LibraClub lo resolvió el mismo día (libraclub#457) con `misma_base` y `Config.core_en_la_del_dominio` porque todavía tiene instancias con dos bases; acá no queda ninguna, así que no hay propiedad que consultar.
+- Decisión:
+  1. **La app arranca y factura sin la variable.** `Config` ya no tiene `database_url_core`: el core es `database_url`. `crear_app`, `scripts/refrescar_cartas_porte.py` y `app.database` (el `docker exec` del backoffice) configuran `libracore.db.core` con esa URL.
+  2. **Con la variable puesta e igual a la del dominio, no cambia nada.** Es la forma del compose de Suitrans (cliente real) y de la demo, y la de las instancias que arma `libracore.provisioning`, que todavía escribe las dos. «Igual» es mismo servidor, puerto y nombre de base (`misma_base`): no depende del usuario, la contraseña, el driver ni los parámetros, para que una diferencia de forma no tumbe un arranque en producción.
+  3. **Con la variable puesta a OTRA base, el arranque falla** con un mensaje que nombra las dos bases (nunca las URL: llevan la contraseña) y dice qué hacer. Se descartó ignorarla en silencio («gana la del dominio»): `libracore-migrar` sí la lee, así que migraría una base y la app escribiría en otra, y el modo de fallar es mudo —`/salud` en 200 y la facturación rompe recién al emitir—. LibraCargo no soporta dos bases desde la `0015`; una instancia que todavía tenga el core aparte se une antes con `libracore-unir-bases`. Una URL ilegible, de otro motor o de otro servidor cuenta como «otra».
+  4. **El respaldo lleva una base y los certificados** (`_instancia_a_respaldar`, sin `postgres_extra`); se retira `_misma_base` de `app/main.py`.
+  5. **Compose de dev, CI y smoke de navegador** dejan de declarar la variable; el CI deja de crear `libracargo_test_core`. La suite corre sin ella (`conftest` la saca del entorno); la forma de Suitrans la cubre `tests/test_core_en_la_base_del_dominio.py`, que arma la `Config` desde el entorno, arranca la app y emite una factura por ARCA con las tres formas de entorno (sin variable, igual, igual escrita distinto).
+- Consecuencias:
+  - 🔴 **Depende de libracore >= v1.190.1**: con la v1.190.0, `libracore-migrar upgrade --prefijo libracargo` (el `command:` de dev, `scripts/panel_admin.py` y el restore del backup) sin la variable muere con `SinURL`. Los tests que corren la cadena sin la variable llevan la marca `requiere_core_en_el_dominio` (`tests/conftest.py`), que se evalúa contra el motor instalado y se levanta sola al subir el pin.
+  - Los composes de Suitrans, la demo y dev del VPS no se tocaron desde acá: siguen andando con la variable puesta. Sacarla de ahí es un paso aparte, instancia por instancia y con su OK.
+  - 🔸 `libracore.provisioning` (`Instancia.db_urls`) sigue escribiendo `LIBRACARGO_LIBRACORE_DATABASE_URL` en el compose de un alta nueva. Anda (misma URL), pero deja la variable que este ADR retira: queda para el motor, no para este repo.

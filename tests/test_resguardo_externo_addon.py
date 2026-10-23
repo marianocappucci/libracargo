@@ -163,16 +163,22 @@ def test_el_backoffice_lee_lo_que_escribe():
     assert get_modulos()[ADDON] is False
 
 
-def test_bajo_docker_exec_el_core_se_configura_solo(monkeypatch):
+@pytest.mark.parametrize("variable_del_core", [None, "igual"], ids=["sin_variable_del_core", "con_la_variable_igual"])
+def test_bajo_docker_exec_el_core_se_configura_solo(monkeypatch, variable_del_core):
     """Bajo `docker exec` no corrió `crear_app()`: el core arranca sin configurar.
 
-    Se simula dejándolo sin configurar y con la variable que el contenedor sí
-    define. Si `_asegurar_core_configurado` usara la URL del dominio —o no se
-    configurara— este test muere con `RuntimeError` o con la tabla ausente.
+    Se simula dejándolo sin configurar y con el entorno que el contenedor sí
+    define: `DATABASE_URL` sola (el compose de dev y las instancias nuevas, ADR-054)
+    o además la variable del core, igual a la del dominio (Suitrans, hoy). Si
+    `_asegurar_core_configurado` pidiera la del core —o no se configurara— este
+    test muere con `RuntimeError` o con la tabla ausente.
     """
     monkeypatch.setattr(libracore_core, "_db_path", None)
     monkeypatch.setattr(libracore_core, "_database_url", None)
-    monkeypatch.setenv("LIBRACARGO_LIBRACORE_DATABASE_URL", URL_CORE)
+    monkeypatch.delenv("LIBRACARGO_DATABASE_URL", raising=False)
+    monkeypatch.delenv("LIBRACARGO_LIBRACORE_DATABASE_URL", raising=False)
+    if variable_del_core:
+        monkeypatch.setenv("LIBRACARGO_LIBRACORE_DATABASE_URL", URL_CORE)
     assert not libracore_core.esta_configurado(), "el control: sin configurar"
 
     database.set_addon(ADDON, True)

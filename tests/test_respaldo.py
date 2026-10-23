@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 from libraauth.testing import crear_schema_de_auth
 
 from app.main import crear_app
-from tests.conftest import config_de_prueba, par_de_arca, vaciar_auth
+from tests.conftest import config_de_prueba, par_de_arca, requiere_core_en_el_dominio, vaciar_auth
 
 ADMIN, CLAVE = "admin", "clave-de-prueba"
 
@@ -87,32 +87,26 @@ def test_el_zip_trae_la_base_unida_y_no_viene_vacia(cliente):
         assert tamaño > 1000, (nombre, dumps)
 
 
-def test_una_instancia_sin_unir_respalda_sus_dos_bases():
-    """Mientras una instancia tenga el core aparte, el ZIP lleva las dos bases.
-
-    🔴 Un ZIP con una sola mitad no se puede restaurar: o volvés el dominio y las
-    credenciales quedan de otro momento, o al revés, y restaurar deja una
-    instancia que no puede facturar y no lo dice. Con las bases unidas, en
-    cambio, declarar el core como extra haría que las dos cayeran en
-    `libracargo.dump` (y `Instancia` lo rechaza al arrancar).
-    """
+def test_el_zip_lleva_UNA_base_y_los_certificados():
+    """Desde la `0015` (ADR-029) el core vive en la base del dominio: el dump de la
+    principal ya trae el libro de comprobantes, las credenciales de ARCA y los
+    usuarios. No hay base «extra» —declararla otra vez haría que las dos cayeran en
+    `libracargo.dump`, y `Instancia` lo rechaza al arrancar— y los certificados
+    del disco siguen yendo: sin ellos el backup restaura una instancia que no
+    factura y no lo dice."""
     from app.main import _instancia_a_respaldar
 
-    aparte = _instancia_a_respaldar(config_de_prueba(
-        database_url="postgresql+psycopg://u@h/libracargo",
-        database_url_core="postgresql+psycopg://u@h/libracargo_core"))
-    assert [n for _, n in aparte.dumps] == ["libracargo.dump", "libracargo_core.dump"]
-
-    unida = _instancia_a_respaldar(config_de_prueba(
-        database_url="postgresql+psycopg://u@h/libracargo",
-        database_url_core="postgresql://u@h/libracargo?application_name=core"))
-    assert [n for _, n in unida.dumps] == ["libracargo.dump"]
+    inst = _instancia_a_respaldar(config_de_prueba(
+        database_url="postgresql+psycopg://u@h/libracargo"))
+    assert [n for _, n in inst.dumps] == ["libracargo.dump"]
+    assert inst.directorios, "los certificados de ARCA van en el backup"
 
 
 def _razones_sociales(cliente) -> list[str]:
     return [t["razon_social"] for t in cliente.get("/api/terceros").json()]
 
 
+@requiere_core_en_el_dominio
 def test_restaurar_deja_la_base_como_estaba(cliente):
     """El test que justifica todo el resto, y se mide en las DOS direcciones.
 
@@ -182,6 +176,7 @@ def test_el_zip_se_lleva_el_certificado_de_ARCA(cliente):
     assert clave in guardados.values(), sorted(guardados)
 
 
+@requiere_core_en_el_dominio
 def test_antes_de_restaurar_se_guarda_el_estado_anterior(cliente):
     """Restaurar es lo más destructivo que se puede apretar desde una pantalla.
 

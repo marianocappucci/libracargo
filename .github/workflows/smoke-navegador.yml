@@ -92,8 +92,8 @@ jobs:
           DATA_DIR: ${{ github.workspace }}/smoke-data
           LIBRACARGO_DATABASE_URL: postgresql+psycopg://libracargo:libracargo-ci@localhost:5432/libracargo
           # Una sola base, como nace un alta nueva y como quedan las instancias unidas
-          # (ADR-029): desde la 0016 el comprobante vive en `facturas` del motor.
-          LIBRACARGO_LIBRACORE_DATABASE_URL: postgresql+psycopg://libracargo:libracargo-ci@localhost:5432/libracargo
+          # (ADR-029): desde la 0016 el comprobante vive en `facturas` del motor. Sin
+          # `LIBRACARGO_LIBRACORE_DATABASE_URL` (ADR-054): el core es la base del dominio.
           DATABASE_URL: postgresql+psycopg://libracargo:libracargo-ci@localhost:5432/libracargo
           SECRET_KEY: smoke-de-navegador-no-es-un-secreto-real-0123456789
           DOCS_AUTH_SECRET: smoke-docs
