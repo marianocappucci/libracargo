@@ -2,7 +2,7 @@ from app.models.auditoria import RegistroAuditoria
 from app.models.base import Base
 from app.models.cartas_porte import CartaPorte, CartaPortePdf, CatalogoCpe, PlantillaCpe, TitularCpe
 from app.models.configuracion import ConfiguracionEmpresa
-from app.models.cuentas import MovimientoCaja, MovimientoCuenta
+from app.models.cuentas import MovimientoCaja, MovimientoCajaCargo, MovimientoCuenta
 from app.models.enums import (
     AccionAuditoria,
     CondicionIVA,
@@ -36,7 +36,7 @@ __all__ = [
     "Comprobante", "ComprobanteCargo",
     "ComprobanteDeApertura", "CondicionIVA",
     "EstadoOrden", "EtapaOrden", "GastoDeProveedor", "Localidad", "MedioPago", "MovimientoCaja",
-    "MovimientoCuenta", "OrdenCarga", "ConfiguracionEmpresa",
+    "MovimientoCajaCargo", "MovimientoCuenta", "OrdenCarga", "ConfiguracionEmpresa",
     "RegistroAuditoria",
     "RolCuenta", "TarifaDeReferencia", "Tarifario", "Tercero", "TipoCarga", "TipoComprobante",
     "TipoMovimientoCaja", "Vehiculo",

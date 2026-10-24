@@ -3,6 +3,15 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — La caja es la del motor: `caja_movimientos` más `movimientos_caja_cargo` (ADR-055)
+
+- **Cada movimiento de caja es una fila de `caja_movimientos` del motor y una fila propia en `movimientos_caja_cargo`, con el mismo id** (2026-10-23; plan «LibraCargo y LibraClub en la versión de escritorio», PR 8). Así la caja de cargo sube al central con los ganchos de caja del motor (libracore ADR-076) como la de los demás productos. En el motor quedan la fecha, el tipo, el concepto, el importe, el medio de pago y la marca de anulado; en la fila propia, el tercero, la descripción, el recibo y el origen en el legado.
+- **Migración `0032`** (con datos): copia `movimientos_caja` al motor **conservando los ids, los importes exactos y los vínculos de la cuenta corriente**; es idempotente y se niega, sin tocar nada, si un id ya está ocupado en `caja_movimientos`. La tabla vieja queda como `movimientos_caja_legado`. 🔴 **No se corrió ni se despliega contra Suitrans** (cliente real): va con el procedimiento del ADR-055 (respaldo, restauración de prueba, saldos por tercero y F4 antes y después).
+- **`scripts/comparar_caja.py`**, de sólo lectura, para el operador: `foto` antes de migrar, `comparar --antes` después (sale 0 si la caja, los saldos por tercero y el F4 por los dos caminos son idénticos, 1 si no) y `contra-legado`.
+- **Alta y anulación pasan por el motor** (`create_caja_movimiento` y `anular_caja_movimiento` con la conexión de la sesión) y corren los ganchos de caja (`GANCHOS_DE_CAJA`, vacíos hasta el PR 9). **Corregir un movimiento**: en el central, como siempre (salvo uno que subió de un nodo: 409); **en un nodo es anular y cargar de nuevo** (409 `solo_en_el_central`).
+- La carga del legado (`migracion/`) escribe la caja nueva. Sin cambio de frontend ni de API, salvo el 409 de la edición en un nodo.
+- Tests: `tests/test_caja_en_el_motor_migracion.py` (migración sobre datos sintéticos con saldos y F4 iguales, idempotencia, ids ocupados, vuelta atrás, y que la comparación se pone roja si se rompe un dato) y `tests/test_caja_en_el_motor.py` (alta, anulación, reportes, ganchos, edición en el central y en un nodo).
+
 ## [Unreleased] — Se va la variable del core: LibraCore es la base del dominio (ADR-054)
 
 - **La app arranca y factura sin `LIBRACARGO_LIBRACORE_DATABASE_URL`** (2026-10-22; plan «LibraEdge, LibraCargo y LibraClub», PR 4). El schema del motor vive en la base del dominio desde la `0015` (ADR-029); ahora el código también lo dice: `Config.database_url_core` desaparece y `libracore.db.core` se configura con `DATABASE_URL` (la app, el cron de cartas de porte y el `docker exec` del backoffice).

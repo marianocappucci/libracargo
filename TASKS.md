@@ -25,6 +25,10 @@ esto no es un historial.
 - [ ] Definir el catálogo inicial de `tipos_carga` con los valores distintos que
       haya en `carga_tipo` del legado.
 
+- [ ] **Caja al motor en Suitrans** (ADR-055, revisión `0032`): respaldo, restauración de prueba, `scripts/comparar_caja.py`
+      antes y después (saldos por tercero y F4), y recién ahí en la instancia real, con el OK del humano. Después,
+      una `0033` que retire `movimientos_caja_legado`.
+
 ## Bloqueadas
 
 - [ ] **Relevamiento con el cliente**: qué pantallas usa de verdad, y si hay operaciones con alícuota

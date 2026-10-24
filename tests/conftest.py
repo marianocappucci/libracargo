@@ -299,6 +299,9 @@ def sesion(engine):
     s.execute(text("TRUNCATE TABLE comprobantes_pendientes RESTART IDENTITY CASCADE"))
     # Y la cuenta corriente vive en el libro de terceros del motor (`0017`).
     s.execute(text("TRUNCATE TABLE cc_asientos RESTART IDENTITY CASCADE"))
+    # Y la caja en el suyo (`0032`): `movimientos_caja_cargo` cae con la cascada de `terceros`, pero la fila del
+    # motor no tiene ninguna FK hacia las del dominio.
+    s.execute(text("TRUNCATE TABLE caja_movimientos RESTART IDENTITY CASCADE"))
     s.commit()
     s.close()
 

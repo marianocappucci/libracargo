@@ -9,6 +9,7 @@ cuenta del cliente otra, sin nada que lo delatara.
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from libracore.nodo_offline import guarda_solo_en_el_central
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -25,7 +26,8 @@ from app.schemas.cuentas import (
     ResumenDeCuenta,
 )
 from app.servicios import auditoria
-from app.servicios.caja import revertir, sincronizar_contrapartida
+from app.servicios import caja as servicio_de_caja
+from app.servicios.caja import sincronizar_contrapartida
 from app.servicios.cuentas import movimientos_con_saldo, saldo, saldo_recorriendo
 
 router = APIRouter(prefix="/api", tags=["cuentas"], dependencies=[Depends(require_staff)])
@@ -105,22 +107,24 @@ def _traer_caja(sesion: Session, id_: int) -> MovimientoCaja:
     return movimiento
 
 
+def _id_de_usuario(actual: dict) -> int | None:
+    """El id del usuario que carga, para el `usuario_id` de la caja del motor (la arquea por quien la abrió)."""
+    return int(actual["id"]) if str(actual.get("id", "")).isdigit() else None
+
+
 @router.post("/caja", response_model=MovimientoCajaOut, status_code=201)
 def registrar_caja(datos: MovimientoCajaIn, sesion: Session = Depends(obtener_sesion),
                    actual: dict = Depends(get_current_user)):
     """Registra el movimiento y su contrapartida, o no registra ninguno."""
     _validar_par(datos)
-    movimiento = MovimientoCaja(
-        fecha=datos.fecha, tipo=datos.tipo, concepto=datos.concepto,
-        descripcion=datos.descripcion, tercero_id=datos.tercero_id,
-        importe=datos.importe, medio_pago=datos.medio_pago, recibo=datos.recibo,
-    )
-    sesion.add(movimiento)
     try:
         # `flush` y no `commit`: hace falta el id para la contrapartida, pero la
         # transaccion tiene que seguir abierta. Con dos commits, un fallo en el
         # segundo deja el primero grabado -- el defecto exacto del legado.
-        sesion.flush()
+        movimiento = servicio_de_caja.registrar(
+            sesion, fecha=datos.fecha, tipo=datos.tipo, concepto=datos.concepto, importe=datos.importe,
+            medio_pago=datos.medio_pago, descripcion=datos.descripcion, tercero_id=datos.tercero_id,
+            recibo=datos.recibo, usuario_id=_id_de_usuario(actual))
         sincronizar_contrapartida(sesion, movimiento, datos.rol)
         auditoria.registrar(sesion, actual, "movimiento_caja", movimiento.id,
                             AccionAuditoria.ALTA, despues=movimiento)
@@ -132,7 +136,9 @@ def registrar_caja(datos: MovimientoCajaIn, sesion: Session = Depends(obtener_se
     return movimiento
 
 
-@router.put("/caja/{id_}", response_model=MovimientoCajaOut)
+@router.put("/caja/{id_}", response_model=MovimientoCajaOut,
+            dependencies=[Depends(guarda_solo_en_el_central(
+                mensaje="En el nodo un movimiento de caja no se edita: anulalo y cargalo de nuevo."))])
 def editar_caja(id_: int, datos: MovimientoCajaIn,
                 sesion: Session = Depends(obtener_sesion),
                 actual: dict = Depends(get_current_user)):
@@ -142,16 +148,24 @@ def editar_caja(id_: int, datos: MovimientoCajaIn,
     `modifica_novedad.php` y lo que el cliente espera ver. Cambiar el tercero, el
     rol o el importe mueve el asiento con el movimiento; sacarle el tercero lo
     borra.
+
+    🔴 **Sólo en el central.** En un nodo corregir es anular y cargar de nuevo
+    (409 `solo_en_el_central`): el motor sube la caja del nodo con ganchos de alta
+    y de anulación, no de modificación, así que una edición no llegaría. Y un
+    movimiento que subió de un nodo es del nodo: el central tampoco lo edita.
     """
     _validar_par(datos)
     movimiento = _traer_caja(sesion, id_)
     if movimiento.anulado:
         raise HTTPException(409, "el movimiento está anulado: no se puede modificar")
+    if servicio_de_caja.viene_de_un_nodo(sesion, movimiento):
+        raise HTTPException(409, "el movimiento vino de un nodo: se corrige ahí, anulándolo y cargándolo de nuevo")
     antes = auditoria.instantanea(movimiento)
-    for campo in ("fecha", "tipo", "concepto", "descripcion", "tercero_id",
-                  "importe", "medio_pago", "recibo"):
-        setattr(movimiento, campo, getattr(datos, campo))
     try:
+        servicio_de_caja.corregir(
+            sesion, movimiento, fecha=datos.fecha, tipo=datos.tipo, concepto=datos.concepto,
+            importe=datos.importe, medio_pago=datos.medio_pago, descripcion=datos.descripcion,
+            tercero_id=datos.tercero_id, recibo=datos.recibo)
         sincronizar_contrapartida(sesion, movimiento, datos.rol)
         auditoria.registrar(sesion, actual, "movimiento_caja", movimiento.id,
                             AccionAuditoria.MODIFICACION, antes=antes, despues=movimiento)
@@ -178,9 +192,7 @@ def anular_caja(id_: int, sesion: Session = Depends(obtener_sesion),
     if movimiento.anulado:
         raise HTTPException(409, "el movimiento ya está anulado")
     antes = auditoria.instantanea(movimiento)
-    # Antes de marcarlo: `revertir` lee la contrapartida vigente.
-    revertir(sesion, movimiento)
-    movimiento.anulado = True
+    servicio_de_caja.anular(sesion, movimiento)
     auditoria.registrar(sesion, actual, "movimiento_caja", movimiento.id,
                         AccionAuditoria.BAJA, antes=antes, despues=movimiento)
     sesion.commit()
