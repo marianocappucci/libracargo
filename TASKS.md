@@ -29,6 +29,11 @@ esto no es un historial.
       antes y después (saldos por tercero y F4), y recién ahí en la instancia real, con el OK del humano. Después,
       una `0033` que retire `movimientos_caja_legado`.
 
+- [ ] **Nodo de escritorio** (ADR-056): antes del merge, cambiar el pin de libraedge del commit `1d7ab0a` a `@v0.22.0`
+      (lo cuida el humano); en libraedge, `LIBRAEDGE_CARGA_INICIAL=app.servicios.carga_inicial:aplicar_carga_inicial`
+      en `instalador/productos/libracargo.json`; en libra-ui (PR 13), el aviso «sin CPE válida», la bandeja de la cola y
+      el id provisorio. Vincular el nodo de Suitrans es [H]: va después de la caja al motor y con su procedimiento.
+
 ## Bloqueadas
 
 - [ ] **Relevamiento con el cliente**: qué pantallas usa de verdad, y si hay operaciones con alícuota

@@ -54,6 +54,14 @@ sistema legado tenía cero FK y dos índices fuera de las claves primarias.
   (tercero, descripción, recibo), con el mismo id, y su contrapartida en la cuenta
   corriente en la misma transacción. La tabla vieja, `movimientos_caja_legado`,
   queda de sólo lectura.
+- **La versión de escritorio** (ADR-056): la oficina puede tener un **nodo** de LibraEdge (`app/offline.py`). **Con un
+  nodo vinculado, órdenes, caja, asientos, facturas y CPE se escriben sólo en el nodo** y la web las consulta (409
+  `solo_en_el_nodo`); sin nodo, la web opera como siempre. Lo que el nodo escribe sube al central como operaciones
+  `cargo.*` con la foto de la fila (`servicios/subida.py` las arma, `servicios/aplicadores.py` las aplica, ids
+  provisorios negativos y `libraedge_mapeo`); las facturas y las CPE sin red quedan en la cola de ARCA del motor y se
+  emiten solas al volver (`servicios/emisores.py`); al vincular, `servicios/carga_inicial.py` trae lo que el central ya
+  tenía. Las tablas de LibraEdge y `movimientos_cuenta_cargo.origen_nodo*` no están en los modelos (las `0033` y
+  `0034`).
 - **`auditoria`** — qué cambió, en `JSONB`, no sólo que algo pasó.
 
 Todo importe es `NUMERIC(14,2)`; las cantidades, `NUMERIC(12,3)`.
