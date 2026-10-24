@@ -102,13 +102,15 @@ dependencies = [
     # v1.190.0 -> v1.190.1 (2026-10-22): LibraCargo y LibraClub en _UNA_SOLA_BASE (ADR-078). Sin migracion.
     # v1.190.1 -> v1.191.0 (2026-10-23): cola de comprobantes del nodo offline (cola_arca, ADR-079). Migracion 0029 aditiva.
     # v1.191.0 -> v1.192.0 (2026-10-24): costuras de caja: corregir, extra y gancho del central (ADR-080). Sin migracion.
-    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.192.0",
+    # v1.192.0 -> v1.192.1 (2026-10-24): un ciclo con el candado del esquema da deadlock en 1 s, no a los 120 s (ADR-081). Sin migracion.
+    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.192.1",
     # libraedge (2026-10-24, PR 9 del plan «LibraCargo y LibraClub en la versión de escritorio», ADR-056 de este producto):
     # el nodo offline de LibraCargo. Dependencia NORMAL y no extra, como en VentaLibra y RestoLibra: el central monta
     # `/sync/v1/*` (push, pull, el ticket de ARCA prestado y la carga inicial) aunque no tenga nodos, y las tablas de
     # LibraEdge (`0033_libraedge`) se crean en toda instancia. El repo es publico: no hace falta deploy key.
     # 1d7ab0a -> v0.22.0 (2026-10-24): ticket de ARCA por servicio y LibraCargo/LibraClub en el instalador (ADR-025). Sin migracion.
-    "libraedge @ git+https://github.com/marianocappucci/libraedge.git@v0.22.0",
+    # v0.22.0 -> v0.22.1 (2026-10-24): LibraCargo y LibraClub en el instalador publicado. Sin migracion.
+    "libraedge @ git+https://github.com/marianocappucci/libraedge.git@v0.22.1",
 ]
 
 # Los motores de la familia entran en F1, desde repos privados por deploy key.
