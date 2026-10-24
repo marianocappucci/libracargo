@@ -782,8 +782,8 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
     { name = "libraauth", extras = ["migrations"], git = "https://github.com/marianocappucci/libraauth.git?rev=v0.55.0" },
-    { name = "libracore", extras = ["migrations"], git = "https://github.com/marianocappucci/libracore.git?rev=v1.192.0" },
-    { name = "libraedge", git = "https://github.com/marianocappucci/libraedge.git?rev=v0.22.0" },
+    { name = "libracore", extras = ["migrations"], git = "https://github.com/marianocappucci/libracore.git?rev=v1.192.1" },
+    { name = "libraedge", git = "https://github.com/marianocappucci/libraedge.git?rev=v0.22.1" },
     { name = "pdfplumber", specifier = ">=0.11" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.9" },
@@ -801,8 +801,8 @@ provides-extras = ["motores", "migracion", "dev"]
 
 [[package]]
 name = "libracore"
-version = "1.192.0"
-source = { git = "https://github.com/marianocappucci/libracore.git?rev=v1.192.0#d8ed59dda3770e4690531b910deead00ae57634c" }
+version = "1.192.1"
+source = { git = "https://github.com/marianocappucci/libracore.git?rev=v1.192.1#e95efde11d03a7627b0ae891ff39261f7b2f930d" }
 dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
@@ -826,8 +826,8 @@ migrations = [
 
 [[package]]
 name = "libraedge"
-version = "0.22.0"
-source = { git = "https://github.com/marianocappucci/libraedge.git?rev=v0.22.0#3998f2fed5498ee7b0c1996744afa28ff41742fd" }
+version = "0.22.1"
+source = { git = "https://github.com/marianocappucci/libraedge.git?rev=v0.22.1#8c74233289d8fbdbce03e4dda51ab1a65891da5b" }
 
 [[package]]
 name = "mako"
