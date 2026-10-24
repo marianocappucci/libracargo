@@ -213,6 +213,10 @@ class MovimientoCuentaCargo(Base, Auditable):
     gasto_id: Mapped[int | None] = mapped_column(
         ForeignKey("gastos_de_proveedor.id", ondelete="RESTRICT"), nullable=True
     )
+    # 🔑 `origen_nodo` y `origen_nodo_id` (`0034`, ADR-056) **no están en el modelo, a propósito**: de qué nodo vino un
+    # asiento lo escribe y lo lee sólo el aplicador del central, con SQL (`servicios/aplicadores.py`); el dominio no los
+    # necesita. Mapearlos haría que cada alta del ORM los nombrara en el `INSERT`, y una base migrada hasta antes de la
+    # `0034` (los tests de las revisiones viejas) no los tiene. `migrations/env.py` los saca de la comparación.
 
     __table_args__ = (
         Index("ix_cuenta_cargo_orden", "orden_id"),

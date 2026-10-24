@@ -103,6 +103,13 @@ dependencies = [
     # v1.190.1 -> v1.191.0 (2026-10-23): cola de comprobantes del nodo offline (cola_arca, ADR-079). Migracion 0029 aditiva.
     # v1.191.0 -> v1.192.0 (2026-10-24): costuras de caja: corregir, extra y gancho del central (ADR-080). Sin migracion.
     "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.192.0",
+    # libraedge (2026-10-24, PR 9 del plan «LibraCargo y LibraClub en la versión de escritorio», ADR-056 de este producto):
+    # el nodo offline de LibraCargo. Dependencia NORMAL y no extra, como en VentaLibra y RestoLibra: el central monta
+    # `/sync/v1/*` (push, pull, el ticket de ARCA prestado y la carga inicial) aunque no tenga nodos, y las tablas de
+    # LibraEdge (`0033_libraedge`) se crean en toda instancia. El repo es publico: no hace falta deploy key.
+    # TEMPORAL: v0.22.0 (ADR-025, el ticket por servicio) todavia no tiene tag, asi que se pinea al commit de
+    # `origin/develop` de libraedge (merge de #164). Antes del merge de este PR se cambia por `@v0.22.0`.
+    "libraedge @ git+https://github.com/marianocappucci/libraedge.git@1d7ab0aff1b14c6217ffedb98f90818d6b6d3d35",
 ]
 
 # Los motores de la familia entran en F1, desde repos privados por deploy key.
