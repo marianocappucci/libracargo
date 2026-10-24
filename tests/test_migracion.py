@@ -322,6 +322,8 @@ def migrado(staging, engine):
                 con.execute(sql(f'TRUNCATE TABLE "{tabla.name}" RESTART IDENTITY CASCADE'))
             # Desde la `0016` el comprobante vive en `facturas` del motor (ADR-030).
             con.execute(sql("TRUNCATE TABLE facturas RESTART IDENTITY CASCADE"))
+            # Y desde la `0032` la caja, en `caja_movimientos` del motor: ninguna FK la une al dominio.
+            con.execute(sql("TRUNCATE TABLE caja_movimientos RESTART IDENTITY CASCADE"))
 
     vaciar()
     # La orden 2 apunta a un cliente que no existe: está puesta así para el

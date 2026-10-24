@@ -49,8 +49,11 @@ sistema legado tenía cero FK y dos índices fuera de las claves primarias.
   descripción sin límite de largo, y lo propio (orden, cobro, gasto) en
   `movimientos_cuenta_cargo`. Sin saldo materializado: se suma con índice. La
   tabla vieja quedó como `movimientos_cuenta_legado`, de sólo lectura.
-- **`movimientos_caja`** — cobros y pagos, con contrapartida en la misma
-  transacción.
+- **La caja es la del motor** (ADR-055): cada cobro o pago es una fila de
+  `caja_movimientos` de LibraCore más una fila propia en `movimientos_caja_cargo`
+  (tercero, descripción, recibo), con el mismo id, y su contrapartida en la cuenta
+  corriente en la misma transacción. La tabla vieja, `movimientos_caja_legado`,
+  queda de sólo lectura.
 - **`auditoria`** — qué cambió, en `JSONB`, no sólo que algo pasó.
 
 Todo importe es `NUMERIC(14,2)`; las cantidades, `NUMERIC(12,3)`.

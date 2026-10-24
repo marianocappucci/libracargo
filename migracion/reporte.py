@@ -50,7 +50,7 @@ EQUIVALENCIAS = [
     ("terceros", ["clientes", "fleteros", "proveedores"], "terceros"),
     ("choferes", ["choferes"], "choferes"),
     ("órdenes de carga", ["orden_carga"], "ordenes_carga"),
-    ("movimientos de caja", ["novedades"], "movimientos_caja"),
+    ("movimientos de caja", ["novedades"], "movimientos_caja_cargo"),
     ("movimientos de cuenta", ["clientectacte", "fleteroctacte", "ctacteprov"],
      "cc_asientos"),
     ("auditoría", ["sucesos"], "auditoria"),

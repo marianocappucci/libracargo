@@ -440,7 +440,7 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
             dueño.setdefault(id_novedad, (rol, id_tercero))
 
     caja_de: dict[str, int] = {}
-    filas_caja = []
+    filas_caja, filas_caja_cargo = [], []
     for f in leer(origen, "novedades"):
         nuevo = id_de("movimientos_caja")
         caja_de[f["novedad_id"]] = nuevo
@@ -453,16 +453,20 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
         tercero = tercero_de.get((rol, id_tercero)) if rol else None
         if rol_esperado is None:
             tercero = None  # "Personales": gasto de la agencia, no mueve cuentas
+        # Desde la revisión `0032` la caja vive en `caja_movimientos`, la tabla del motor, con lo propio de
+        # acá (tercero, descripción, recibo, origen) en `movimientos_caja_cargo` y el mismo id (ADR-055).
         filas_caja.append((
-            nuevo, fecha(f["novedad_fecha"], inferidas, f"novedad:{f['novedad_id']}"),
-            tipo, texto(f.get("novedad_tipo"), 120) or "Movimiento",
-            texto(f.get("novedad_descripcion")), tercero, valor,
-            "efectivo" if f.get("novedad_efectivo") == "1" else "otro",
+            nuevo, fecha(f["novedad_fecha"], inferidas, f"novedad:{f['novedad_id']}").isoformat(),
+            tipo, texto(f.get("novedad_tipo"), 120) or "Movimiento", valor,
+            "efectivo" if f.get("novedad_efectivo") == "1" else "otro"))
+        filas_caja_cargo.append((
+            nuevo, texto(f.get("novedad_descripcion")), tercero,
             texto(f.get("novedad_recibo"), 30), f"novedad:{f['novedad_id']}"))
     conteos["novedades"] = copiar(
-        destino, "movimientos_caja",
-        ["id", "fecha", "tipo", "concepto", "descripcion", "tercero_id", "importe",
-         "medio_pago", "recibo", "origen_legado"], filas_caja)
+        destino, "caja_movimientos",
+        ["id", "fecha", "tipo", "concepto", "monto", "medio_pago"], filas_caja)
+    copiar(destino, "movimientos_caja_cargo",
+           ["movimiento_id", "descripcion", "tercero_id", "recibo", "origen_legado"], filas_caja_cargo)
 
     # ---------------------------------------------------------- cuentas corrientes
     # Desde la revisión `0017` la cuenta vive en `cc_asientos`, el libro de terceros
@@ -526,7 +530,7 @@ def migrar(origen, destino, inferidas: dict[str, date]) -> dict[str, int]:  # no
     # alta del sistema nuevo chocaría contra la clave primaria de la fila 1.
     for tabla in ("terceros", "localidades", "choferes", "vehiculos",
                   "tipos_carga", "facturas", "comprobante_de_apertura", "ordenes_carga",
-                  "movimientos_caja",
+                  "caja_movimientos",
                   "cc_asientos", "auditoria"):
         destino.execute(
             f"SELECT setval(pg_get_serial_sequence('{tabla}', 'id'), "

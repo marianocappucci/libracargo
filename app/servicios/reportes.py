@@ -87,7 +87,7 @@ def resumen(sesion: Session, desde: date | None, hasta: date | None,
     # explicacion; los TOTALES no.
     caja_base = _iguales(
         _entre(select(MovimientoCaja), MovimientoCaja.fecha, desde, hasta)
-        .where(MovimientoCaja.anulado.is_(False)),
+        .where(MovimientoCaja.anulado == 0),
         [(MovimientoCaja.tercero_id, tercero)])
     ingresos = caja_base.where(MovimientoCaja.tipo == TipoMovimientoCaja.INGRESO)
     egresos = caja_base.where(MovimientoCaja.tipo == TipoMovimientoCaja.EGRESO)
@@ -223,7 +223,7 @@ def caja(sesion: Session, desde: date | None, hasta: date | None,
         select(MovimientoCaja.tipo, MovimientoCaja.medio_pago,
                func.count(MovimientoCaja.id),
                func.coalesce(func.sum(MovimientoCaja.importe), 0))
-        .where(MovimientoCaja.anulado.is_(False)),
+        .where(MovimientoCaja.anulado == 0),
         MovimientoCaja.fecha, desde, hasta),
         [(MovimientoCaja.tercero_id, tercero_id), (MovimientoCaja.medio_pago, medio_pago),
          (MovimientoCaja.tipo, tipo)])

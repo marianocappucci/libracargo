@@ -2,25 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import date
-from decimal import Decimal
-
 from sqlalchemy import (
     BigInteger,
-    Boolean,
-    CheckConstraint,
     Column,
-    Date,
-    Enum,
     ForeignKey,
     Index,
     Integer,
-    Numeric,
     String,
     Table,
     Text,
     TypeDecorator,
-    false,
     join,
 )
 from sqlalchemy.orm import Mapped, column_property, mapped_column
@@ -29,59 +20,133 @@ from app.models.base import Auditable, Base
 from app.models.enums import MedioPago, RolCuenta, TipoMovimientoCaja
 from app.models.operacion import MOTOR, _Dinero, _Fecha
 
+# ── La caja vive en `caja_movimientos`, la tabla del motor ─────────────────
+#
+# Hasta la revisión `0032` este producto tenía su propia tabla `movimientos_caja`,
+# que ningún otro producto ni el motor veían. Desde ahí cada movimiento es una fila
+# de `caja_movimientos` de LibraCore (los ganchos de caja de su ADR-076, la
+# columna `origen` con la que la caja de un nodo sube al central), con lo propio de
+# acá —el tercero, la descripción, el recibo— en `movimientos_caja_cargo`, con el
+# **mismo id** (ADR-055). Es lo mismo que la `0017` hizo con la cuenta corriente.
+#
+# `MovimientoCaja` sigue siendo la clase que leen las pantallas, los reportes y los
+# saldos, mapeada sobre la unión de las dos tablas. **Escribe el motor**
+# (`libracore.db.caja`), desde `app/servicios/caja.py`.
 
-class MovimientoCaja(Base, Auditable):
-    """Cobros y pagos. Reemplaza a `novedades`.
 
-    Un movimiento de caja genera su contrapartida en `movimientos_cuenta`
-    **dentro de la misma transacción**: en el legado eran `INSERT` sueltos y
-    si el segundo fallaba, el primero ya había quedado grabado.
+class _Tipo(TypeDecorator):
+    """Ingreso o egreso: en el motor es texto, acá el enum de siempre."""
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return None if value is None else TipoMovimientoCaja(value).value
+
+    def process_result_value(self, value, dialect):
+        return None if value is None else TipoMovimientoCaja(value)
+
+
+class _Medio(TypeDecorator):
+    """El medio de pago: en el motor es texto, acá el enum de este producto."""
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return None if value is None else MedioPago(value).value
+
+    def process_result_value(self, value, dialect):
+        return None if value is None else MedioPago(value)
+
+
+class _Marca(TypeDecorator):
+    """Una marca que el motor guarda como entero (`0`/`1`) y acá se lee como booleano.
+
+    🔴 Por ser un entero en la base, **`.is_(False)` no sirve**: PostgreSQL rechaza
+    `anulado IS false` sobre un `integer`. Se compara con `== 0`.
     """
 
-    __tablename__ = "movimientos_caja"
+    impl = Integer
+    cache_ok = True
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    fecha: Mapped[date] = mapped_column(Date, nullable=False)
-    tipo: Mapped[TipoMovimientoCaja] = mapped_column(
-        Enum(TipoMovimientoCaja, name="tipo_movimiento_caja",
-             values_callable=lambda e: [m.value for m in e]),
-        nullable=False,
+    def process_bind_param(self, value, dialect):
+        return None if value is None else int(bool(value))
+
+    def process_result_value(self, value, dialect):
+        return None if value is None else bool(value)
+
+
+caja_movimientos = Table(
+    "caja_movimientos", MOTOR,
+    Column("id", BigInteger, primary_key=True),
+    Column("fecha", _Fecha, nullable=False),
+    Column("tipo", _Tipo, nullable=False),
+    Column("concepto", Text, nullable=False),
+    Column("monto", _Dinero, nullable=False),
+    Column("medio_pago", _Medio),
+    Column("anulado", _Marca, nullable=False),
+    # De qué nodo vino la fila (ADR-076 del motor). No se mapean: las lee `servicios/caja.py`
+    # para no dejar que el central edite lo que el nodo es dueño.
+    Column("origen", Text),
+    Column("origen_id", Integer),
+)
+
+
+class MovimientoCajaCargo(Base, Auditable):
+    """Lo que sólo este producto sabe de un movimiento de caja. Una fila por cada fila de `caja_movimientos`.
+
+    El tercero con su FK, la descripción larga, el número de recibo y de dónde salió en
+    el legado. La fecha, el tipo, el concepto, el importe, el medio de pago y la marca
+    de anulado están en el motor: son lo que el central, el arqueo y los ganchos ven.
+    """
+
+    __tablename__ = "movimientos_caja_cargo"
+
+    movimiento_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(caja_movimientos.c.id, ondelete="RESTRICT", name="fk_movimientos_caja_cargo_movimiento"),
+        primary_key=True, autoincrement=False,
     )
-    concepto: Mapped[str] = mapped_column(String(120), nullable=False)
     descripcion: Mapped[str | None] = mapped_column(Text, nullable=True)
     tercero_id: Mapped[int | None] = mapped_column(
         ForeignKey("terceros.id", ondelete="RESTRICT"), nullable=True
     )
-    importe: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
-    medio_pago: Mapped[MedioPago] = mapped_column(
-        Enum(MedioPago, name="medio_pago",
-             values_callable=lambda e: [m.value for m in e]),
-        nullable=False,
-        default=MedioPago.EFECTIVO,
-    )
     recibo: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    #: Anular no borra: el movimiento queda, deja de contar en los totales
-    #: y su asiento se revierte con una contrapartida. En el legado,
-    #: `elimina_novedad.php` hacia tres DELETE sueltos y el cobro
-    #: desaparecia sin dejar rastro.
-    anulado: Mapped[bool] = mapped_column(
-        # `server_default` ademas del `default` de Python: el ETL de migracion
-        # escribe por `COPY` sin nombrar esta columna, y ahi el default de la
-        # aplicacion no corre. Tiene que decir lo mismo que la migracion 0008.
-        Boolean, nullable=False, default=False, server_default=false()
-    )
     origen_legado: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     __table_args__ = (
-        # Mismo escape, por lo mismo: 6 movimientos del legado tienen
-        # descripción real y ningún importe cargado. Ver ADR-015.
-        CheckConstraint(
-            "importe > 0 OR origen_legado IS NOT NULL", name="ck_caja_importe_positivo"
-        ),
-        Index("ix_caja_fecha", "fecha"),
-        Index("ix_caja_tercero_fecha", "tercero_id", "fecha"),
-        Index("ix_caja_origen_legado", "origen_legado", unique=True),
+        Index("ix_caja_cargo_tercero", "tercero_id"),
+        Index("ix_caja_cargo_origen_legado", "origen_legado", unique=True),
     )
+
+
+_cargo_caja = MovimientoCajaCargo.__table__
+
+
+class MovimientoCaja(Base):
+    """Cobros y pagos. Reemplaza a `novedades`.
+
+    Es la unión de `caja_movimientos` (el movimiento de la familia) y
+    `movimientos_caja_cargo` (lo propio). Se **lee** como siempre; se **registra,
+    se corrige y se anula** por `app/servicios/caja.py`, que lo hace con el motor.
+
+    Un movimiento de caja genera su contrapartida en `cc_asientos` **dentro de la
+    misma transacción**: en el legado eran `INSERT` sueltos y si el segundo
+    fallaba, el primero ya había quedado grabado.
+
+    Anular **no borra**: el movimiento queda, deja de contar en los totales y su
+    asiento se revierte con una contrapartida (`elimina_novedad.php` hacía tres
+    `DELETE` sueltos y el cobro desaparecía sin dejar rastro).
+    """
+
+    __table__ = join(caja_movimientos, _cargo_caja, caja_movimientos.c.id == _cargo_caja.c.movimiento_id)
+
+    id = column_property(caja_movimientos.c.id, _cargo_caja.c.movimiento_id)
+    #: El nombre de siempre de este producto sobre `monto` del motor.
+    importe = column_property(caja_movimientos.c.monto)
+
+    __mapper_args__ = {"exclude_properties": ["origen", "origen_id"]}
 
 
 # ── La cuenta corriente vive en el libro de terceros del motor ─────────────
@@ -137,8 +202,11 @@ class MovimientoCuentaCargo(Base, Auditable):
     orden_id: Mapped[int | None] = mapped_column(
         ForeignKey("ordenes_carga.id", ondelete="RESTRICT"), nullable=True
     )
+    #: El movimiento de la caja del motor (`0032`): el mismo id que tenía en la caja propia.
     movimiento_caja_id: Mapped[int | None] = mapped_column(
-        ForeignKey("movimientos_caja.id", ondelete="RESTRICT"), nullable=True
+        Integer,
+        ForeignKey(caja_movimientos.c.id, ondelete="RESTRICT", name="fk_movimientos_cuenta_cargo_movimiento_caja"),
+        nullable=True,
     )
     #: El gasto de proveedor que lo genero. Un gasto deja DOS asientos con el
     #: mismo `gasto_id`: el del proveedor al debe y el del fletero al haber.
