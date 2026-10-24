@@ -143,6 +143,13 @@ def configuracion_de_la_instancia() -> dict | None:
     return configs[0]
 
 
+def _en_un_nodo() -> bool:
+    """Si esta instancia es el nodo de la oficina (ADR-056). Import acá adentro: `offline` importa de los servicios."""
+    from app import offline
+
+    return offline.nodo() is not None
+
+
 def _par_completo(cfg: dict) -> bool:
     """Si el par del ambiente **del selector** está los dos archivos en disco.
 
@@ -189,7 +196,9 @@ def _problema(sesion: Session, cfg: dict | None) -> str | None:
                 f"{empresa.cuit}: la configuración de ARCA lleva el CUIT que factura (el de la empresa), "
                 "aunque el certificado esté a nombre de otra persona que la representa. "
                 "Corregí uno de los dos en Configuración → ARCA o Datos de la empresa")
-    if not _par_completo(cfg):
+    # En un nodo no hay par en disco ni hace falta: firma con el ticket que le presta el central (libracore ADR-074), y
+    # la clave no sale del VPS. Pedirle el par a una PC de mostrador sería frenar una emisión que sí puede salir.
+    if not _en_un_nodo() and not _par_completo(cfg):
         return ("falta el certificado o la clave de ARCA del ambiente elegido: "
                 "cargalos en Configuración → ARCA")
     return None
@@ -228,8 +237,31 @@ def es_ensayo(cfg: dict | None) -> bool:
     return (cfg or {}).get("ambiente") == "homologacion"
 
 
+async def _numero_en_el_nodo(
+    sesion: Session, tipo: TipoComprobante, numerar=None
+) -> tuple[int, dict, dict, Emisor]:
+    """`numero_que_sigue` en el nodo: el número de ARCA pedido con el **ticket que presta el central**, nunca con una
+    clave propia ni con numeración local (ADR-056, libracore ADR-074).
+
+    `numerar(punto_venta, tipo_de_arca) -> (numero, ta, arca)` es `ctx.numerar` de la cola cuando emite ella, o
+    `offline.numerar_en_el_nodo` cuando la persona emite en línea. **Sus errores salen tal cual**: `SinConexion` (el
+    central o ARCA no contestan: se emite al volver) y `NodoSinArca` (el central no presta el ticket) no son un rechazo
+    de ARCA y los routers y la cola los distinguen.
+    """
+    from app import offline
+
+    cfg = configuracion_de_la_instancia()
+    problema = _problema(sesion, cfg)
+    if problema is not None:
+        raise ArcaNoConfigurado(problema)
+    emisor = Emisor(cuit=empresa_de(sesion).cuit, punto_venta=int(cfg["punto_venta"]))
+    numero, ta, arca = await (numerar or offline.numerar_en_el_nodo)(emisor.punto_venta, CODIGO_ARCA[tipo])
+    # La configuración con la que se numeró es la de ARCA que el nodo espeja: la misma fila, el mismo ambiente.
+    return numero, ta, arca or cfg, emisor
+
+
 async def numero_que_sigue(
-    sesion: Session, tipo: TipoComprobante
+    sesion: Session, tipo: TipoComprobante, *, numerar=None
 ) -> tuple[int, dict, dict, Emisor]:
     """Le pregunta a ARCA cuál es el próximo número, y de paso autentica.
 
@@ -239,11 +271,16 @@ async def numero_que_sigue(
 
     Levanta `ArcaNoConfigurado` (con el motivo) si la empresa no puede emitir.
 
+    **En el nodo** (ADR-056) no hay par en disco: el ticket lo presta el central y `numerar` (opcional) es quien lo
+    pide (`_numero_en_el_nodo`). Fuera de un nodo `numerar` no se usa.
+
     ⚠️ **No hay fallback a numeración local.** Contalibra sí lo tiene, porque
     allá una factura sin CAE es un borrador que se reintenta. Acá el número
     **es** el de ARCA: inventar uno local y pedir el CAE después con ese número
     da un rechazo garantizado.
     """
+    if _en_un_nodo():
+        return await _numero_en_el_nodo(sesion, tipo, numerar)
     cfg = configuracion_de_la_instancia()
     problema = _problema(sesion, cfg)
     if problema is not None:

@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.models.cuentas import MovimientoCuenta, MovimientoCuentaCargo
 from app.models.enums import RolCuenta
+from app.servicios import subida
 
 CERO = Decimal("0.00")
 
@@ -118,6 +119,8 @@ def asentar(sesion: Session, *, fecha: date, tercero_id: int, rol: RolCuenta, co
     sesion.add(MovimientoCuentaCargo(asiento_id=asiento_id, orden_id=orden_id,
                                      movimiento_caja_id=movimiento_caja_id, gasto_id=gasto_id))
     sesion.flush()
+    # En un nodo, cada asiento sube al central (ADR-056). Fuera de un nodo no hace nada.
+    subida.tocar(sesion, "asiento", asiento_id)
     return sesion.get(MovimientoCuenta, asiento_id)
 
 
@@ -131,6 +134,7 @@ def corregir(sesion: Session, movimiento: MovimientoCuenta, **campos) -> Movimie
             valor = RolCuenta(valor).value
         traducidos[clave] = valor
     libro.corregir(movimiento.id, conn=_conexion_del_motor(sesion), **traducidos)
+    subida.tocar(sesion, "asiento", movimiento.id)
     sesion.expire(movimiento)
     return movimiento
 
@@ -139,6 +143,8 @@ def borrar(sesion: Session, movimiento: MovimientoCuenta) -> None:
     """Saca el asiento cuando el documento editado deja de mover la cuenta. No es anular."""
     conn = _conexion_del_motor(sesion)
     cargo = sesion.get(MovimientoCuentaCargo, movimiento.id)
+    # Se avisa antes de borrar: al confirmar, el asiento ya no está y lo que sube es su baja.
+    subida.tocar(sesion, "asiento", movimiento.id)
     sesion.expunge(movimiento)
     if cargo is not None:
         sesion.delete(cargo)
@@ -160,4 +166,5 @@ def contraasentar(sesion: Session, movimiento: MovimientoCuenta, *, concepto: st
         gasto_id=original.gasto_id if original else None,
     ))
     sesion.flush()
+    subida.tocar(sesion, "asiento", asiento_id)
     return sesion.get(MovimientoCuenta, asiento_id)

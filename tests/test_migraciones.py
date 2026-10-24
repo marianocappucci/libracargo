@@ -158,7 +158,10 @@ def test_upgrade_downgrade_upgrade(base_limpia):
         # Y subió a 22 con la `0031` (`catalogo_cpe`, ADR-051).
         # Y a 23 con la `0032` (`movimientos_caja_cargo`; `movimientos_caja` sigue, como
         # `movimientos_caja_legado`, hasta que se la retire, ADR-055).
-        assert tablas - del_motor == 23
+        # Y a 31 con la `0033` (las ocho tablas de LibraEdge: `node_identity`, `local_sequences`, `sync_outbox`,
+        # `sync_inbox`, `sync_changelog`, `libraedge_mapeo`, `libraedge_vinculacion` y `libraedge_canje_fallido`;
+        # ADR-056).
+        assert tablas - del_motor == 31
         eng.dispose()
     finally:
         if original:

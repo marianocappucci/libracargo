@@ -25,12 +25,13 @@ from fastapi.responses import JSONResponse
 from libracore import arca_wsfecred
 from libracore.cuit import solo_digitos
 from libracore.db import arca_config
+from libracore.nodo_offline import NodoSinArca, SinConexion
 from libracore.notas_de_credito import NotaNoPermitida
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import tiempo
+from app import offline, tiempo
 from app.auth import get_current_user, require_staff
 from app.db import obtener_sesion
 from app.models.enums import (
@@ -57,6 +58,7 @@ from app.servicios import (
     comprobantes,
     cuentas,
     emision_arca,
+    emisores,
     facturacion,
     notas_de_credito,
     notas_de_debito,
@@ -68,8 +70,10 @@ from app.servicios.comprobantes import (
     totales_facturados,
 )
 
+# Con un nodo vinculado se escribe sólo en el nodo (ADR-056): en el central se consulta, y escribir da 409
+# `solo_en_el_nodo`. Sin nodo vinculado, la web opera como siempre.
 router = APIRouter(prefix="/api/comprobantes", tags=["comprobantes"],
-                   dependencies=[Depends(require_staff)])
+                   dependencies=[Depends(require_staff), Depends(offline.escritura_solo_en_el_nodo)])
 
 
 def _traer(sesion: Session, id_: int) -> Comprobante:
@@ -218,6 +222,62 @@ def _facturar(sesion: Session, emision) -> Comprobante | JSONResponse:
     return comprobante
 
 
+def _sin_conexion_o_sin_arca(e: SinConexion | NodoSinArca) -> HTTPException:
+    """Lo que el nodo contesta cuando no puede pedirle a ARCA (con el ticket prestado del central): 409 `sin_conexion`
+    si el central o ARCA no contestan, 422 `nodo_sin_arca` si el central no presta el ticket (libracore ADR-074)."""
+    if isinstance(e, NodoSinArca):
+        return HTTPException(422, e.detalle())
+    return HTTPException(409, e.detalle())
+
+
+def _es_ensayo_en_el_nodo() -> bool:
+    """Si la configuración de ARCA que el nodo espeja es la de homologación: ahí se corre todo y se revierte
+    (`Ensayo`), sin pasar por la cola, como en la web."""
+    try:
+        return emision_arca.es_ensayo(emision_arca.configuracion_de_la_instancia())
+    except emision_arca.ArcaAmbiguo:
+        return False
+
+
+def _respuesta_del_pedido(sesion: Session, pedido: dict) -> Comprobante | JSONResponse:
+    """Lo que el nodo contesta cuando la persona pidió una factura (ADR-056).
+
+    - **Emitida**: el comprobante, 201, igual que en la web.
+    - **Esperando** (sin conexión, o el central no presta el ticket): 202 `en_cola`. La factura NO existe todavía: sale
+      sola al volver la conexión y el pedido se ve en `GET /api/nodo/cola`.
+    - **A revisar / incierta**: 502 con el motivo (ARCA rechazó, el pedido no se pudo cumplir). El pedido queda en la
+      cola para que un administrador lo corrija o lo descarte.
+    """
+    estado = pedido["estado"]
+    if estado == "emitido":
+        sesion.expire_all()
+        return _traer(sesion, pedido["resultado"]["factura_id"])
+    cuerpo = {"pedido_id": pedido["id"], "estado": estado, "motivo": pedido.get("ultimo_error") or ""}
+    if estado == "esperando":
+        return JSONResponse(status_code=202, content={
+            "codigo": "en_cola",
+            "mensaje": "Sin conexión con el central o con ARCA: la factura queda en cola y se emite sola al volver la "
+                       "conexión.",
+            **cuerpo})
+    raise HTTPException(502, {"codigo": "emision_" + estado, "mensaje": cuerpo["motivo"] or estado, **cuerpo})
+
+
+def _facturar_en_el_nodo(sesion: Session, actual: dict, clase: str, entrada, emision) -> Comprobante | JSONResponse:
+    """En un nodo la factura se **pide** (ADR-056): se valida, queda en la cola y sale en el momento si hay conexión o
+    sola al volver. Contra homologación (`emision` es el camino de siempre) se corre todo y se revierte, sin cola."""
+    try:
+        if _es_ensayo_en_el_nodo():
+            return _facturar(sesion, emision)
+        pedido = emisores.pedir_factura(sesion, actual, clase=clase, entrada=entrada)
+    except facturacion.Rechazo as e:
+        sesion.rollback()
+        raise HTTPException(e.status, e.detalle) from None
+    except (SinConexion, NodoSinArca) as e:
+        sesion.rollback()
+        raise _sin_conexion_o_sin_arca(e) from None
+    return _respuesta_del_pedido(sesion, pedido)
+
+
 # `def` y no `async def`, a propósito: la `Session` y `openssl` son sincrónicos y bloquearían el loop de uvicorn, que
 # corre con un solo proceso. Lo asincrónico (WSAA y WSFE) va con `asyncio.run` en un loop propio de este hilo.
 @router.post("/desde-ordenes", response_model=ComprobanteOut, status_code=201)
@@ -230,9 +290,17 @@ def facturar_ordenes(datos: FacturarOrdenesIn, sesion: Session = Depends(obtener
     CUIT) no se toca nada** (409, y dice cuál). Si ARCA rechaza, no queda nada (502). Contra homologación se corre todo
     y se revierte, y contesta 200 con el resultado del ensayo.
     """
-    return _facturar(sesion, lambda: facturacion.facturar_ordenes(
-        sesion, actual, cliente_id=datos.cliente_id, orden_ids=datos.orden_ids, tipo=datos.tipo, fecha=datos.fecha,
-        vencimiento=datos.fecha_vencimiento_pago, cuenta=datos.fce_cbu, observaciones=datos.observaciones))
+    en_el_nodo = offline.nodo() is not None
+
+    def emision():
+        return facturacion.facturar_ordenes(
+            sesion, actual, cliente_id=datos.cliente_id, orden_ids=datos.orden_ids, tipo=datos.tipo, fecha=datos.fecha,
+            vencimiento=datos.fecha_vencimiento_pago, cuenta=datos.fce_cbu, observaciones=datos.observaciones,
+            numerar=offline.numerar_en_el_nodo if en_el_nodo else None)
+
+    if en_el_nodo:
+        return _facturar_en_el_nodo(sesion, actual, emisores.CLASE_ORDENES, datos, emision)
+    return _facturar(sesion, emision)
 
 
 @router.post("/directa", response_model=ComprobanteOut, status_code=201)
@@ -245,9 +313,17 @@ def facturar_directa(datos: FacturaDirectaIn, sesion: Session = Depends(obtener_
     `POST /desde-ordenes`: sin certificado de producción, 409 y no se toca nada; si ARCA rechaza, no queda nada; contra
     homologación se corre todo y se revierte. El comprobante suma a la cuenta corriente del cliente.
     """
-    return _facturar(sesion, lambda: facturacion.facturar_directa(
-        sesion, actual, cliente_id=datos.cliente_id, conceptos=datos.conceptos, tipo=datos.tipo, fecha=datos.fecha,
-        vencimiento=datos.fecha_vencimiento_pago, cuenta=datos.fce_cbu, observaciones=datos.observaciones))
+    en_el_nodo = offline.nodo() is not None
+
+    def emision():
+        return facturacion.facturar_directa(
+            sesion, actual, cliente_id=datos.cliente_id, conceptos=datos.conceptos, tipo=datos.tipo, fecha=datos.fecha,
+            vencimiento=datos.fecha_vencimiento_pago, cuenta=datos.fce_cbu, observaciones=datos.observaciones,
+            numerar=offline.numerar_en_el_nodo if en_el_nodo else None)
+
+    if en_el_nodo:
+        return _facturar_en_el_nodo(sesion, actual, emisores.CLASE_DIRECTA, datos, emision)
+    return _facturar(sesion, emision)
 
 
 @router.get("/{id_}", response_model=ComprobanteConOrdenes)
@@ -431,6 +507,9 @@ def nota_de_credito(id_: int, datos: NotaDeCreditoIn, sesion: Session = Depends(
     except emision_arca.ArcaRechazo as e:
         sesion.rollback()
         raise HTTPException(502, f"ARCA rechazo la nota de credito: {e}") from None
+    except (SinConexion, NodoSinArca) as e:
+        sesion.rollback()
+        raise _sin_conexion_o_sin_arca(e) from None
     except IntegrityError as err:
         sesion.rollback()
         raise traducir_integridad(err) from None
@@ -500,6 +579,9 @@ def nota_de_debito(id_: int, datos: NotaDeDebitoIn, sesion: Session = Depends(ob
     except emision_arca.ArcaRechazo as e:
         sesion.rollback()
         raise HTTPException(502, f"ARCA rechazo la nota de debito: {e}") from None
+    except (SinConexion, NodoSinArca) as e:
+        sesion.rollback()
+        raise _sin_conexion_o_sin_arca(e) from None
     except IntegrityError as err:
         sesion.rollback()
         raise traducir_integridad(err) from None

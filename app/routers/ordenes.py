@@ -15,6 +15,7 @@ from sqlalchemy import String, cast, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import offline
 from app.auth import get_current_user, require_staff
 from app.db import obtener_sesion
 from app.models.enums import AccionAuditoria, EstadoOrden, EtapaOrden
@@ -27,8 +28,10 @@ from app.servicios.ordenes import (
     sincronizar_comision,
 )
 
+# Con un nodo vinculado se escribe sólo en el nodo (ADR-056): en el central se consulta, y escribir da 409
+# `solo_en_el_nodo`. Sin nodo vinculado, la web opera como siempre.
 router = APIRouter(prefix="/api/ordenes", tags=["ordenes"],
-                   dependencies=[Depends(require_staff)])
+                   dependencies=[Depends(require_staff), Depends(offline.escritura_solo_en_el_nodo)])
 
 
 def _traer(sesion: Session, id_: int) -> OrdenCarga:

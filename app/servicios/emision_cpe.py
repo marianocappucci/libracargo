@@ -67,15 +67,38 @@ INTERVINIENTES = ("cuitRemitenteComercialVentaPrimaria", "cuitRemitenteComercial
 VIGENCIA_ENLACE = 7 * 24 * 3600
 
 
+class EmisionApagada(Rechazo):
+    """La emisión de Cartas de Porte **reales** está apagada (el interruptor de la empresa, ADR-043).
+
+    Es un `Rechazo` 409 como siempre. Además lleva `rechazo_del_central = True`, la marca con la que la cola de ARCA del
+    nodo (libracore ADR-079) distingue «no se puede ahora, y no se arregla solo» de un fallo del pedido: el pedido
+    **queda esperando** con este motivo, sin gastar un intento, hasta que un administrador prenda el interruptor en el
+    central (ADR-056). Un camión no sale con una CPE que nadie autorizó emitir.
+    """
+
+    rechazo_del_central = True
+
+
+class EmitidaSinGuardar(Rechazo):
+    """ARCA autorizó la CPE y no se pudo guardar acá. Lleva `emision_incierta = True`: la cola del nodo la deja
+    `incierta` y **no la reintenta** (emitiría una segunda para el mismo viaje); una persona la trae con «Traer de ARCA»
+    por su CTG."""
+
+    emision_incierta = True
+
+
 # ── Estado y traba ─────────────────────────────────────────────────────────
 
 def _config(sesion: Session) -> ConfiguracionEmpresa | None:
     return sesion.get(ConfiguracionEmpresa, 1)
 
 
-def estado(sesion: Session) -> dict:
-    """En qué ambiente se emitiría y si está habilitado. En homologación siempre se puede (no tiene efecto fiscal)."""
-    amb = cpe_servicio.ambiente()
+def estado(sesion: Session, ambiente: str | None = None) -> dict:
+    """En qué ambiente se emitiría y si está habilitado. En homologación siempre se puede (no tiene efecto fiscal).
+
+    `ambiente` es el del ticket que presta el central a un nodo (ADR-056): el nodo no tiene el par de `wscpe` en disco y
+    el ambiente lo dice el ticket."""
+    amb = ambiente or cpe_servicio.ambiente()
     cfg = _config(sesion)
     habilitada = bool(cfg and cfg.cpe_emision_habilitada)
     return {"ambiente": amb, "habilitada": habilitada,
@@ -310,21 +333,33 @@ def _exigir_que_emitamos_nosotros(sesion: Session, cuit: str) -> None:
                            "nombre.")
 
 
-def emitir(sesion: Session, usuario: dict | None, orden_id: int, datos: dict, *, confirmo: bool) -> CartaPorte:
-    """Emite la CPE de la orden a nombre del titular de `datos` y la guarda vinculada. Ver el docstring del módulo."""
+def emitir(sesion: Session, usuario: dict | None, orden_id: int, datos: dict, *, confirmo: bool,
+           ticket: dict | None = None) -> CartaPorte:
+    """Emite la CPE de la orden a nombre del titular de `datos` y la guarda vinculada. Ver el docstring del módulo.
+
+    `ticket` es el de `wscpe` que **presta el central a un nodo** (ADR-056, `ctx.ticket("wscpe")` de la cola): trae el
+    ambiente y reemplaza al par en disco, que el nodo no tiene. Con él, además, `EmisionIncierta` sale tal cual (la cola
+    la deja `incierta` y no la reintenta) y una CPE emitida que no se pudo guardar sale como `EmitidaSinGuardar`.
+    """
+    prestado = ticket is not None
     orden = sesion.get(OrdenCarga, orden_id)
     if orden is None:
         raise Rechazo(404, f"no existe la orden {orden_id}")
-    est = estado(sesion)
+    est = estado(sesion, (ticket or {}).get("ambiente"))
     amb = est["ambiente"]
     if amb is None:
         raise Rechazo(409, "No hay certificado de «CTG y Carta de Porte» cargado: cargalo en Configuración / ARCA.")
     if not est["puede_emitir"]:
-        raise Rechazo(409, "La emisión de Cartas de Porte reales está apagada: la habilita un administrador.")
+        raise EmisionApagada(409, "La emisión de Cartas de Porte reales está apagada: la habilita un administrador.")
     if amb == "produccion" and not confirmo:
         raise Rechazo(422, "Confirmá que vas a emitir una Carta de Porte real.")
     _exigir_que_emitamos_nosotros(sesion, solo_digitos(datos.get("cuit_titular", "")))
-    cuit, amb, ticket = _acceso(datos.get("cuit_titular", ""))
+    if ticket is None:
+        cuit, amb, ticket = _acceso(datos.get("cuit_titular", ""))
+    else:
+        cuit = solo_digitos(datos.get("cuit_titular", ""))
+        if len(cuit) != 11:
+            raise Rechazo(422, "Elegí a nombre de qué titular se emite (11 dígitos).")
     habilitados = w.cuits_habilitados(ticket)
     if habilitados and cuit not in habilitados:
         raise Rechazo(409, f"El titular {cuit} no le delegó la emisión a este certificado en ARCA.")
@@ -337,6 +372,9 @@ def emitir(sesion: Session, usuario: dict | None, orden_id: int, datos: dict, *,
     except w.SolicitudInvalida as e:
         raise Rechazo(422, "; ".join(e.problemas)) from None
     except w.EmisionIncierta as e:
+        if prestado:
+            # La cola del nodo (libracore ADR-079) la sabe leer: queda `incierta` y no se reintenta.
+            raise
         raise Rechazo(502, f"{e} (sucursal {e.sucursal}, número {e.nro_orden})") from None
     except w.CuitNoRelacionado as e:
         raise Rechazo(409, str(e)) from None
@@ -360,9 +398,9 @@ def emitir(sesion: Session, usuario: dict | None, orden_id: int, datos: dict, *,
     except Exception:
         sesion.rollback()
         logger.exception("CPE emitida (CTG %s) y no guardada", cpe.nro_ctg)
-        raise Rechazo(500, f"La Carta de Porte SE EMITIÓ en ARCA (CTG {cpe.nro_ctg}, N.º {cpe.numero}) pero no "
-                           "se pudo guardar acá: traela con «Traer de ARCA» con ese CTG. No la vuelvas a emitir."
-                      ) from None
+        raise EmitidaSinGuardar(
+            500, f"La Carta de Porte SE EMITIÓ en ARCA (CTG {cpe.nro_ctg}, N.º {cpe.numero}) pero no "
+                 "se pudo guardar acá: traela con «Traer de ARCA» con ese CTG. No la vuelvas a emitir.") from None
     return fila
 
 

@@ -288,26 +288,22 @@ def _concepto_resumen(conceptos: Sequence[ConceptoIn]) -> str:
     return primero if not mas else f"{primero} y {mas} concepto{'s' if mas > 1 else ''} mas"
 
 
-def _emitir(sesion: Session, actual: dict, *, cliente: Tercero, tipo: TipoComprobante, fecha: date,
-            vencimiento: date | None, cuenta: str | None, neto: Decimal, iva: Decimal, total: Decimal,
-            items: list[dict], ordenes: list[OrdenCarga], descripcion: str, observaciones: str = "") -> Comprobante:
-    """La emisión, igual para los dos caminos: ARCA da el número, el comprobante entra con su CAE, las órdenes se
-    cierran y la cuenta corriente del cliente suma la deuda. **Una sola transacción**; no hace `commit`.
+def exigir_que_se_pueda_emitir(sesion: Session, cliente: Tercero, tipo: TipoComprobante, fecha: date,
+                               vencimiento: date | None) -> None:
+    """Lo que se dice **antes** de tocar nada, y con el motivo: sin CUIT en la empresa, sin certificado, con un CUIT de
+    ARCA que no es el de la empresa, una FCE sin vencimiento o un CUIT del cliente que no sirve. Levanta `Rechazo`.
 
-    Ver el docstring del módulo: si ARCA rechaza no queda nada, sin certificado es un 409 y no se toca nada, y contra
-    homologación se corre todo y se revierte (`Ensayo`).
+    Lo corre `_emitir` y lo corre también el router del nodo antes de dejar un pedido en la cola (ADR-056): un
+    pedido que ya se sabe inválido no tiene por qué esperar a que vuelva la conexión para fallar.
     """
-    # ── ¿Puede emitir la empresa? ──────────────────────────────────────────
-    # Se dice **antes** de tocar nada, y con el motivo: sin CUIT en la empresa, sin certificado, o con un CUIT de
-    # ARCA que no es el de la empresa. 🔴 Envuelto también el `ArcaAmbiguo`: con dos configuraciones de ARCA activas
-    # no hay forma de saber con qué CUIT firmar, y elegir una es facturar por otro contribuyente sin fallar.
+    # 🔴 Envuelto también el `ArcaAmbiguo`: con dos configuraciones de ARCA activas no hay forma de saber con qué CUIT
+    # firmar, y elegir una es facturar por otro contribuyente sin fallar.
     try:
         problema = emision_arca.problema_de_emision(sesion)
     except emision_arca.ArcaAmbiguo as e:
         raise Rechazo(409, str(e)) from None
     if problema:
         raise Rechazo(409, f"{problema}. No se emitió nada")
-    es_fce = tipo in TIPOS_FCE
     validar_tipo_y_fechas(tipo, fecha, vencimiento, cliente)
 
     # Antes de pedirle el número a ARCA: un CUIT que no sirve se dice acá, con el nombre del cliente y
@@ -315,6 +311,24 @@ def _emitir(sesion: Session, actual: dict, *, cliente: Tercero, tipo: TipoCompro
     problema = emision_arca.problema_del_cuit_del_cliente(cliente, tipo)
     if problema:
         raise Rechazo(422, problema)
+
+
+def _emitir(sesion: Session, actual: dict, *, cliente: Tercero, tipo: TipoComprobante, fecha: date,
+            vencimiento: date | None, cuenta: str | None, neto: Decimal, iva: Decimal, total: Decimal,
+            items: list[dict], ordenes: list[OrdenCarga], descripcion: str, observaciones: str = "",
+            numerar=None) -> Comprobante:
+    """La emisión, igual para los dos caminos: ARCA da el número, el comprobante entra con su CAE, las órdenes se
+    cierran y la cuenta corriente del cliente suma la deuda. **Una sola transacción**; no hace `commit`.
+
+    Ver el docstring del módulo: si ARCA rechaza no queda nada, sin certificado es un 409 y no se toca nada, y contra
+    homologación se corre todo y se revierte (`Ensayo`).
+
+    `numerar` es de la **cola del nodo** (ADR-056): el `ctx.numerar` con el que se pide el número a ARCA con el ticket
+    prestado del central. Fuera de un nodo no se usa.
+    """
+    # ── ¿Puede emitir la empresa? ──────────────────────────────────────────
+    exigir_que_se_pueda_emitir(sesion, cliente, tipo, fecha, vencimiento)
+    es_fce = tipo in TIPOS_FCE
 
     # 🔴 Un doble clic emite dos facturas: sin órdenes que lo frenen (la factura directa) nada lo impediría. El candado
     # es de la base, no del proceso, y dura hasta el `commit` o el `rollback` de esta transacción.
@@ -328,7 +342,8 @@ def _emitir(sesion: Session, actual: dict, *, cliente: Tercero, tipo: TipoCompro
             # 🔑 `asyncio.run` en este hilo, y no un `await` en el loop de uvicorn: la corrutina es `async`
             # sólo en los bordes —la red—, y entre medio lee la base y firma con `openssl`, todo sincrónico.
             # Acá eso bloquea a este hilo y a nadie más (el router es `def`, no `async def`).
-            numero, ta, cfg_arca, emisor = asyncio.run(emision_arca.numero_que_sigue(sesion, tipo))
+            numero, ta, cfg_arca, emisor = asyncio.run(
+                emision_arca.numero_que_sigue(sesion, tipo, numerar=numerar))
         except emision_arca.ArcaNoConfigurado as e:
             raise Rechazo(409, str(e)) from None
         except emision_arca.ArcaRechazo as e:
@@ -418,7 +433,7 @@ def _emitir(sesion: Session, actual: dict, *, cliente: Tercero, tipo: TipoCompro
 
 def facturar_ordenes(sesion: Session, actual: dict, *, cliente_id: int, orden_ids: list[int],
                      tipo: TipoComprobante, fecha: date, vencimiento: date | None = None,
-                     cuenta: str | None = None, observaciones: str = "") -> Comprobante:
+                     cuenta: str | None = None, observaciones: str = "", numerar=None) -> Comprobante:
     """«Facturar pendientes»: emite por ARCA el comprobante de las órdenes elegidas. No hace `commit`.
 
     Los ítems y los importes salen de las órdenes (`comprobantes.items_de`, `sumar_ordenes`): el neto es la suma de las
@@ -431,12 +446,13 @@ def facturar_ordenes(sesion: Session, actual: dict, *, cliente_id: int, orden_id
     return _emitir(
         sesion, actual, cliente=cliente, tipo=tipo, fecha=fecha, vencimiento=vencimiento, cuenta=cuenta,
         neto=suma.neto, iva=suma.iva, total=suma.total, items=comprobantes.items_de(ordenes), ordenes=ordenes,
-        descripcion="Ordenes " + ", ".join(str(o.id) for o in ordenes), observaciones=observaciones)
+        descripcion="Ordenes " + ", ".join(str(o.id) for o in ordenes), observaciones=observaciones,
+        numerar=numerar)
 
 
 def facturar_directa(sesion: Session, actual: dict, *, cliente_id: int, conceptos: Sequence[ConceptoIn],
                      tipo: TipoComprobante, fecha: date, vencimiento: date | None = None,
-                     cuenta: str | None = None, observaciones: str = "") -> Comprobante:
+                     cuenta: str | None = None, observaciones: str = "", numerar=None) -> Comprobante:
     """«Nueva factura»: emite por ARCA un comprobante de conceptos libres, sin órdenes ni remitos. No hace `commit`.
 
     El comprobante queda marcado `sin_ordenes`: el gate de F5 lo cuenta aparte. Además de las reglas de toda
@@ -451,4 +467,30 @@ def facturar_directa(sesion: Session, actual: dict, *, cliente_id: int, concepto
     return _emitir(
         sesion, actual, cliente=cliente, tipo=tipo, fecha=fecha, vencimiento=vencimiento, cuenta=cuenta,
         neto=calculo["neto"], iva=calculo["iva"], total=calculo["total"], items=calculo["items"], ordenes=[],
-        descripcion="Factura directa: " + _concepto_resumen(conceptos), observaciones=observaciones)
+        descripcion="Factura directa: " + _concepto_resumen(conceptos), observaciones=observaciones,
+        numerar=numerar)
+
+
+# ── Antes de dejar un pedido en la cola del nodo ───────────────────────────
+
+
+def validar_de_ordenes(sesion: Session, *, cliente_id: int, orden_ids: list[int], tipo: TipoComprobante, fecha: date,
+                       vencimiento: date | None = None) -> None:
+    """Todo lo que `facturar_ordenes` dice antes de pedirle el número a ARCA, **sin emitir ni dejar nada**: para que el
+    nodo (ADR-056) no encole un pedido que ya se sabe inválido. Levanta `Rechazo`. El `FOR UPDATE` de las órdenes se
+    suelta con el `rollback` de quien llama."""
+    cliente = _tercero(sesion, cliente_id)
+    validar_tipo_y_fechas(tipo, fecha, vencimiento, cliente)
+    cargar_ordenes(sesion, cliente_id=cliente_id, orden_ids=orden_ids)
+    exigir_que_se_pueda_emitir(sesion, cliente, tipo, fecha, vencimiento)
+
+
+def validar_directa(sesion: Session, *, cliente_id: int, conceptos: Sequence[ConceptoIn], tipo: TipoComprobante,
+                    fecha: date, vencimiento: date | None = None) -> None:
+    """Lo mismo para «Nueva factura»: lo que `facturar_directa` dice antes de ir a ARCA."""
+    cliente = _tercero(sesion, cliente_id)
+    validar_tipo_y_fechas(tipo, fecha, vencimiento, cliente)
+    exigir_tipo_valido(sesion, tipo, cliente)
+    if totales_de_conceptos(conceptos, tipo)["total"] <= 0:
+        raise Rechazo(422, "los conceptos suman cero: no hay nada que facturar")
+    exigir_que_se_pueda_emitir(sesion, cliente, tipo, fecha, vencimiento)

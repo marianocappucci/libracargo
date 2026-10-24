@@ -64,6 +64,26 @@ deja de hacer esa parte del trabajo (ADR-051).
 - Un cron nuevo lleva su log a `/etc/logrotate.d/libra-crons` (lista explícita, no un glob), y se verifica en las tres
   capas del README de LibraClub: a mano, con el `env -i` del cron, y viéndolo disparar solo.
 
+## Versión de escritorio (nodo de LibraEdge)
+
+La oficina puede correr un **nodo**: la misma app en su PC, que sigue operando sin internet y sincroniza con el central
+(ADR-056). **Con un nodo vinculado la oficina opera y la web consulta**: órdenes, caja, asientos, facturas y CPE se escriben
+sólo en el nodo y, en el central, esas escrituras contestan 409 `solo_en_el_nodo`. Sin nodo vinculado nada cambia.
+
+```bash
+# En el central, una vez (publica la referencia que el nodo va a espejar) y por cada nodo:
+LIBRAEDGE_APROVISIONAMIENTO=app.offline:aprovisionamiento libraedge-central nodo publicar
+# El alta del nodo y su código de vinculación salen de la pantalla «Sucursal sin internet» (sólo administradores).
+# Lo que el central rechaza de un nodo queda en revisión manual:
+LIBRAEDGE_DESPACHADOR=app.routers.sincronizacion_offline:despachador libraedge-central revision listar
+```
+
+- **Sin internet** el nodo consulta todo, carga órdenes y opera la caja y las cuentas; **las facturas y las CPE quedan en
+  cola y se emiten solas al volver** (`GET /api/nodo/cola`). Mientras una CPE esté en cola no hay CPE válida para viajar.
+- El nodo instalado necesita `LIBRAEDGE_CARGA_INICIAL=app.servicios.carga_inicial:aplicar_carga_inicial` (lo declara el
+  instalador de libraedge): al vincular baja lo que el central ya tenía.
+- **Vincular el nodo de un cliente real es una decisión aparte**, con su respaldo y su restauración de prueba.
+
 ## Documentación relacionada
 
 - [ROADMAP.md](ROADMAP.md) · [TASKS.md](TASKS.md) · [ARCHITECTURE.md](ARCHITECTURE.md)

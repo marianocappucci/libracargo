@@ -278,4 +278,7 @@ def test_el_central_no_edita_un_movimiento_que_subio_de_un_nodo(cliente, engine,
     with engine.begin() as con:     # como lo deja el aplicador del central (ADR-076 del motor)
         con.execute(text("UPDATE caja_movimientos SET origen = 'oficina-1', origen_id = 77 WHERE id = :i"), {"i": id_})
     r = cliente.put(f"/api/caja/{id_}", json=cobro(tercero, importe="1.00"))
-    assert r.status_code == 409 and "vino de un nodo" in r.json()["detail"]
+    assert r.status_code == 409
+    # La guarda es del motor (libracore ADR-080): el 409 trae `{"codigo", "mensaje"}`.
+    assert r.json()["detail"]["codigo"] == "movimiento_del_nodo"
+    assert "vino de un nodo" in r.json()["detail"]["mensaje"]

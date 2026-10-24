@@ -754,6 +754,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "libraauth", extra = ["migrations"] },
     { name = "libracore", extra = ["migrations"] },
+    { name = "libraedge" },
     { name = "pdfplumber" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
@@ -782,6 +783,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
     { name = "libraauth", extras = ["migrations"], git = "https://github.com/marianocappucci/libraauth.git?rev=v0.55.0" },
     { name = "libracore", extras = ["migrations"], git = "https://github.com/marianocappucci/libracore.git?rev=v1.192.0" },
+    { name = "libraedge", git = "https://github.com/marianocappucci/libraedge.git?rev=1d7ab0aff1b14c6217ffedb98f90818d6b6d3d35" },
     { name = "pdfplumber", specifier = ">=0.11" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.9" },
@@ -821,6 +823,11 @@ migrations = [
     { name = "alembic" },
     { name = "sqlalchemy" },
 ]
+
+[[package]]
+name = "libraedge"
+version = "0.21.1.dev10"
+source = { git = "https://github.com/marianocappucci/libraedge.git?rev=1d7ab0aff1b14c6217ffedb98f90818d6b6d3d35#1d7ab0aff1b14c6217ffedb98f90818d6b6d3d35" }
 
 [[package]]
 name = "mako"
