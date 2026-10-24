@@ -102,4 +102,21 @@ describe('Emitir carta de porte · la página', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('no tiene un número de orden válido')
     expect(get).not.toHaveBeenCalled()
   })
+
+  it('🔴 una orden cargada en el nodo (id negativo) SÍ es una orden: se trae y se le emite, con título de provisoria', async () => {
+    // Antes `id > 0` la rechazaba con «no tiene un número de orden válido»: en un nodo sin conexión no se podía emitir ninguna carta.
+    responder({ id: -3, estado: 'pendiente' })
+    abrir('/cartas-porte/emitir/-3')
+    expect(await screen.findByRole('heading', { name: 'Emitir carta de porte · Orden provisoria P-3' })).toBeInTheDocument()
+    expect(get).toHaveBeenCalledWith('/api/ordenes/-3')
+    expect(await screen.findByLabelText('A nombre de')).toBeInTheDocument()
+    expect(screen.queryByText(/número de orden válido/)).toBeNull()
+  })
+
+  it('el 0 no es una orden', async () => {
+    responder({ id: 0, estado: 'pendiente' })
+    abrir('/cartas-porte/emitir/0')
+    expect(await screen.findByRole('alert')).toHaveTextContent('no tiene un número de orden válido')
+    expect(get).not.toHaveBeenCalled()
+  })
 })

@@ -3,6 +3,16 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — La cola de comprobantes del nodo en pantalla (ADR-057)
+
+- **Frontend, con libra-ui v0.180.0 (ADR-094)** (2026-10-24; plan «LibraCargo y LibraClub en la versión de escritorio», PR 13 de libra-ui cableado). 🔴 **Mientras la carta de porte no se emite no hay CPE válida y el camión no puede viajar** (límite legal): la pantalla lo dice en rojo.
+- **El cartel «Sin conexión…»** del layout, con el texto de un producto que encola (facturas y cartas de porte quedan en cola; no hay CPE válida para viajar). Consulta `GET /api/nodo/cola?limite=1` y no `/api/nodo/conexion`, que es del motor de ventas y LibraCargo no monta.
+- **«Cola de comprobantes»** (`/cola`): la bandeja del kit con cada pedido descripto con lo de acá («Carta de porte · Orden 41», «Factura · Agro Norte · 3 órdenes»). La entrada del menú **sólo aparece en un nodo**; reintentar, descartar y marcar emitido, sólo administradores.
+- **El aviso «Esta carga todavía no tiene CPE válida: no puede viajar hasta que se emita»** en la ficha de la orden y en «Emitir carta de porte», cuando la CPE de esa orden está en cola o a revisar (se la reconoce por `datos.orden_id`: el `origen_id` es `orden41:<uuid>`). Con la CPE emitida, sin pedido o fuera de un nodo no aparece.
+- **El 202 `en_cola` / `cpe_en_cola`** ya no se toma por un comprobante emitido: «Facturar pendientes», «Nueva factura» y el asistente de la CPE muestran «Se emite al volver la conexión.» (la CPE, en rojo y con el aviso legal) y se quedan en la pantalla.
+- **El id provisorio negativo** de una orden cargada en el nodo se muestra como «Orden provisoria P-3» con la etiqueta «Sin subir al central», no como «Nº 000000-3» ni «#-3» (ficha, hoja impresa, anular, facturar pendientes, comprobantes, reportes). 🔴 De paso: `/cartas-porte/emitir/-3` rechazaba el id con «no tiene un número de orden válido» (pedía `id > 0`): en un nodo no se podía emitir la carta de ninguna orden recién cargada.
+- Fuera de un nodo no cambia nada visible. Tests: `src/cola-del-nodo.test.tsx`, `pages/Ordenes.cola.test.tsx`, `lib/*.test.ts`, `api/errores-del-nodo.test.ts` y los casos nuevos de «Facturar pendientes», «Nueva factura», el asistente y la página de «Emitir carta de porte» y la hoja impresa.
+
 ## [Unreleased] — LibraCargo en la versión de escritorio: la oficina con nodo opera y la web consulta (ADR-056)
 
 - **Nodo de LibraEdge** (2026-10-24; plan «LibraCargo y LibraClub en la versión de escritorio», PR 9). Con un nodo vinculado, **órdenes, caja, asientos, facturas y CPE se escriben sólo en el nodo** y en el central esas escrituras contestan **409 `solo_en_el_nodo`**; la web consulta. 🔑 **Sólo si la instancia tiene un nodo vinculado** (una fila activa en `node_identity`): **sin nodo, la web opera exactamente como hoy** (Suitrans) y al dar de baja el nodo vuelve a operar. En el nodo, lo que manda el central (maestros, configuración, usuarios, ARCA, tarifario, titulares) es de sólo lectura (409 `solo_en_el_central`); lo único que el nodo escribe de los maestros es el alta de un tercero nuevo.

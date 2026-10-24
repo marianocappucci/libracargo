@@ -22,6 +22,8 @@
  *  Los textos de error del servidor se muestran siempre tal cual: son los que dicen qué hacer.
  */
 import { ApiError } from 'libra-ui/api-client'
+import { AvisoEnCola, AvisoSinCpeValida } from 'libra-ui/AvisosDeLaCola'
+import { useAvisoDeEnCola } from 'libra-ui/cola-del-nodo'
 import { TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -46,6 +48,7 @@ import {
 import type { Orden } from '@/api/ordenes'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { esPedidoDeLaOrden } from '@/lib/pedido-de-la-cola'
 import { cn } from '@/lib/utils'
 
 type Paso = 'titular' | 'datos' | 'confirmar' | 'resultado' | 'incierto'
@@ -122,6 +125,8 @@ function Asistente({ orden, alCerrar, alEmitida }: {
   const [errorDeEnvio, setErrorDeEnvio] = useState<string | null>(null)
   const [incierto, setIncierto] = useState<string | null>(null)
   const [emitida, setEmitida] = useState<CartaPorte | null>(null)
+  // En un nodo sin conexión el servidor contesta 202 `cpe_en_cola` (ADR-056): la carta NO existe todavía, sale sola al volver la conexión.
+  const { aviso: enCola, registrar: registrarEnCola } = useAvisoDeEnCola()
 
   // Mientras se envía, cerrar o recargar la pestaña pide confirmación: irse no frena el pedido, y no se sabría si ARCA la
   // emitió.
@@ -226,6 +231,8 @@ function Asistente({ orden, alCerrar, alEmitida }: {
     setEnviando(true); setErrorDeEnvio(null)
     try {
       const carta = await cartasPorte.emitir(orden.id, confirmo, datosDe(b, cuit))
+      // 🔴 Un 202 no es una carta emitida: no hay CTG ni PDF, y mostrarlo como el resultado de siempre diría que el camión puede viajar.
+      if (registrarEnCola(carta)) { setPaso('resultado'); return }
       setEmitida(carta); setPaso('resultado')
       alEmitida?.(carta)
     } catch (e) {
@@ -554,6 +561,10 @@ function Asistente({ orden, alCerrar, alEmitida }: {
         </Button>
       </>
     )
+  } else if (paso === 'resultado' && enCola) {
+    // Sin botón de cierre: es el resultado de la pantalla, y «Cerrar» (el pie) vuelve a la orden. Dejarlo cerrar dejaría la pantalla en blanco.
+    cuerpo = <AvisoEnCola aviso={enCola} />
+    pie = <Button onClick={alCerrar}>Cerrar</Button>
   } else if (paso === 'resultado' && emitida && b) {
     cuerpo = (
       <div className="grid gap-4">
@@ -620,6 +631,9 @@ function Asistente({ orden, alCerrar, alEmitida }: {
 
   return (
     <div className="grid gap-4">
+      {/* 🔴 Si esta orden ya tiene una carta de porte esperando en la cola del nodo (o a revisar), la carga no tiene CPE válida. Cuando se acaba de
+          pedir, el aviso del 202 ocupa su lugar y éste no se repite. No dibuja nada fuera de un nodo, con la CPE emitida o sin pedido. */}
+      {!enCola && <AvisoSinCpeValida coincide={esPedidoDeLaOrden(orden.id)} />}
       {paso !== 'incierto' && (
         <ol aria-label="Pasos" className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
           {PASOS.map(({ paso: p, etiqueta }, i) => (

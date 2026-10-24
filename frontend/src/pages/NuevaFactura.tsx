@@ -16,6 +16,8 @@
  * 🔑 **Todos los conceptos de una factura llevan la misma alícuota**: ARCA recibe un solo bloque de IVA por comprobante.
  * La pantalla lo dice y no deja emitir con alícuotas mezcladas (para eso, una factura por alícuota).
  */
+import { AvisoEnCola } from 'libra-ui/AvisosDeLaCola'
+import { useAvisoDeEnCola } from 'libra-ui/cola-del-nodo'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
@@ -99,6 +101,8 @@ export default function NuevaFactura() {
   // Emitir por ARCA no se deshace: el primer click pide confirmar, el segundo emite.
   const [confirmando, setConfirmando] = useState(false)
   const [aviso, setAviso] = useState<string | null>(null)
+  // El 202 `en_cola` de un nodo sin conexión (ADR-056): la factura NO existe todavía, sale sola al volver la conexión.
+  const { aviso: enCola, registrar: registrarEnCola, cerrar: cerrarEnCola } = useAvisoDeEnCola()
   const [error, setError] = useState<string | null>(null)
 
   const clienteId = params.get('cliente') ?? ''
@@ -171,12 +175,15 @@ export default function NuevaFactura() {
     : fce && vencimiento < fecha ? 'El vencimiento de pago no puede ser anterior a la fecha del comprobante.'
     : conceptos.map((c) => queFalta(c, claseC)).find((m) => m !== null) ?? null
   const impedimento = faltan ?? (alicuotasMezcladas
-    ? 'Todos los conceptos llevan la misma alícuota de IVA: emití una factura por alícuota.' : null)
+    ? 'Todos los conceptos llevan la misma alícuota de IVA: emití una factura por alícuota.'
+    // Recién quedó en la cola: pedirla otra vez la emitiría dos veces al volver la conexión. Se cierra el aviso para pedir otra.
+    : enCola ? 'La factura anterior quedó en la cola. Cerrá el aviso para pedir otra.' : null)
 
   async function emitir() {
     if (!tipo) return
     setError(null)
     setAviso(null)
+    cerrarEnCola()
     setEnviando(true)
     try {
       const hecho = await comprobantes.facturarDirecta({
@@ -192,6 +199,13 @@ export default function NuevaFactura() {
         })),
         observaciones: observaciones.trim() || undefined,
       })
+      // 🔴 Un 202 no es un comprobante: la factura quedó en la cola del nodo y no hay a dónde navegar. Se queda en la pantalla con el aviso;
+      // el formulario sigue como estaba por si quien lo cargó quiere revisarlo (pedir otra igual duplicaría la factura al volver la conexión).
+      if (registrarEnCola(hecho)) {
+        setConfirmando(false)
+        setEnviando(false)
+        return
+      }
       if (hecho && 'ensayo' in hecho) {
         // Homologación: se corrió todo contra ARCA y no se guardó nada.
         setAviso(`Ensayo contra ${hecho.ambiente}: ARCA autorizó una factura de prueba `
@@ -229,6 +243,8 @@ export default function NuevaFactura() {
         <p role="alert" className="mb-4 rounded border border-destructive/40 p-3 text-sm">{error}</p>
       )}
       {aviso && <p role="status" className="mb-4 rounded border p-3 text-sm font-semibold">{aviso}</p>}
+
+      <AvisoEnCola aviso={enCola} onCerrar={cerrarEnCola} className="mb-4" />
 
       <section className="mb-6 rounded border p-4">
         <h2 className="mb-3 text-sm font-semibold">Datos del comprobante</h2>

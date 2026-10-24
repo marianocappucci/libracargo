@@ -44,6 +44,9 @@ describe('el icono del título sale del sidebar', () => {
     // antes este producto dibujaba su propia barra de pestañas con las clases
     // de `tabs.tsx` copiadas a mano, y su propio `TituloPantalla`. Se veía casi
     // igual y era otro mecanismo.
-    expect(sinTitulo.map((d) => d.ruta)).toEqual(['/configuracion', '/usuarios'])
+    //
+    // `/cola` se sumó con la cola de comprobantes del nodo (libra-ui ADR-094): la pantalla es `BandejaDeLaCola` y el título, con el ícono de
+    // la bandeja de comprobantes del catálogo (el mismo del menú), lo pone ella.
+    expect(sinTitulo.map((d) => d.ruta)).toEqual(['/cola', '/configuracion', '/usuarios'])
   })
 })

@@ -90,6 +90,17 @@ describe('OrdenImpresa', () => {
     expect(document.getElementById('hoja-impresa')!.textContent).toContain('—')
   })
 
+  it('🔴 una orden cargada en el nodo sin conexión (id negativo) sale «Provisoria P-3» y no «Nº 000000-3»', () => {
+    render(<OrdenImpresa orden={{ ...ORDEN, id: -3 }} opciones={OPCIONES} empresa={EMPRESA} />)
+    const numero = document.querySelector('#hoja-impresa .numero')!
+    expect(numero.textContent).toBe('Provisoria P-3')
+  })
+
+  it('una orden del central sigue saliendo con su número de siempre', () => {
+    render(<OrdenImpresa orden={ORDEN} opciones={OPCIONES} empresa={EMPRESA} />)
+    expect(document.querySelector('#hoja-impresa .numero')!.textContent).toBe('Nº 00004337')
+  })
+
   it('no se ve en pantalla: la clase la esconde hasta imprimir', () => {
     render(<OrdenImpresa orden={ORDEN} opciones={OPCIONES} empresa={EMPRESA} />)
     expect(document.getElementById('hoja-impresa')!.className).toContain('hoja-impresa')

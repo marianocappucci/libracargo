@@ -5,7 +5,7 @@
  * que acá sale el CAE: no hay pre factura que revisar después, así que el botón pide una confirmación, y no hay punto
  * de venta ni número (los pone ARCA). El comprobante emitido se abre en Comprobantes.
  */
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -257,6 +257,77 @@ describe('Facturar pendientes', () => {
     expect(screen.queryByText('Pantalla de los comprobantes')).toBeNull()
     // Vuelve a «Facturar»: la confirmación se desarma y se puede reintentar.
     expect(screen.getByText('Facturar')).toBeEnabled()
+  })
+
+  // ── Un nodo sin conexión: la factura queda en la cola (ADR-056, libra-ui ADR-094) ───────────────
+  describe('en un nodo sin conexión', () => {
+    const EN_COLA = {
+      codigo: 'en_cola', pedido_id: 4, estado: 'esperando', motivo: '',
+      mensaje: 'Sin conexión con el central o con ARCA: la factura queda en cola y se emite sola al volver la conexión.',
+    }
+
+    it('🔴 un 202 `en_cola` NO abre un comprobante: se queda en la pantalla con el aviso «Se emite al volver la conexión.»', async () => {
+      responder([orden(1), orden(2)])
+      post.mockResolvedValue(EN_COLA)
+      await abrir()
+      await waitFor(() => expect(casilla(1)).toBeInTheDocument())
+      fireEvent.click(casilla(1))
+      await emitir()
+
+      expect(await screen.findByText('Se emite al volver la conexión.')).toBeInTheDocument()
+      // No se navegó a Comprobantes (no hay comprobante) y la confirmación se desarmó.
+      expect(screen.queryByText('Pantalla de los comprobantes')).toBeNull()
+      expect(screen.getByRole('heading', { name: 'Facturar pendientes' })).toBeInTheDocument()
+      expect(screen.queryByText('Confirmar y emitir')).toBeNull()
+      // La orden ya está en un pedido abierto: se suelta de la selección, para no pedirla dos veces.
+      expect(screen.getByText('0 orden/es elegida/s')).toBeInTheDocument()
+      expect(screen.getByText('Facturar')).toBeDisabled()
+    })
+
+    it('el aviso de una factura es un estado (no una alarma) y se puede cerrar', async () => {
+      responder([orden(1)])
+      post.mockResolvedValue(EN_COLA)
+      await abrir()
+      await waitFor(() => expect(casilla(1)).toBeInTheDocument())
+      fireEvent.click(casilla(1))
+      await emitir()
+      const aviso = (await screen.findByText('Se emite al volver la conexión.')).closest('[data-slot="aviso-en-cola"]')!
+      expect(aviso).toHaveAttribute('role', 'status')
+      fireEvent.click(within(aviso as HTMLElement).getByRole('button', { name: 'Cerrar aviso' }))
+      expect(screen.queryByText('Se emite al volver la conexión.')).toBeNull()
+    })
+
+    it('un 201 con el comprobante (hay conexión) sigue abriendo el comprobante, sin aviso de cola', async () => {
+      responder([orden(1)])
+      post.mockResolvedValue({ id: 9 })
+      await abrir()
+      await waitFor(() => expect(casilla(1)).toBeInTheDocument())
+      fireEvent.click(casilla(1))
+      await emitir()
+      expect(await screen.findByText('Pantalla de los comprobantes')).toBeInTheDocument()
+      expect(screen.queryByText('Se emite al volver la conexión.')).toBeNull()
+    })
+
+    it('🔴 el 409 `solo_en_el_nodo` (la web con un nodo vinculado) se lee con su mensaje', async () => {
+      const { ApiError } = await import('libra-ui/api-client')
+      const mensaje = 'Esta instancia opera desde la oficina con su nodo: facturá desde la versión de escritorio.'
+      responder([orden(1)])
+      post.mockRejectedValue(new ApiError(409, mensaje, { codigo: 'solo_en_el_nodo', mensaje }))
+      await abrir()
+      await waitFor(() => expect(casilla(1)).toBeInTheDocument())
+      fireEvent.click(casilla(1))
+      await emitir()
+      expect(await screen.findByRole('alert')).toHaveTextContent(mensaje)
+    })
+
+    it('una orden cargada en el nodo (id negativo) se lee «P-3» y no «-3», que no es un número de orden', async () => {
+      responder([orden(-3)])
+      await abrir()
+      const marca = await screen.findByLabelText('Elegir la orden P-3')
+      expect(marca).toBeInTheDocument()
+      expect(screen.getByText('P-3')).toBeInTheDocument()
+      expect(screen.queryByText('-3')).toBeNull()
+    })
   })
 
   // ── La Factura de Crédito Electrónica MiPyME ─────────────────────────────
