@@ -8,6 +8,7 @@
 // distinguir y hay que leer el texto igual.
 import { createLayout, type NavSection } from 'libra-ui/Layout'
 import { INDICADORES } from 'libra-ui/iconos-indicador'
+import { TEXTO_CARTEL_SIN_CONEXION_CON_COLA, useConexionDelNodo } from 'libra-ui/nodo-offline'
 import { ClipboardList } from 'lucide-react'
 
 import { useConfiguracion } from '@/api/configuracion'
@@ -16,7 +17,16 @@ import { useAuth } from '@/context/AuthContext'
 import { ICONOS_LC } from '@/iconos'
 import { RUTAS_DE_COMPROBANTES } from '@/navegacion'
 
-type Usuario = { role?: string; name?: string; empresa?: string }
+/** `esNodo` no lo manda el servidor con el usuario: lo agrega `useAuthConEmpresa` con lo que el cartel de conexión supo del equipo. */
+type Usuario = { role?: string; name?: string; empresa?: string; esNodo?: boolean }
+
+/** De dónde el cartel de «sin conexión» y el menú saben si este equipo es un nodo y si tiene internet.
+ *
+ *  🔑 **Es la cola de comprobantes, no `/api/nodo/conexion`.** Esa ruta es del motor de ventas (`build_facturacion_del_nodo_router`
+ *  pide un `PuertoDeVentas`) y LibraCargo no vende: no la monta, y sin ella el cartel nunca habría aparecido. `GET /api/nodo/cola`
+ *  (libracore ADR-079) sí está montada y contesta lo mismo que el cartel necesita —`es_nodo`, `en_linea` y `node_id`—; `limite=1`
+ *  porque de la lista no se usa nada. Fuera de un nodo contesta `es_nodo: false` y el kit deja de consultar. */
+export const RUTA_DE_LA_CONEXION = '/api/nodo/cola?limite=1'
 
 /** La sesion, mas el nombre de la empresa.
  *
@@ -27,10 +37,12 @@ type Usuario = { role?: string; name?: string; empresa?: string }
 function useAuthConEmpresa() {
   const sesion = useAuth() as { user: Usuario | null; logout: () => Promise<void> }
   const empresa = useConfiguracion()
+  // Sólo lee lo que el cartel ya consulta (no pide nada): el menú «Cola de comprobantes» aparece en cuanto el equipo se sabe nodo.
+  const { esNodo } = useConexionDelNodo()
   return {
     ...sesion,
     user: sesion.user
-      ? { ...sesion.user, empresa: empresa.nombre_fantasia || empresa.razon_social }
+      ? { ...sesion.user, empresa: empresa.nombre_fantasia || empresa.razon_social, esNodo }
       : null,
   }
 }
@@ -64,6 +76,9 @@ export const NAV_SECCIONES: NavSection<Usuario>[] = [
         // proveedores» eran dos entradas sueltas; ahora son accesos y una
         // pestaña de ésta. `activoEn` (libra-ui 0.119.0) la marca en esas rutas.
         { to: '/comprobantes', label: 'Comprobantes', icon: ICONOS_LC.comprobantes, activoEn: RUTAS_DE_COMPROBANTES },
+        // Lo que un nodo pidió sin conexión (facturas y cartas de porte) y todavía no salió en ARCA (libra-ui ADR-094). Sólo existe en un
+        // nodo: en la web y en una instalación común el menú queda como siempre.
+        { to: '/cola', label: 'Cola de comprobantes', icon: ICONOS_LC.comprobantesAFacturar, hideFor: (u) => !u.esNodo },
         { to: '/reportes', label: 'Reportes', icon: ICONOS_LC.reportes },
       ],
     },
@@ -114,6 +129,9 @@ export const Layout = createLayout<Usuario>({
   // La barra de estado del pie (libra-ui ADR-083, libracore ADR-075): usuario, ARCA, respaldo y versión, de
   // `GET /api/estado-del-sistema` al cargar y cada pocos minutos.
   barraDeEstado: true,
+  // El cartel fijo «Sin conexión…» del nodo. Con el texto de un producto que encola facturas y cartas de porte (libra-ui ADR-094), no el de
+  // las ventas de mostrador; lleva el límite legal: sin conexión no hay CPE válida para viajar.
+  conexionDelNodo: { ruta: RUTA_DE_LA_CONEXION, texto: TEXTO_CARTEL_SIN_CONEXION_CON_COLA },
   getUserSubtitle: (u) => u.empresa || undefined,
   useAuth: useAuthConEmpresa,
 })

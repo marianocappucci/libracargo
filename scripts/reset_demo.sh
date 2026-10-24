@@ -122,7 +122,7 @@ filas_del_dominio() {
     psql -tA -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
       SELECT COALESCE((SELECT COUNT(*) FROM terceros), 0)
            + COALESCE((SELECT COUNT(*) FROM ordenes_carga), 0)
-           + COALESCE((SELECT COUNT(*) FROM movimientos_caja), 0)"
+           + COALESCE((SELECT COUNT(*) FROM movimientos_caja_cargo), 0)"
   ' 2>/dev/null || echo "?"
 }
 

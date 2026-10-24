@@ -13,7 +13,9 @@ Cuándo **no corre** (todos devuelven `estado: "omitido"` y nada más):
 
 - en una demo (`DEMO_MODE=1`): no habla con ARCA (ADR-061 de libracore) y no tiene certificado;
 - con el interruptor apagado;
-- sin certificado de «CTG y Carta de Porte» cargado.
+- sin certificado de «CTG y Carta de Porte» cargado;
+- en el **central de una instancia con un nodo vinculado** (ADR-056): las cartas de porte se escriben sólo en el nodo, y
+  refrescarlas acá las dejaría distintas de las del nodo. Corre en el nodo, con el ticket que presta el central.
 
 Y si ya hay otra corrida en curso devuelve `estado: "ocupado"`: con dos procesos (`WEB_CONCURRENCY`, ADR-047) o dos
 crones superpuestos, el candado de base (`libracore.candados`) deja pasar a uno solo.
@@ -34,6 +36,7 @@ from libracore.candados import candado_de_base
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app import offline
 from app.models import AccionAuditoria, ConfiguracionEmpresa
 from app.models.cartas_porte import CartaPorte
 from app.servicios import auditoria
@@ -122,6 +125,8 @@ def correr(sesion: Session) -> dict:
     """
     if config_manager.es_demo():
         return _omitido("es una demo: no habla con ARCA")
+    if offline.nodo() is None and offline.hay_nodo_vinculado():
+        return _omitido("hay un nodo vinculado: las cartas de porte se actualizan en el nodo de la oficina")
     cfg = _config(sesion)
     if not (cfg and cfg.cpe_refresco_habilitado):
         return _omitido("el refresco programado está apagado")
@@ -145,9 +150,11 @@ def correr(sesion: Session) -> dict:
 
 
 def _anotar(sesion: Session, resumen: dict) -> None:
-    """Deja en la configuración cuándo corrió y qué pasó, para verlo en la pantalla. Sin auditoría: no decide nada."""
+    """Deja en la configuración cuándo corrió y qué pasó, para verlo en la pantalla. Sin auditoría: no decide nada.
+
+    En un nodo no: la configuración baja del central por el espejo y el nodo no la escribe (ADR-056)."""
     cfg = _config(sesion)
-    if cfg is None:
+    if cfg is None or offline.nodo() is not None:
         return
     cfg.cpe_refresco_ultima_corrida = datetime.now(UTC)
     cfg.cpe_refresco_resumen = texto_del_resumen(resumen)[:200]

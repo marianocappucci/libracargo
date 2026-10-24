@@ -52,8 +52,40 @@ class Rechazo(Exception):
 
 # ── Ambiente y ticket ──────────────────────────────────────────────────────
 
+def _en_un_nodo() -> bool:
+    """Si esta instancia es el nodo de la oficina (ADR-056). Import acá adentro: `offline` importa de los servicios."""
+    from app import offline
+
+    return offline.nodo() is not None
+
+
+def ticket_prestado() -> dict:
+    """**En un nodo**: el ticket de `wscpe` que presta el central (libracore ADR-079, libraedge ADR-025). El nodo no
+    tiene el par en disco: la clave de ARCA no sale del VPS. Bloquea (HTTP al central) y es sincrónico a propósito, como
+    el resto de este módulo (el router es `def`). Sin conexión con el central, o si el central no lo presta, `Rechazo`
+    409 con el motivo."""
+    from libraedge.sync import esquema
+    from libraedge.sync.ticket import SinConexionConElCentral, TicketRechazado
+
+    from app import offline
+
+    try:
+        return offline.cliente_de_ticket().pedir_ticket(None, arca_wscpe.SERVICIO)
+    except (SinConexionConElCentral, esquema.EsquemaIncompatible):
+        raise Rechazo(409, "Sin conexión con el central: ARCA se consulta cuando vuelva la conexión.") from None
+    except TicketRechazado as e:
+        raise Rechazo(409, e.mensaje) from None
+
+
 def ambiente() -> str | None:
-    """El ambiente con el par de `wscpe` completo: producción si está, si no homologación. `None` si ninguno."""
+    """El ambiente con el par de `wscpe` completo: producción si está, si no homologación. `None` si ninguno.
+
+    En un nodo es el del ticket que presta el central (`ticket_prestado`); sin conexión, `None`."""
+    if _en_un_nodo():
+        try:
+            return ticket_prestado()["ambiente"]
+        except Rechazo:
+            return None
     for amb in ("produccion", "homologacion"):
         cert, clave = arca_credenciales.paths_en_disco_de_servicio(EMPRESA_ARCA, arca_wscpe.SERVICIO, amb)
         if cert and clave:
@@ -62,6 +94,10 @@ def ambiente() -> str | None:
 
 
 def _ambiente_o_rechazo() -> str:
+    if _en_un_nodo():
+        # El motivo es el del central («sin conexión», «no tiene el certificado»), no «cargalo acá»: en el nodo
+        # el certificado no se carga.
+        return ticket_prestado()["ambiente"]
     amb = ambiente()
     if amb is None:
         raise Rechazo(409, "No hay certificado de «CTG y Carta de Porte» cargado: cargalo en Configuración / ARCA.")
@@ -69,6 +105,11 @@ def _ambiente_o_rechazo() -> str:
 
 
 def _ticket(amb: str) -> dict:
+    if _en_un_nodo():
+        ticket = ticket_prestado()
+        if ticket.get("ambiente") != amb:
+            raise Rechazo(409, f"El central presta el ticket de {ticket.get('ambiente')} y hace falta el de {amb}.")
+        return ticket
     try:
         return asyncio.run(arca_wscpe.autenticar(EMPRESA_ARCA, amb))
     except arca_wscpe.SinCredenciales as e:

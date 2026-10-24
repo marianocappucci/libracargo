@@ -14,7 +14,8 @@ TIPOS_PROPIOS = {".webmanifest": "application/manifest+json"}
 
 #: Prefijos que NO son de la SPA. Una ruta de API que no existe tiene que dar
 #: 404, no el `index.html`.
-PREFIJOS_DE_API = ("api", "auth")
+# `sync`: la sincronización de LibraEdge (ADR-056); una ruta de ahí que no existe también es un 404, no el index.
+PREFIJOS_DE_API = ("api", "auth", "sync")
 
 
 def es_ruta_de_api(ruta: str) -> bool:

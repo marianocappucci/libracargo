@@ -14,12 +14,15 @@ import { ordenes } from '@/api/ordenes'
 import { mensajeDeError } from '@/components/AbmMaestro'
 import { EmitirCartaDePorte } from '@/components/EmitirCartaDePorte'
 import { Button } from '@/components/ui/button'
+import { tituloDeOrden } from '@/lib/numero-de-orden'
 import { irA } from '@/navegacion'
 
 export default function EmitirCartaDePortePagina() {
   const { ordenId } = useParams()
   const id = Number(ordenId)
-  const valido = Number.isInteger(id) && id > 0
+  // Una orden cargada en el nodo sin conexión tiene un id NEGATIVO hasta que sube al central (ADR-056): es una orden válida. Sólo el 0 y lo
+  // que no es un entero no lo son.
+  const valido = Number.isInteger(id) && id !== 0
   const navigate = useNavigate()
   const [orden, setOrden] = useState<Orden | null>(null)
   const [error, setError] = useState<string | null>(valido ? null : 'La dirección no tiene un número de orden válido.')
@@ -33,7 +36,7 @@ export default function EmitirCartaDePortePagina() {
     return () => { vigente = false }
   }, [id, valido])
 
-  const numero = valido ? ` · Orden Nº ${String(id).padStart(8, '0')}` : ''
+  const numero = valido ? ` · ${tituloDeOrden(id)}` : ''
   const volver = valido ? irA.orden(id) : '/ordenes'
 
   let cuerpo: React.ReactNode

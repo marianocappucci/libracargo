@@ -7,6 +7,7 @@ import Inicio from '@/pages/Inicio'
 import Caja from '@/pages/Caja'
 import CartasDePorte from '@/pages/CartasDePorte'
 import Clientes from '@/pages/Clientes'
+import Cola from '@/pages/Cola'
 import ComprobantesSeccion from '@/pages/ComprobantesSeccion'
 import EmitirCartaDePorte from '@/pages/EmitirCartaDePorte'
 import FacturarPendientes from '@/pages/FacturarPendientes'
@@ -94,6 +95,9 @@ export default function App() {
                 <Route path="/comprobantes/facturar" element={<FacturarPendientes />} />
                 {/* «Nueva factura» (ADR-048): conceptos libres, sin órdenes. Cuelga de «Comprobantes» en el menú (`activoEn`). */}
                 <Route path="/comprobantes/nueva" element={<NuevaFactura />} />
+                {/* La cola de comprobantes del nodo (libra-ui ADR-094): lo pedido sin conexión que todavía no salió en ARCA. La entrada del
+                    menú sólo se ve en un nodo; en la web la ruta contesta que no es un nodo. */}
+                <Route path="/cola" element={<Cola />} />
                 {/* Las pre facturas se retiraron (ADR-048): un marcador o un enlace viejo cae en la lista de comprobantes. */}
                 <Route path="/pre-facturas/*" element={<Navigate to="/comprobantes" replace />} />
                 <Route path="/gastos" element={<GastosAProveedores />} />

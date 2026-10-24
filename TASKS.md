@@ -25,6 +25,15 @@ esto no es un historial.
 - [ ] Definir el catálogo inicial de `tipos_carga` con los valores distintos que
       haya en `carga_tipo` del legado.
 
+- [ ] **Caja al motor en Suitrans** (ADR-055, revisión `0032`): respaldo, restauración de prueba, `scripts/comparar_caja.py`
+      antes y después (saldos por tercero y F4), y recién ahí en la instancia real, con el OK del humano. Después,
+      una `0033` que retire `movimientos_caja_legado`.
+
+- [ ] **Nodo de escritorio** (ADR-056): antes del merge, cambiar el pin de libraedge del commit `1d7ab0a` a `@v0.22.0`
+      (lo cuida el humano); en libraedge, `LIBRAEDGE_CARGA_INICIAL=app.servicios.carga_inicial:aplicar_carga_inicial`
+      en `instalador/productos/libracargo.json`. (La pantalla —el aviso «sin CPE válida», la bandeja de la cola y el id
+      provisorio— quedó cableada en el ADR-057.) Vincular el nodo de Suitrans es [H]: va después de la caja al motor y con su procedimiento.
+
 ## Bloqueadas
 
 - [ ] **Relevamiento con el cliente**: qué pantallas usa de verdad, y si hay operaciones con alícuota

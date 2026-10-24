@@ -299,6 +299,14 @@ def sesion(engine):
     s.execute(text("TRUNCATE TABLE comprobantes_pendientes RESTART IDENTITY CASCADE"))
     # Y la cuenta corriente vive en el libro de terceros del motor (`0017`).
     s.execute(text("TRUNCATE TABLE cc_asientos RESTART IDENTITY CASCADE"))
+    # Y la caja en el suyo (`0032`): `movimientos_caja_cargo` cae con la cascada de `terceros`, pero la fila del
+    # motor no tiene ninguna FK hacia las del dominio.
+    s.execute(text("TRUNCATE TABLE caja_movimientos RESTART IDENTITY CASCADE"))
+    # Y lo del nodo (`0033`, ADR-056): el outbox, lo recibido, los nodos registrados, las secuencias provisorias, el
+    # mapeo de ids y la cola de ARCA. Una instancia común no escribe nada de esto; los tests del nodo sí.
+    s.execute(text(
+        "TRUNCATE TABLE sync_outbox, sync_inbox, sync_changelog, node_identity, local_sequences, libraedge_mapeo, "
+        "libraedge_vinculacion, libraedge_canje_fallido, cola_arca RESTART IDENTITY CASCADE"))
     s.commit()
     s.close()
 
@@ -593,6 +601,39 @@ def comprobante_de_prueba(sesion, *, cae: str | None = None, comprobante_asociad
         comprobantes.guardar_cae(sesion, comp, cae, vto.strftime("%Y%m%d"))
     sesion.commit()
     return comp
+
+
+@pytest.fixture
+def referencia_extra(cliente):
+    """Un gancho: un módulo de tests lo redefine para cargar más referencia (choferes, vehículos...) **antes** de copiar
+    la base al central. Devuelve un `dict` de ids que se suma a `escenario.datos`."""
+    return {}
+
+
+@pytest.fixture
+def escenario(cliente, engine, monkeypatch, tmp_path, datos, referencia_extra):
+    """Un nodo y su central, con dos bases (ver `tests/nodo_apoyo.py`).
+
+    La referencia (terceros, localidades, la empresa y su ARCA, con ARCA simulada) se carga **antes** de copiar la
+    base al central: es lo que el espejo de LibraEdge deja en el nodo. Después la instancia pasa a ser el nodo de la
+    oficina, **sin conexión**, y el central tiene registrado ese nodo. `escenario.datos` trae los ids de la
+    referencia."""
+    from tests.nodo_apoyo import Escenario
+
+    cargar_empresa(cliente)
+    configurar_arca(cliente, cuit=CUIT_EMISOR, punto_venta=1)
+    r = cliente.post("/api/terceros", json={"razon_social": "Fletes del Sur SRL", "es_fletero": True})
+    assert r.status_code == 201, r.text
+    datos = {**datos, "fletero": r.json()["id"], **referencia_extra}
+    e = Escenario(cliente, engine, monkeypatch, tmp_path, _PG)
+    e.datos = datos
+    e.clonar_el_central()
+    e.registrar_el_nodo()
+    e.ser_nodo()
+    try:
+        yield e
+    finally:
+        e.soltar()
 
 
 def rearmar_en(revision: str) -> None:

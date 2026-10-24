@@ -33,6 +33,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/context/AuthContext'
+import { numeroCorto } from '@/lib/numero-de-orden'
 import { irA } from '@/navegacion'
 
 type Celda = { row: { original: CartaPorte } }
@@ -123,7 +124,7 @@ export function ListadoDeCartasDePorte() {
       reemplazar(await cartasPorte.vincular(vinculando.id, ordenId))
       setAviso(ordenId === null
         ? `CTG ${vinculando.nro_ctg} desvinculada de la orden.`
-        : `CTG ${vinculando.nro_ctg} vinculada a la orden ${ordenId}.`)
+        : `CTG ${vinculando.nro_ctg} vinculada a la orden ${numeroCorto(ordenId)}.`)
       setVinculando(null)
     } catch (e) {
       // El 404 de «no existe la orden» se lee en el diálogo, al lado del número que lo causó.

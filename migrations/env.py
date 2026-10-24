@@ -42,6 +42,11 @@ target_metadata = Base.metadata
 VERSION_TABLE = "alembic_version_libracargo"
 
 
+#: Las columnas y el índice que la `0034` le suma a `movimientos_cuenta_cargo` y que el modelo no mapea a propósito.
+COLUMNAS_DEL_NODO = frozenset({"origen_nodo", "origen_nodo_id"})
+INDICES_DEL_NODO = frozenset({"ux_cuenta_cargo_origen_nodo"})
+
+
 def _es_de_este_producto(objeto, nombre, tipo, reflejado, comparado) -> bool:
     """Lo que `alembic check` y el autogenerate comparan: sólo las tablas de este producto.
 
@@ -52,6 +57,11 @@ def _es_de_este_producto(objeto, nombre, tipo, reflejado, comparado) -> bool:
     """
     if tipo == "table" and reflejado and comparado is None:
         return nombre in target_metadata.tables
+    # Lo que escribe sólo el aplicador del central (`0034`, ADR-056): no es del modelo (ver `MovimientoCuentaCargo`).
+    if tipo == "column" and reflejado and comparado is None and nombre in COLUMNAS_DEL_NODO:
+        return False
+    if tipo == "index" and nombre in INDICES_DEL_NODO:
+        return False
     return True
 
 

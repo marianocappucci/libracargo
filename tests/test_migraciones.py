@@ -156,7 +156,12 @@ def test_upgrade_downgrade_upgrade(base_limpia):
         # Y a 23 con la `0028` (`titulares_cpe`, ADR-044).
         # Y bajó a 21 con la `0029`, que borra `pre_facturas_cargo` y `pre_factura_ordenes` (ADR-048).
         # Y subió a 22 con la `0031` (`catalogo_cpe`, ADR-051).
-        assert tablas - del_motor == 22
+        # Y a 23 con la `0032` (`movimientos_caja_cargo`; `movimientos_caja` sigue, como
+        # `movimientos_caja_legado`, hasta que se la retire, ADR-055).
+        # Y a 31 con la `0033` (las ocho tablas de LibraEdge: `node_identity`, `local_sequences`, `sync_outbox`,
+        # `sync_inbox`, `sync_changelog`, `libraedge_mapeo`, `libraedge_vinculacion` y `libraedge_canje_fallido`;
+        # ADR-056).
+        assert tablas - del_motor == 31
         eng.dispose()
     finally:
         if original:
@@ -325,11 +330,12 @@ def test_la_0008_agrega_anulado_sobre_una_tabla_CON_filas(base_limpia):
         command.upgrade(cfg, "head")
 
         with eng.connect() as con:
+            # Desde la `0032` la caja vive en `caja_movimientos` del motor, con `anulado` entero.
             anulados = con.execute(
-                text("SELECT anulado FROM movimientos_caja")).scalars().all()
+                text("SELECT anulado FROM caja_movimientos")).scalars().all()
         # Lo que ya existía queda VIGENTE: en el sistema viejo anular era borrar,
         # así que nada de lo migrado estaba anulado.
-        assert anulados == [False]
+        assert anulados == [0]
         eng.dispose()
     finally:
         if original:

@@ -337,6 +337,39 @@ describe('Nueva factura', () => {
     expect(JSON.parse(JSON.stringify(post.mock.calls[0][1]))).not.toHaveProperty('fecha_vencimiento_pago')
   })
 
+  // ── Un nodo sin conexión: la factura queda en la cola (ADR-056, libra-ui ADR-094) ───────────────
+  it('🔴 un 202 `en_cola` NO abre un comprobante: avisa «Se emite al volver la conexión.» y no deja pedirla otra vez', async () => {
+    responder()
+    post.mockResolvedValue({
+      codigo: 'en_cola', pedido_id: 4, estado: 'esperando', motivo: '',
+      mensaje: 'Sin conexión con el central o con ARCA: la factura queda en cola y se emite sola al volver la conexión.',
+    })
+    await abrir()
+    cargar(1)
+    await emitir()
+
+    expect(await screen.findByText('Se emite al volver la conexión.')).toBeInTheDocument()
+    expect(screen.queryByText('Pantalla de los comprobantes')).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Nueva factura' })).toBeInTheDocument()
+    // Pedirla de nuevo la emitiría dos veces al volver la conexión: hasta cerrar el aviso, el botón no deja.
+    expect(screen.getByText('Emitir factura')).toBeDisabled()
+    expect(screen.getByText('La factura anterior quedó en la cola. Cerrá el aviso para pedir otra.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar aviso' }))
+    expect(screen.getByText('Emitir factura')).toBeEnabled()
+    expect(post).toHaveBeenCalledTimes(1)
+  })
+
+  it('🔴 el 409 `solo_en_el_nodo` (la web con un nodo vinculado) se lee con su mensaje', async () => {
+    const { ApiError } = await import('libra-ui/api-client')
+    const mensaje = 'Esta instancia opera desde la oficina con su nodo: facturá desde la versión de escritorio.'
+    responder()
+    post.mockRejectedValue(new (ApiError as unknown as new (s: number, d: string, x: unknown) => Error)(409, mensaje, { codigo: 'solo_en_el_nodo', mensaje }))
+    await abrir()
+    cargar(1)
+    await emitir()
+    expect(await screen.findByRole('alert')).toHaveTextContent(mensaje)
+  })
+
   // ── La entrada ───────────────────────────────────────────────────────────
   it('con ?cliente= llega con el cliente ya elegido, y tiene el acceso a «Facturar pendientes» del mismo cliente', async () => {
     responder()
