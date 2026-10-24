@@ -783,7 +783,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
     { name = "libraauth", extras = ["migrations"], git = "https://github.com/marianocappucci/libraauth.git?rev=v0.55.0" },
     { name = "libracore", extras = ["migrations"], git = "https://github.com/marianocappucci/libracore.git?rev=v1.192.0" },
-    { name = "libraedge", git = "https://github.com/marianocappucci/libraedge.git?rev=1d7ab0aff1b14c6217ffedb98f90818d6b6d3d35" },
+    { name = "libraedge", git = "https://github.com/marianocappucci/libraedge.git?rev=v0.22.0" },
     { name = "pdfplumber", specifier = ">=0.11" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.9" },
@@ -826,8 +826,8 @@ migrations = [
 
 [[package]]
 name = "libraedge"
-version = "0.21.1.dev10"
-source = { git = "https://github.com/marianocappucci/libraedge.git?rev=1d7ab0aff1b14c6217ffedb98f90818d6b6d3d35#1d7ab0aff1b14c6217ffedb98f90818d6b6d3d35" }
+version = "0.22.0"
+source = { git = "https://github.com/marianocappucci/libraedge.git?rev=v0.22.0#3998f2fed5498ee7b0c1996744afa28ff41742fd" }
 
 [[package]]
 name = "mako"
