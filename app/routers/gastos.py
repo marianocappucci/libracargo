@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import offline
 from app.auth import get_current_user, require_staff
 from app.db import obtener_sesion
 from app.models.enums import AccionAuditoria
@@ -29,8 +30,10 @@ from app.schemas.gastos import GastoIn, GastoOut
 from app.servicios import auditoria
 from app.servicios.gastos import revertir, sincronizar
 
+# Con un nodo vinculado se escribe sólo en el nodo (ADR-056): en el central se consulta, y escribir da 409
+# `solo_en_el_nodo`. Sin nodo vinculado, la web opera como siempre.
 router = APIRouter(prefix="/api/gastos", tags=["gastos"],
-                   dependencies=[Depends(require_staff)])
+                   dependencies=[Depends(require_staff), Depends(offline.escritura_solo_en_el_nodo)])
 
 
 def _traer(sesion: Session, id_: int) -> GastoDeProveedor:

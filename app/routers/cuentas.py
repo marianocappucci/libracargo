@@ -9,11 +9,14 @@ cuenta del cliente otra, sin nada que lo delatara.
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from libracore.nodo_offline import guarda_solo_en_el_central
+from libracore.cobros import CobroNoPermitido
+from libracore.db.caja import CorreccionNoPermitida, MovimientoInvalido
+from libracore.nodo_offline import SoloEnElCentral, guarda_solo_en_el_central
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import offline
 from app.auth import get_current_user, require_staff
 from app.db import obtener_sesion
 from app.models.cuentas import MovimientoCaja
@@ -30,7 +33,10 @@ from app.servicios import caja as servicio_de_caja
 from app.servicios.caja import sincronizar_contrapartida
 from app.servicios.cuentas import movimientos_con_saldo, saldo, saldo_recorriendo
 
-router = APIRouter(prefix="/api", tags=["cuentas"], dependencies=[Depends(require_staff)])
+# La caja y las cuentas corrientes se escriben sólo en el nodo cuando hay uno vinculado (ADR-056): en el central se
+# consultan, y escribir da 409 `solo_en_el_nodo`. Sin nodo vinculado, la web opera como siempre.
+router = APIRouter(prefix="/api", tags=["cuentas"],
+                   dependencies=[Depends(require_staff), Depends(offline.escritura_solo_en_el_nodo)])
 
 
 @router.get("/cuentas/{rol}/{tercero_id}", response_model=ResumenDeCuenta)
@@ -156,12 +162,10 @@ def editar_caja(id_: int, datos: MovimientoCajaIn,
     """
     _validar_par(datos)
     movimiento = _traer_caja(sesion, id_)
-    if movimiento.anulado:
-        raise HTTPException(409, "el movimiento está anulado: no se puede modificar")
-    if servicio_de_caja.viene_de_un_nodo(sesion, movimiento):
-        raise HTTPException(409, "el movimiento vino de un nodo: se corrige ahí, anulándolo y cargándolo de nuevo")
     antes = auditoria.instantanea(movimiento)
     try:
+        # Las guardas de dónde y cuándo se corrige son del motor (libracore ADR-080): no en un nodo, no si subió de uno,
+        # no si está anulado. Se contestan 409 con `{"codigo", "mensaje"}`.
         servicio_de_caja.corregir(
             sesion, movimiento, fecha=datos.fecha, tipo=datos.tipo, concepto=datos.concepto,
             importe=datos.importe, medio_pago=datos.medio_pago, descripcion=datos.descripcion,
@@ -170,6 +174,15 @@ def editar_caja(id_: int, datos: MovimientoCajaIn,
         auditoria.registrar(sesion, actual, "movimiento_caja", movimiento.id,
                             AccionAuditoria.MODIFICACION, antes=antes, despues=movimiento)
         sesion.commit()
+    except (SoloEnElCentral, CorreccionNoPermitida) as exc:
+        sesion.rollback()
+        raise HTTPException(409, exc.detalle()) from None
+    except CobroNoPermitido as exc:
+        sesion.rollback()
+        raise HTTPException(409, str(exc)) from None
+    except MovimientoInvalido as exc:
+        sesion.rollback()
+        raise HTTPException(422, str(exc)) from None
     except IntegrityError as err:
         sesion.rollback()
         raise traducir_integridad(err) from None

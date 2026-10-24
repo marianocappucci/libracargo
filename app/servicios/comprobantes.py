@@ -36,6 +36,7 @@ from app.schemas.comprobantes import (
     SumaDeOrdenes,
     TotalDeComprobantes,
 )
+from app.servicios import subida
 from app.servicios.emision_arca import CODIGO_IVA_DE_LA_FAMILIA, ArcaAmbiguo, empresa_de
 
 log = logging.getLogger(__name__)
@@ -365,6 +366,8 @@ def crear(
         sin_ordenes=sin_ordenes or tipo in TIPOS_DEBITO,
     ))
     sesion.flush()
+    # En un nodo, el comprobante sube al central con su número y su CAE (ADR-056). Fuera de un nodo no hace nada.
+    subida.tocar(sesion, "comprobante", factura_id)
     return sesion.get(Comprobante, factura_id)
 
 
@@ -374,6 +377,7 @@ def guardar_cae(sesion: Session, comprobante: Comprobante, cae: str, cae_vto: st
     db_facturas.update_factura_cae(comprobante.id, cae, cae_vto or "", conn=conn)
     comprobante.cae_solicitado_en = datetime.now(UTC)
     sesion.flush()
+    subida.tocar(sesion, "comprobante", comprobante.id)
     sesion.expire(comprobante)
     return comprobante
 
@@ -390,6 +394,7 @@ def anular(sesion: Session, comprobante: Comprobante, usuario_id: int | None,
     db_facturas.anular_factura(comprobante.id, usuario_id, motivo, conn=conn)
     comprobante.anulado = True
     sesion.flush()
+    subida.tocar(sesion, "comprobante", comprobante.id)
     sesion.expire(comprobante)
     return comprobante
 

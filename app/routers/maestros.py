@@ -21,6 +21,7 @@ from sqlalchemy import String, cast, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import offline
 from app.auth import get_current_user, require_admin, require_staff
 from app.db import obtener_sesion
 from app.models.enums import AccionAuditoria
@@ -401,7 +402,10 @@ def vincular_al_catalogo(id_: int, datos: _CatalogoIn, sesion: Session = Depends
     return _a_salida(obj, LocalidadOut, "activa")
 
 
-@localidades.post("/{id_}/unificar", response_model=LocalidadOut, dependencies=[Depends(require_admin)])
+# Mueve el origen y el destino de las órdenes: con un nodo vinculado las órdenes son del nodo (ADR-056), así que se
+# unifica antes de vincular. En el central con nodo, 409 `solo_en_el_nodo`; en el nodo, `solo_en_el_central`.
+@localidades.post("/{id_}/unificar", response_model=LocalidadOut,
+                  dependencies=[Depends(require_admin), Depends(offline.solo_en_el_nodo)])
 def unificar(id_: int, datos: _UnificarIn, sesion: Session = Depends(obtener_sesion),
              actual: dict = Depends(get_current_user)):
     """Dos localidades que son el mismo lugar («Pto. San Martín» y «Pto San Martín»): las órdenes de `id_` pasan

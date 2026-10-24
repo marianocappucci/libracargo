@@ -6,12 +6,14 @@ WSAA) son sincrónicos y bloquearían el loop de uvicorn. Lo asincrónico va con
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 from libracore import arca_wscpe
 from libracore.cuit import solo_digitos
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import offline
 from app.auth import get_current_user, require_admin, require_staff
 from app.db import obtener_sesion
 from app.models.cartas_porte import CartaPorte, CartaPortePdf
@@ -29,7 +31,7 @@ from app.schemas.cartas_porte import (
     VincularIn,
 )
 from app.servicios import cartas_porte as servicio
-from app.servicios import catalogo_cpe, emision_cpe, refresco_cpe, titulares_cpe
+from app.servicios import catalogo_cpe, emision_cpe, emisores, refresco_cpe, titulares_cpe
 
 router = APIRouter(prefix="/api/cartas-porte", tags=["cartas-porte"],
                    dependencies=[Depends(require_staff)])
@@ -147,7 +149,7 @@ def consultar(datos: ConsultaIn, sesion: Session = Depends(obtener_sesion)):
     return _de_arca(sesion, cpe, solo_digitos(datos.cuit_representada), amb)
 
 
-@router.post("", response_model=list[ResultadoTraer])
+@router.post("", response_model=list[ResultadoTraer], dependencies=[Depends(offline.solo_en_el_nodo)])
 def traer(datos: TraerIn, sesion: Session = Depends(obtener_sesion), actual: dict = Depends(get_current_user)):
     """Trae de ARCA y guarda uno o varios CTG. Cada uno dice si quedó guardado o por qué no."""
     try:
@@ -178,7 +180,7 @@ def listar(
     return [_de_fila(sesion, f, f.id in con_pdf, nombres) for f in filas]
 
 
-@router.post("/actualizar-abiertas", response_model=ResumenActualizar)
+@router.post("/actualizar-abiertas", response_model=ResumenActualizar, dependencies=[Depends(offline.solo_en_el_nodo)])
 def actualizar_abiertas(sesion: Session = Depends(obtener_sesion), actual: dict = Depends(get_current_user)):
     """Vuelve a consultar todas las abiertas, hasta que ARCA informe la descarga."""
     return servicio.actualizar_abiertas(sesion, actual)
@@ -199,7 +201,7 @@ def estado_del_refresco(sesion: Session = Depends(obtener_sesion)):
     return refresco_cpe.estado(sesion)
 
 
-@router.put("/refresco/habilitado", dependencies=[Depends(require_admin)])
+@router.put("/refresco/habilitado", dependencies=[Depends(require_admin), Depends(offline.solo_en_el_central)])
 def habilitar_refresco(datos: _RefrescoIn, sesion: Session = Depends(obtener_sesion),
                        actual: dict = Depends(get_current_user)):
     """Prende o apaga el refresco programado. Sólo un administrador; queda en la auditoría."""
@@ -238,7 +240,7 @@ def estado_de_emision(sesion: Session = Depends(obtener_sesion)):
     return emision_cpe.estado(sesion)
 
 
-@router.put("/emision/habilitada", dependencies=[Depends(require_admin)])
+@router.put("/emision/habilitada", dependencies=[Depends(require_admin), Depends(offline.solo_en_el_central)])
 def habilitar_emision(datos: _HabilitadaIn, sesion: Session = Depends(obtener_sesion),
                       actual: dict = Depends(get_current_user)):
     """Prende o apaga la emisión de Cartas de Porte **reales**. Sólo un administrador; queda en la auditoría."""
@@ -251,11 +253,38 @@ def propuesta_de_emision(orden_id: int, cuit_titular: str, sesion: Session = Dep
     return _o_http(emision_cpe.propuesta, sesion, orden_id, cuit_titular)
 
 
-@router.post("/emision/emitir", response_model=CartaPorteOut, status_code=201)
+@router.post("/emision/emitir", response_model=CartaPorteOut, status_code=201,
+             dependencies=[Depends(offline.solo_en_el_nodo)])
 def emitir(datos: _EmitirIn, sesion: Session = Depends(obtener_sesion), actual: dict = Depends(get_current_user)):
-    """Emite la Carta de Porte de la orden a nombre del titular, la guarda vinculada y devuelve su CTG y su PDF."""
+    """Emite la Carta de Porte de la orden a nombre del titular, la guarda vinculada y devuelve su CTG y su PDF.
+
+    **En un nodo la CPE se pide** (ADR-056): pasa siempre por la cola de ARCA (libracore ADR-079). Con conexión sale
+    en el momento y la respuesta es la de siempre. Sin conexión contesta 202 `cpe_en_cola`: **no hay CPE válida para
+    viajar** hasta que se emita (al volver la conexión), un límite legal que la pantalla tiene que decir. El
+    interruptor de la emisión real se respeta: apagado, 409 como en la web (o, sin conexión, el pedido espera con ese
+    motivo)."""
+    if offline.nodo() is not None:
+        return _emitir_en_el_nodo(sesion, actual, datos)
     fila = _o_http(emision_cpe.emitir, sesion, actual, datos.orden_id, datos.datos, confirmo=datos.confirmo)
     return _de_fila(sesion, fila, bool(_con_pdf(sesion, [fila.id])))
+
+
+def _emitir_en_el_nodo(sesion: Session, actual: dict, datos: _EmitirIn):
+    pedido = _o_http(emisores.pedir_cpe, sesion, actual, orden_id=datos.orden_id, datos=datos.datos,
+                     confirmo=datos.confirmo)
+    estado = pedido["estado"]
+    if estado == "emitido":
+        sesion.expire_all()
+        fila = _traer(sesion, pedido["resultado"]["carta_porte_id"])
+        return _de_fila(sesion, fila, bool(_con_pdf(sesion, [fila.id])))
+    cuerpo = {"pedido_id": pedido["id"], "estado": estado, "motivo": pedido.get("ultimo_error") or ""}
+    if estado == "esperando":
+        return JSONResponse(status_code=202, content={
+            "codigo": "cpe_en_cola",
+            "mensaje": "La carta de porte quedó en cola y se emite sola al volver la conexión. Hasta entonces NO hay "
+                       "una CPE válida: el camión no puede viajar.",
+            **cuerpo})
+    raise HTTPException(502, {"codigo": "emision_" + estado, "mensaje": cuerpo["motivo"] or estado, **cuerpo})
 
 
 @router.get("/catalogos/granos")
@@ -308,19 +337,20 @@ def titular_de_tercero(tercero_id: int, sesion: Session = Depends(obtener_sesion
     return _o_http(titulares_cpe.de_tercero, sesion, tercero_id)
 
 
-@router.post("/titulares", status_code=201, dependencies=[Depends(require_admin)])
+@router.post("/titulares", status_code=201, dependencies=[Depends(require_admin), Depends(offline.solo_en_el_central)])
 def crear_titular(datos: TitularIn, sesion: Session = Depends(obtener_sesion),
                   actual: dict = Depends(get_current_user)):
     return titulares_cpe.como_fila(sesion, _o_http(titulares_cpe.crear, sesion, actual, datos))
 
 
-@router.put("/titulares/{titular_id}", dependencies=[Depends(require_admin)])
+@router.put("/titulares/{titular_id}", dependencies=[Depends(require_admin), Depends(offline.solo_en_el_central)])
 def editar_titular(titular_id: int, datos: TitularEdicion, sesion: Session = Depends(obtener_sesion),
                    actual: dict = Depends(get_current_user)):
     return titulares_cpe.como_fila(sesion, _o_http(titulares_cpe.editar, sesion, actual, titular_id, datos))
 
 
-@router.delete("/titulares/{titular_id}", status_code=204, dependencies=[Depends(require_admin)])
+@router.delete("/titulares/{titular_id}", status_code=204,
+               dependencies=[Depends(require_admin), Depends(offline.solo_en_el_central)])
 def borrar_titular(titular_id: int, sesion: Session = Depends(obtener_sesion),
                    actual: dict = Depends(get_current_user)):
     _o_http(titulares_cpe.borrar, sesion, actual, titular_id)
@@ -333,20 +363,25 @@ def ver_plantilla(titular_id: int, sesion: Session = Depends(obtener_sesion)):
     return _o_http(titulares_cpe.plantilla, sesion, titular_id)
 
 
-@router.put("/titulares/{titular_id}/plantilla", dependencies=[Depends(require_admin)])
+# La plantilla del titular es lo que se usó la última vez que se emitió a su nombre: la aprende el nodo al emitir
+# (ADR-056), así que con un nodo vinculado se escribe ahí.
+@router.put("/titulares/{titular_id}/plantilla",
+            dependencies=[Depends(require_admin), Depends(offline.solo_en_el_nodo)])
 def guardar_plantilla(titular_id: int, cuerpo: PlantillaPut, sesion: Session = Depends(obtener_sesion),
                       actual: dict = Depends(get_current_user)):
     return _o_http(titulares_cpe.guardar_plantilla, sesion, actual, titular_id, cuerpo.datos)
 
 
-@router.delete("/titulares/{titular_id}/plantilla", status_code=204, dependencies=[Depends(require_admin)])
+@router.delete("/titulares/{titular_id}/plantilla", status_code=204,
+               dependencies=[Depends(require_admin), Depends(offline.solo_en_el_nodo)])
 def borrar_plantilla(titular_id: int, sesion: Session = Depends(obtener_sesion),
                      actual: dict = Depends(get_current_user)):
     _o_http(titulares_cpe.borrar_plantilla, sesion, actual, titular_id)
     return Response(status_code=204)
 
 
-@router.post("/{id_}/anular", response_model=CartaPorteOut, dependencies=[Depends(require_admin)])
+@router.post("/{id_}/anular", response_model=CartaPorteOut,
+             dependencies=[Depends(require_admin), Depends(offline.solo_en_el_nodo)])
 def anular(id_: int, datos: _AnularIn, sesion: Session = Depends(obtener_sesion),
            actual: dict = Depends(get_current_user)):
     """Anula en ARCA una CPE emitida desde acá. Sólo un administrador."""
@@ -371,7 +406,7 @@ def ver(id_: int, sesion: Session = Depends(obtener_sesion)):
     return _de_fila(sesion, fila, bool(_con_pdf(sesion, [fila.id])))
 
 
-@router.post("/{id_}/actualizar", response_model=CartaPorteOut)
+@router.post("/{id_}/actualizar", response_model=CartaPorteOut, dependencies=[Depends(offline.solo_en_el_nodo)])
 def actualizar(id_: int, sesion: Session = Depends(obtener_sesion), actual: dict = Depends(get_current_user)):
     """Vuelve a consultar esta CPE con el mismo CUIT y ambiente con que se trajo."""
     fila = _traer(sesion, id_)
@@ -385,7 +420,7 @@ def actualizar(id_: int, sesion: Session = Depends(obtener_sesion), actual: dict
     return _de_fila(sesion, fila, bool(_con_pdf(sesion, [fila.id])))
 
 
-@router.put("/{id_}/orden", response_model=CartaPorteOut)
+@router.put("/{id_}/orden", response_model=CartaPorteOut, dependencies=[Depends(offline.solo_en_el_nodo)])
 def vincular(id_: int, datos: VincularIn, sesion: Session = Depends(obtener_sesion),
              actual: dict = Depends(get_current_user)):
     """Vincula la CPE con una orden de carga (o la desvincula con `null`)."""
