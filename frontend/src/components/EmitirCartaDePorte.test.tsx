@@ -4,7 +4,7 @@
  *  el único envío, y sobre todo: tras un 502/500 NO se ofrece reintentar, porque emitir de nuevo es duplicar una carta
  *  de porte real. Las reglas de fondo son del servidor y su texto se muestra tal cual.
  */
-import { cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -68,17 +68,32 @@ const EMITIDA = {
   origen: { cuit: null, nombre: null }, destino: { cuit: '30555555558', nombre: null },
 }
 
+/** La cola de comprobantes del nodo (`GET /api/nodo/cola`, libracore ADR-079). Fuera de un nodo contesta `es_nodo: false` y no lista nada. */
+const FUERA_DE_UN_NODO = { es_nodo: false, en_linea: true, node_id: null, cuentas: {}, a_revisar: 0, pedidos: [] }
+
+/** Un pedido de la cola tal como lo deja LibraCargo (`app/servicios/emisores.py`): el `origen_id` es `orden<id>:<uuid>` y el id de la orden
+ *  está en `datos.orden_id`. */
+const pedidoDeCpe = (extra: Record<string, unknown> = {}) => ({
+  id: 5, origen_producto: 'libracargo', origen_instancia: 'oficina', origen_tipo: 'cpe', origen_id: 'orden12:3f1c9a',
+  estado: 'esperando', datos: { orden_id: 12, solicitud: {}, confirmo: true }, fecha_ref: '', concepto: 1, intentos: 0,
+  ultimo_error: '', resultado: null, revision: 1, created_at: '2026-10-24T10:00:00', updated_at: '2026-10-24T10:00:00',
+  resuelto_at: '', ...extra,
+})
+const ENUNNODO = (pedidos: unknown[]) => ({ es_nodo: true, en_linea: false, node_id: 'oficina', cuentas: {}, a_revisar: 0, pedidos })
+
 type Rutas = {
   estado?: unknown
   titulares?: unknown
   propuesta?: unknown
   plantas?: unknown
+  cola?: unknown
 }
 
 function responder({
-  estado = ESTADO_PRODUCCION, titulares = TITULARES, propuesta = PROPUESTA, plantas = [],
+  estado = ESTADO_PRODUCCION, titulares = TITULARES, propuesta = PROPUESTA, plantas = [], cola = FUERA_DE_UN_NODO,
 }: Rutas = {}) {
   get.mockImplementation((ruta: string) => {
+    if (ruta.startsWith('/api/nodo/cola')) return Promise.resolve(cola)
     if (ruta === `${RUTA}/emision/estado`) return Promise.resolve(estado)
     if (ruta === `${RUTA}/titulares`) return Promise.resolve(titulares)
     if (ruta.startsWith(`${RUTA}/emision/propuesta`)) return Promise.resolve(propuesta)
@@ -533,5 +548,67 @@ describe('Emitir carta de porte · compartir', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Compartir por WhatsApp' }))
     const enlace = await screen.findByRole('link', { name: 'Abrir WhatsApp' })
     expect(enlace.getAttribute('href')).toMatch(/^https:\/\/wa\.me\/\?text=Carta%20de%20porte/)
+  })
+})
+
+describe('Emitir carta de porte · en un nodo sin conexión (ADR-056, libra-ui ADR-094)', () => {
+  /** Deja pasar la respuesta de la cola: un «no aparece» que se mira antes de que llegue no prueba nada. */
+  const esperarLaCola = () => act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+  const MENSAJE_202 = 'La carta de porte quedó en cola y se emite sola al volver la conexión. Hasta entonces NO hay una CPE válida: el camión no puede viajar.'
+  const EN_COLA = { codigo: 'cpe_en_cola', mensaje: MENSAJE_202, pedido_id: 5, estado: 'esperando', motivo: '' }
+
+  it('🔴 un 202 `cpe_en_cola` NO se muestra como carta emitida: avisa que no hay CPE válida y no inventa un CTG', async () => {
+    post.mockResolvedValue(EN_COLA)
+    abrir()
+    await irARevisar()
+    fireEvent.click(screen.getByLabelText('Confirmo'))
+    fireEvent.click(screen.getByRole('button', { name: 'Emitir ahora' }))
+
+    const alerta = (await screen.findByText('Se emite al volver la conexión.')).closest('[role="alert"]')!
+    expect(alerta).toHaveTextContent('Hasta que se emita, esta carga no tiene CPE válida: no puede viajar.')
+    // Ni CTG, ni número, ni PDF, ni «se emitió en ARCA»: la carta no existe todavía.
+    expect(screen.queryByText('N.º de carta de porte')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Ver PDF' })).toBeNull()
+    expect(screen.queryByText(/se emitió en/i)).toBeNull()
+    // Y no se ofrece pedirla de nuevo: saldría dos veces al volver la conexión.
+    expect(screen.queryByRole('button', { name: /Emitir ahora|Emitiendo/ })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Cerrar' })).toBeInTheDocument()
+    expect(post).toHaveBeenCalledTimes(1)
+  })
+
+  it('el aviso «sin CPE válida» aparece con la CPE de esta orden en cola, y se lee del `datos.orden_id` (no del `origen_id`)', async () => {
+    responder({ cola: ENUNNODO([pedidoDeCpe()]) })
+    abrir()
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent('Esta carga todavía no tiene CPE válida: no puede viajar hasta que se emita.')
+    expect(alerta).toHaveTextContent('La carta de porte quedó en cola y se emite sola cuando vuelva la conexión.')
+  })
+
+  it('🔴 con la CPE ya emitida, o de otra orden, o fuera de un nodo, no aparece', async () => {
+    responder({ cola: ENUNNODO([
+      pedidoDeCpe({ id: 6, estado: 'emitido', resultado: { ctg: 10123456781 } }),
+      pedidoDeCpe({ id: 7, origen_id: 'orden99:aa', datos: { orden_id: 99, solicitud: {}, confirmo: true } }),
+      pedidoDeCpe({ id: 8, estado: 'descartado' }),
+    ]) })
+    abrir()
+    await screen.findByLabelText('A nombre de')
+    await waitFor(() => expect(get).toHaveBeenCalledWith(expect.stringContaining('/api/nodo/cola')))
+    await esperarLaCola()
+    expect(screen.queryByText(/todavía no tiene CPE válida/)).toBeNull()
+  })
+
+  it('fuera de un nodo no se muestra ningún aviso', async () => {
+    abrir()
+    await screen.findByLabelText('A nombre de')
+    await waitFor(() => expect(get).toHaveBeenCalledWith(expect.stringContaining('/api/nodo/cola')))
+    await esperarLaCola()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('un pedido a revisar muestra qué dijo ARCA', async () => {
+    responder({ cola: ENUNNODO([pedidoDeCpe({ estado: 'a_revisar', ultimo_error: 'ARCA rechazó la carta de porte: 1015' })]) })
+    abrir()
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent('ARCA rechazó la carta de porte: 1015')
   })
 })

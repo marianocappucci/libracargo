@@ -31,8 +31,8 @@ esto no es un historial.
 
 - [ ] **Nodo de escritorio** (ADR-056): antes del merge, cambiar el pin de libraedge del commit `1d7ab0a` a `@v0.22.0`
       (lo cuida el humano); en libraedge, `LIBRAEDGE_CARGA_INICIAL=app.servicios.carga_inicial:aplicar_carga_inicial`
-      en `instalador/productos/libracargo.json`; en libra-ui (PR 13), el aviso «sin CPE válida», la bandeja de la cola y
-      el id provisorio. Vincular el nodo de Suitrans es [H]: va después de la caja al motor y con su procedimiento.
+      en `instalador/productos/libracargo.json`. (La pantalla —el aviso «sin CPE válida», la bandeja de la cola y el id
+      provisorio— quedó cableada en el ADR-057.) Vincular el nodo de Suitrans es [H]: va después de la caja al motor y con su procedimiento.
 
 ## Bloqueadas
 

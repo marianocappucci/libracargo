@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { numeroCorto } from '@/lib/numero-de-orden'
 import { irA } from '@/navegacion'
 import { formatearFecha } from '@/components/esquema-orden'
 
@@ -465,7 +466,7 @@ export default function Comprobantes() {
               <ul className="divide-y rounded border">
                 {detalle.ordenes.map((o) => (
                   <li key={o.id} className="flex items-center gap-3 p-2">
-                    <span className="flex-1">#{o.id} · {formatearFecha(o.fecha)} · remito {o.remito || 's/n'}</span>
+                    <span className="flex-1">#{numeroCorto(o.id)} · {formatearFecha(o.fecha)} · remito {o.remito || 's/n'}</span>
                     <span className="tabular-nums">{o.total}</span>
                   </li>
                 ))}

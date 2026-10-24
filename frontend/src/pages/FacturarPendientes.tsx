@@ -17,6 +17,8 @@
  * el resto de las pantallas del sistema: así se puede volver, refrescar o
  * mandarle el link a alguien sin perder dónde estaba.
  */
+import { AvisoEnCola } from 'libra-ui/AvisosDeLaCola'
+import { useAvisoDeEnCola } from 'libra-ui/cola-del-nodo'
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
 import { SelectCliente } from 'libra-ui/SelectCliente'
 import { ArrowLeft } from 'lucide-react'
@@ -37,6 +39,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 import { ICONOS_LC } from '@/iconos'
+import { numeroCorto } from '@/lib/numero-de-orden'
 import { irA } from '@/navegacion'
 
 type Borrador = {
@@ -112,6 +115,8 @@ export default function FacturarPendientes() {
   // Emitir por ARCA no se deshace: el primer click pide confirmar, el segundo emite.
   const [confirmando, setConfirmando] = useState(false)
   const [aviso, setAviso] = useState<string | null>(null)
+  // El 202 `en_cola` de un nodo sin conexión (ADR-056): la factura NO existe todavía, sale sola al volver la conexión.
+  const { aviso: enCola, registrar: registrarEnCola, cerrar: cerrarEnCola } = useAvisoDeEnCola()
   const [error, setError] = useState<string | null>(null)
 
   const clienteId = params.get('cliente') ?? ''
@@ -207,7 +212,7 @@ export default function FacturarPendientes() {
       cell: ({ row }: { row: { original: Orden } }) => (
         <input
           type="checkbox"
-          aria-label={`Elegir la orden ${row.original.id}`}
+          aria-label={`Elegir la orden ${numeroCorto(row.original.id)}`}
           checked={elegidas.includes(row.original.id)}
           // La fila entera ya alterna (ver `onRowClick`). Sin esto el click en
           // la casilla lo haría dos veces y quedaría como estaba.
@@ -216,7 +221,9 @@ export default function FacturarPendientes() {
         />
       ),
     },
-    { accessorKey: 'id', header: sortableHeader('Orden') },
+    // Ordena por el id; una orden cargada en el nodo (id negativo) se lee «P-3» y no «-3», que no es un número de orden.
+    { accessorKey: 'id', header: sortableHeader('Orden'),
+      cell: ({ row }: { row: { original: Orden } }) => numeroCorto(row.original.id) },
     { accessorKey: 'fecha', header: sortableHeader('Fecha') },
     { id: 'remito', header: 'Remito', accessorFn: (o: Orden) => o.remito || 's/n' },
     { id: 'tramo', header: 'Tramo',
@@ -228,6 +235,7 @@ export default function FacturarPendientes() {
   async function emitir() {
     setError(null)
     setAviso(null)
+    cerrarEnCola()
     setEnviando(true)
     try {
       // Sin ítems, importes, punto de venta ni número: salen de las órdenes, y el número lo pone ARCA.
@@ -241,6 +249,14 @@ export default function FacturarPendientes() {
         fce_cbu: fce ? borrador.cuenta : undefined,
         orden_ids: aFacturar.map((o) => o.id),
       })
+      // 🔴 Un 202 no es un comprobante: la factura quedó en la cola del nodo y no hay a dónde navegar. Las órdenes ya están en un pedido
+      // abierto (el servidor no deja pedirlas dos veces): se sueltan de la selección y se queda en la pantalla con el aviso.
+      if (registrarEnCola(hecho)) {
+        setElegidas([])
+        setConfirmando(false)
+        setEnviando(false)
+        return
+      }
       if (hecho && 'ensayo' in hecho) {
         // Homologación: se corrió todo contra ARCA y no se guardó nada. Las órdenes siguen pendientes.
         setAviso(`Ensayo contra ${hecho.ambiente}: ARCA autorizó una factura de prueba `
@@ -290,6 +306,8 @@ export default function FacturarPendientes() {
       )}
 
       {aviso && <p role="status" className="mb-4 rounded border p-3 text-sm font-semibold">{aviso}</p>}
+
+      <AvisoEnCola aviso={enCola} onCerrar={cerrarEnCola} className="mb-4" />
 
       {correspondeFce && avisoFce && (
         <section role="status" aria-label="Aviso de FCE"

@@ -31,6 +31,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 import { ICONOS_LC } from '@/iconos'
+import { numeroCorto } from '@/lib/numero-de-orden'
 
 const TITULO = 'Pre liquidación de transportistas'
 const LEYENDA = 'Pre liquidación — no es un comprobante'
@@ -88,7 +89,7 @@ function Bloque({ b }: { b: BloqueDeTransportista }) {
             {b.fletes.map((f) => (
               <tr key={f.orden_id} className="border-b last:border-b-0">
                 <Celda>{formatearFecha(f.fecha)}</Celda>
-                <Celda>{f.orden_id}</Celda>
+                <Celda>{numeroCorto(f.orden_id)}</Celda>
                 <Celda>{f.remito ?? ''}</Celda>
                 <Celda>{f.cliente}</Celda>
                 <Celda>{f.origen} → {f.destino}</Celda>
@@ -163,7 +164,7 @@ function HojaPreLiquidacion({ datos }: { datos: PreLiquidacion }) {
             <tbody>
               {b.fletes.map((f) => (
                 <tr key={f.orden_id}>
-                  <td>{formatearFecha(f.fecha)}</td><td>{f.orden_id}</td><td>{f.remito ?? ''}</td>
+                  <td>{formatearFecha(f.fecha)}</td><td>{numeroCorto(f.orden_id)}</td><td>{f.remito ?? ''}</td>
                   <td>{f.cliente}</td><td>{f.origen} → {f.destino}</td>
                   <td className="derecha">{formatearCantidad(f)}</td>
                   <td className="derecha">{formatearImporte(f.neto)}</td>

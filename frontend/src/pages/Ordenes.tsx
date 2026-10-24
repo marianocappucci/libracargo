@@ -1,6 +1,7 @@
 /** El listado de órdenes: una pantalla con filtros, no once pantallas. */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { DataTable, sortableHeader } from 'libra-ui/data-table'
+import { AvisoSinCpeValida } from 'libra-ui/AvisosDeLaCola'
 import { IconoIndicador } from 'libra-ui/IconoIndicador'
 import { SelectBuscable } from 'libra-ui/SelectBuscable'
 import { SelectCliente } from 'libra-ui/SelectCliente'
@@ -30,12 +31,15 @@ import type { DatosOrden, EntradaOrden } from '@/components/esquema-orden'
 import { ORDEN_VACIA, esquemaOrden, formatearImporte } from '@/components/esquema-orden'
 import { FiltrosOrdenes } from '@/components/FiltrosOrdenes'
 import { EstadoDeOrden, EtapaDeOrden } from '@/components/EstadoDeOrden'
+import { EtiquetaDeOrdenDelNodo } from '@/components/EtiquetaDeOrdenDelNodo'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { tituloDeOrden } from '@/lib/numero-de-orden'
+import { esPedidoDeLaOrden } from '@/lib/pedido-de-la-cola'
 import { irA } from '@/navegacion'
 import { TituloPantalla } from 'libra-ui/titulo-pantalla'
 
@@ -469,10 +473,15 @@ export default function Ordenes() {
               }}>
         <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              {detalle && `Orden Nº ${String(detalle.id).padStart(8, '0')}`}
+            <DialogTitle className="flex flex-wrap items-center gap-2">
+              {detalle && tituloDeOrden(detalle.id)}
+              {/* Una orden cargada en el nodo sin conexión conserva su id negativo hasta que sube al central. */}
+              {detalle && <EtiquetaDeOrdenDelNodo id={detalle.id} />}
             </DialogTitle>
           </DialogHeader>
+          {/* 🔴 Si la carta de porte de esta orden quedó en la cola del nodo (o a revisar), la carga no tiene CPE válida y no puede viajar.
+              No dibuja nada con la CPE emitida, sin pedido o fuera de un nodo. */}
+          {detalle && <AvisoSinCpeValida coincide={esPedidoDeLaOrden(detalle.id)} />}
           {detalle && (
             <div className="grid grid-cols-2 gap-3 text-sm">
               {([
@@ -543,7 +552,7 @@ export default function Ordenes() {
       <ConfirmDialog
         open={porAnular !== null}
         onOpenChange={(v) => { if (!v) setPorAnular(null) }}
-        title={porAnular ? `¿Anular la orden Nº ${String(porAnular.id).padStart(8, '0')}?` : ''}
+        title={porAnular ? `¿Anular la ${tituloDeOrden(porAnular.id).replace(/^Orden/, 'orden')}?` : ''}
         description={porAnular ? descripcionDeAnular(porAnular, nombreDe(opciones?.clientes, porAnular.cliente_id)) : undefined}
         confirmLabel="Sí, anular la orden"
         cancelLabel="No"

@@ -55,6 +55,8 @@ const MENU: Record<string, Concepto> = {
   '/cuentas': 'cuentaCorriente',
   '/caja': 'caja',
   '/comprobantes': 'comprobantes',
+  // La cola de comprobantes del nodo (libra-ui ADR-094): sólo se ve en un nodo, y lleva el ícono de la bandeja de comprobantes del catálogo.
+  '/cola': 'comprobantesAFacturar',
   '/reportes': 'reportes',
   '/configuracion': 'configuracion',
   '/usuarios': 'usuarios',
