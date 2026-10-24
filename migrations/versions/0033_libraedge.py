@@ -33,10 +33,17 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # `conexion_libracore` envuelve el bind de Alembic en la conexión que espera el DDL de la familia: traduce los `?`, el
-    # `INTEGER PRIMARY KEY AUTOINCREMENT` y saltea el `PRAGMA foreign_keys = ON` con el que arranca `init_schema()` de
-    # LibraEdge, que contra PostgreSQL reventaría.
-    conn = conexion_libracore(op.get_bind())
+    # En PostgreSQL, `ConnectionWrapper` sobre la conexión del driver: traduce los `?`, el `INTEGER PRIMARY KEY
+    # AUTOINCREMENT` y saltea el `PRAGMA foreign_keys = ON` con el que arranca `init_schema()` de LibraEdge. Dentro de
+    # Alembic, `conexion_libracore` devolvía la conexión cruda y el `PRAGMA` reventaba (el smoke del CI, 2026-10-24); es lo
+    # mismo que hace la `0014_libraedge` de LibraClub. En SQLite (tests) sigue `conexion_libracore`.
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        from libracore.db._postgres import ConnectionWrapper
+
+        conn = ConnectionWrapper(bind.connection.driver_connection)
+    else:
+        conn = conexion_libracore(bind)
     init_edge_schema(conn)
     init_changelog_schema(conn)
 
