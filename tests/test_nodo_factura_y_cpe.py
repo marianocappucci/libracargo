@@ -68,6 +68,9 @@ def test_sin_conexion_la_factura_queda_en_cola_y_no_sale_a_arca(con_arca):
     cuerpo = r.json()
     assert cuerpo["codigo"] == "en_cola" and cuerpo["estado"] == "esperando"
     assert "al volver la conexión" in cuerpo["mensaje"]
+    # La forma única del 202 (libracore ADR-084): la unión de la de antes y la que lee el kit (`esRespuestaEnCola`).
+    assert set(cuerpo) == {"en_cola", "codigo", "estado", "pedido_id", "mensaje", "motivo"}
+    assert cuerpo["en_cola"] is True and cuerpo["pedido_id"] == e.sql_nodo("SELECT id FROM cola_arca")[0][0]
     assert pedidos(e)[0][:2] == ("esperando", "documento")
     assert e.arca == [] and e.tickets == [], "sin conexión no se llama a ARCA ni se le pide el ticket al central"
     assert e.sql_nodo("SELECT estado, comprobante_id FROM ordenes_carga") == [("pendiente", None)]
@@ -325,6 +328,7 @@ def test_sin_conexion_la_cpe_queda_en_cola_y_no_hay_cpe_valida_para_viajar(con_c
     r = pedir_cpe(e)
     assert r.status_code == 202, r.text
     assert r.json()["codigo"] == "cpe_en_cola" and "NO hay una CPE válida" in r.json()["mensaje"]
+    assert r.json()["en_cola"] is True and r.json()["estado"] == "esperando"
     assert e.arca["emitidas"] == []
     assert e.sql_nodo("SELECT COUNT(*) FROM cartas_porte") == [(0,)]
     assert pedidos(e, "cpe")[0][:2] == ("esperando", "cpe")

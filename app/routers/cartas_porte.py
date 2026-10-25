@@ -6,8 +6,8 @@ WSAA) son sincrónicos y bloquearían el loop de uvicorn. Lo asincrónico va con
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from fastapi.responses import JSONResponse
 from libracore import arca_wscpe
+from libracore.cola_arca_respuesta import respuesta_en_cola
 from libracore.cuit import solo_digitos
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -277,14 +277,13 @@ def _emitir_en_el_nodo(sesion: Session, actual: dict, datos: _EmitirIn):
         sesion.expire_all()
         fila = _traer(sesion, pedido["resultado"]["carta_porte_id"])
         return _de_fila(sesion, fila, bool(_con_pdf(sesion, [fila.id])))
-    cuerpo = {"pedido_id": pedido["id"], "estado": estado, "motivo": pedido.get("ultimo_error") or ""}
     if estado == "esperando":
-        return JSONResponse(status_code=202, content={
-            "codigo": "cpe_en_cola",
-            "mensaje": "La carta de porte quedó en cola y se emite sola al volver la conexión. Hasta entonces NO hay "
-                       "una CPE válida: el camión no puede viajar.",
-            **cuerpo})
-    raise HTTPException(502, {"codigo": "emision_" + estado, "mensaje": cuerpo["motivo"] or estado, **cuerpo})
+        # El tipo `cpe` del pedido da `cpe_en_cola` y el aviso legal (libracore ADR-084).
+        return respuesta_en_cola(pedido)
+    motivo = pedido.get("ultimo_error") or ""
+    raise HTTPException(502, {
+        "codigo": "emision_" + estado, "mensaje": motivo or estado,
+        "pedido_id": pedido["id"], "estado": estado, "motivo": motivo})
 
 
 @router.get("/catalogos/granos")
