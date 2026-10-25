@@ -20,14 +20,6 @@ import { RUTAS_DE_COMPROBANTES } from '@/navegacion'
 /** `esNodo` no lo manda el servidor con el usuario: lo agrega `useAuthConEmpresa` con lo que el cartel de conexión supo del equipo. */
 type Usuario = { role?: string; name?: string; empresa?: string; esNodo?: boolean }
 
-/** De dónde el cartel de «sin conexión» y el menú saben si este equipo es un nodo y si tiene internet.
- *
- *  🔑 **Es la cola de comprobantes, no `/api/nodo/conexion`.** Esa ruta es del motor de ventas (`build_facturacion_del_nodo_router`
- *  pide un `PuertoDeVentas`) y LibraCargo no vende: no la monta, y sin ella el cartel nunca habría aparecido. `GET /api/nodo/cola`
- *  (libracore ADR-079) sí está montada y contesta lo mismo que el cartel necesita —`es_nodo`, `en_linea` y `node_id`—; `limite=1`
- *  porque de la lista no se usa nada. Fuera de un nodo contesta `es_nodo: false` y el kit deja de consultar. */
-export const RUTA_DE_LA_CONEXION = '/api/nodo/cola?limite=1'
-
 /** La sesion, mas el nombre de la empresa.
  *
  * `createLayout` recibe un `useAuth` y le pide el usuario: agregandole ahi la
@@ -131,7 +123,9 @@ export const Layout = createLayout<Usuario>({
   barraDeEstado: true,
   // El cartel fijo «Sin conexión…» del nodo. Con el texto de un producto que encola facturas y cartas de porte (libra-ui ADR-094), no el de
   // las ventas de mostrador; lleva el límite legal: sin conexión no hay CPE válida para viajar.
-  conexionDelNodo: { ruta: RUTA_DE_LA_CONEXION, texto: TEXTO_CARTEL_SIN_CONEXION_CON_COLA },
+  // La ruta es la del kit, `GET /api/nodo/conexion` (`build_conexion_del_nodo_router` de libracore, ADR-084): fuera de un nodo contesta
+  // `es_nodo: false` y el kit deja de consultar.
+  conexionDelNodo: { texto: TEXTO_CARTEL_SIN_CONEXION_CON_COLA },
   getUserSubtitle: (u) => u.empresa || undefined,
   useAuth: useAuthConEmpresa,
 })
