@@ -23,6 +23,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from libracore import arca_wsfecred
+from libracore.cola_arca_respuesta import respuesta_en_cola
 from libracore.cuit import solo_digitos
 from libracore.db import arca_config
 from libracore.nodo_offline import NodoSinArca, SinConexion
@@ -252,14 +253,13 @@ def _respuesta_del_pedido(sesion: Session, pedido: dict) -> Comprobante | JSONRe
     if estado == "emitido":
         sesion.expire_all()
         return _traer(sesion, pedido["resultado"]["factura_id"])
-    cuerpo = {"pedido_id": pedido["id"], "estado": estado, "motivo": pedido.get("ultimo_error") or ""}
     if estado == "esperando":
-        return JSONResponse(status_code=202, content={
-            "codigo": "en_cola",
-            "mensaje": "Sin conexión con el central o con ARCA: la factura queda en cola y se emite sola al volver la "
-                       "conexión.",
-            **cuerpo})
-    raise HTTPException(502, {"codigo": "emision_" + estado, "mensaje": cuerpo["motivo"] or estado, **cuerpo})
+        # La forma única del 202 «en cola» es del motor (libracore ADR-084).
+        return respuesta_en_cola(pedido)
+    motivo = pedido.get("ultimo_error") or ""
+    raise HTTPException(502, {
+        "codigo": "emision_" + estado, "mensaje": motivo or estado,
+        "pedido_id": pedido["id"], "estado": estado, "motivo": motivo})
 
 
 def _facturar_en_el_nodo(sesion: Session, actual: dict, clase: str, entrada, emision) -> Comprobante | JSONResponse:

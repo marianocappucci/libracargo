@@ -3,6 +3,13 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Se adopta libracore v1.195.0: `GET /api/nodo/conexion` y una sola forma del 202 «en cola» (ADR-058)
+
+- **libracore v1.194.0 -> v1.195.0** (2026-10-25; libracore ADR-084). Sin migración y sin tocar el esquema.
+- **`GET /api/nodo/conexion`** (`build_conexion_del_nodo_router(conexion=offline.CONEXION, ...)`, cualquier usuario de la instancia): `{es_nodo, en_linea, node_id, a_facturar}`. El cartel «Sin conexión…» y el menú dejan de preguntarle a la cola (`/api/nodo/cola?limite=1`): `Layout.tsx` ya no pasa la `ruta` (usa la del kit) y `RUTA_DE_LA_CONEXION` se borra. Fuera de un nodo contesta `es_nodo: false` y el kit deja de consultar.
+- **El 202 «en cola»** lo arma el motor (`respuesta_en_cola(pedido)`) en `comprobantes._respuesta_del_pedido` y en `cartas_porte._emitir_en_el_nodo`. El cuerpo es `{en_cola: true, codigo: "en_cola" | "cpe_en_cola", estado, pedido_id, mensaje, motivo}`: **gana `en_cola: true`** y los demás campos, el `codigo` y el `mensaje` (incluido el aviso legal de la CPE) son los mismos. libra-ui no cambia (`esRespuestaEnCola`, `esCpeEnCola`). El 502 de un pedido `a_revisar` o `incierto` se queda acá, con la misma forma.
+- Tests: `tests/test_nodo_roles.py` (fila nueva de la ruta), `tests/test_nodo_factura_y_cpe.py` (la forma única del 202), `src/cola-del-nodo.test.tsx`.
+
 ## [Unreleased] — La cola de comprobantes del nodo en pantalla (ADR-057)
 
 - **Frontend, con libra-ui v0.180.0 (ADR-094)** (2026-10-24; plan «LibraCargo y LibraClub en la versión de escritorio», PR 13 de libra-ui cableado). 🔴 **Mientras la carta de porte no se emite no hay CPE válida y el camión no puede viajar** (límite legal): la pantalla lo dice en rojo.

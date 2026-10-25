@@ -41,6 +41,7 @@ TABLA = {
     ("POST", "/api/nodos-offline/{node_id}/vinculacion"): ADMIN,
     ("DELETE", "/api/nodos-offline/{node_id}/vinculacion"): ADMIN,
     ("DELETE", "/api/nodos-offline/{node_id}"): ADMIN,
+    ("GET", "/api/nodo/conexion"): STAFF,
     ("GET", "/api/nodo/cola"): STAFF,
     ("POST", "/api/nodo/cola/emitir"): STAFF,
     ("POST", "/api/nodo/cola/{pedido_id}/reintentar"): ADMIN,

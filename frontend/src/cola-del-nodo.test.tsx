@@ -1,8 +1,9 @@
 /** La cola de comprobantes del nodo en LibraCargo (ADR-056 del backend, libra-ui ADR-094): el cartel «sin conexión», la entrada
  *  «Cola de comprobantes» del menú y la ruta `/cola`.
  *
- *  🔑 Todo lo que depende de ser un nodo lo dice `GET /api/nodo/cola` (que LibraCargo sí monta): `/api/nodo/conexion` es del motor de ventas y
- *  acá no existe. Fuera de un nodo no cambia nada visible: ni cartel, ni entrada de menú.
+ *  🔑 Todo lo que depende de ser un nodo lo dice `GET /api/nodo/conexion` (`build_conexion_del_nodo_router` de libracore, ADR-084), la ruta
+ *  de siempre del kit: ya no se le pregunta a la cola (`/api/nodo/cola?limite=1`), que trae una lista de pedidos que no se usa. Fuera de
+ *  un nodo no cambia nada visible: ni cartel, ni entrada de menú.
  */
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
@@ -28,8 +29,8 @@ vi.mock('@/context/AuthContext', () => ({
 }))
 
 const { default: App } = await import('./App')
-const { NAV_SECCIONES, RUTA_DE_LA_CONEXION } = await import('@/components/Layout')
-const { _reiniciarConexionDelNodo, TEXTO_CARTEL_SIN_CONEXION_CON_COLA } = await import('libra-ui/nodo-offline')
+const { NAV_SECCIONES } = await import('@/components/Layout')
+const { _reiniciarConexionDelNodo, RUTA_CONEXION_DEL_NODO, TEXTO_CARTEL_SIN_CONEXION_CON_COLA } = await import('libra-ui/nodo-offline')
 
 const pedidoDeCpe = (extra: Record<string, unknown> = {}) => ({
   id: 5, origen_producto: 'libracargo', origen_instancia: 'oficina', origen_tipo: 'cpe', origen_id: 'orden41:3f1c9a',
@@ -48,9 +49,15 @@ const NODO_SIN_CONEXION = (pedidos: unknown[] = []) => ({
 const NODO_CON_CONEXION = (pedidos: unknown[] = []) => ({ ...NODO_SIN_CONEXION(pedidos), en_linea: true })
 const FUERA_DE_UN_NODO = { es_nodo: false, en_linea: true, node_id: null, cuentas: {}, a_revisar: 0, pedidos: [] }
 
-function responder(cola: unknown) {
+/** Lo que contesta `GET /api/nodo/conexion`: lo mismo que la cola sabe de la conexión, sin la lista de pedidos. */
+const conexionDe = (cola: { es_nodo: boolean; en_linea: boolean; node_id: string | null }) => ({
+  es_nodo: cola.es_nodo, en_linea: cola.en_linea, node_id: cola.node_id, a_facturar: 0,
+})
+
+function responder(cola: { es_nodo: boolean; en_linea: boolean; node_id: string | null }) {
   get.mockImplementation((ruta?: string) => {
     if (!ruta) return Promise.resolve([])
+    if (ruta.startsWith(RUTA_CONEXION_DEL_NODO)) return Promise.resolve(conexionDe(cola))
     if (ruta.startsWith('/api/nodo/cola')) return Promise.resolve(cola)
     if (ruta.startsWith('/api/terceros')) return Promise.resolve([{ id: 1, razon_social: 'Agro Norte', es_cliente: true }])
     if (ruta.startsWith('/api/configuracion')) return Promise.resolve({ razon_social: 'Suitrans' })
@@ -86,18 +93,18 @@ describe('el cartel «sin conexión» del layout', () => {
     expect(cartel).not.toHaveTextContent('ticket')
   })
 
-  it('pregunta a la cola del motor (`/api/nodo/cola?limite=1`) y no a `/api/nodo/conexion`, que LibraCargo no monta', async () => {
+  it('pregunta a `/api/nodo/conexion` y no a la cola (`/api/nodo/cola?limite=1`), que trae una lista que no usa', async () => {
     responder(NODO_SIN_CONEXION())
     montar('/')
-    await waitFor(() => expect(get).toHaveBeenCalledWith(RUTA_DE_LA_CONEXION))
-    expect(RUTA_DE_LA_CONEXION).toBe('/api/nodo/cola?limite=1')
-    expect(get.mock.calls.map((c) => String(c[0]))).not.toContain('/api/nodo/conexion')
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/nodo/conexion'))
+    expect(RUTA_CONEXION_DEL_NODO).toBe('/api/nodo/conexion')
+    expect(get.mock.calls.map((c) => String(c[0]))).not.toContain('/api/nodo/cola?limite=1')
   })
 
   it('con conexión, o fuera de un nodo, no hay cartel', async () => {
     responder(NODO_CON_CONEXION())
     const { unmount } = montar('/')
-    await waitFor(() => expect(get).toHaveBeenCalledWith(RUTA_DE_LA_CONEXION))
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/nodo/conexion'))
     await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
     expect(document.querySelector('[data-slot="cartel-sin-conexion"]')).toBeNull()
     unmount()
@@ -105,7 +112,7 @@ describe('el cartel «sin conexión» del layout', () => {
     _reiniciarConexionDelNodo()
     responder(FUERA_DE_UN_NODO)
     montar('/')
-    await waitFor(() => expect(get).toHaveBeenCalledWith(RUTA_DE_LA_CONEXION))
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/nodo/conexion'))
     await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
     expect(document.querySelector('[data-slot="cartel-sin-conexion"]')).toBeNull()
   })
@@ -132,7 +139,7 @@ describe('la entrada «Cola de comprobantes» del menú', () => {
     responder(FUERA_DE_UN_NODO)
     montar('/')
     await waitFor(() => expect(entradasDelMenu()).toContain('Comprobantes'))
-    await waitFor(() => expect(get).toHaveBeenCalledWith(RUTA_DE_LA_CONEXION))
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/api/nodo/conexion'))
     await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
     expect(entradasDelMenu()).not.toContain('Cola de comprobantes')
   })
