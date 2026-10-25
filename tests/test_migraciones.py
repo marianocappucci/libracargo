@@ -161,7 +161,9 @@ def test_upgrade_downgrade_upgrade(base_limpia):
         # Y a 31 con la `0033` (las ocho tablas de LibraEdge: `node_identity`, `local_sequences`, `sync_outbox`,
         # `sync_inbox`, `sync_changelog`, `libraedge_mapeo`, `libraedge_vinculacion` y `libraedge_canje_fallido`;
         # ADR-056).
-        assert tablas - del_motor == 31
+        # Y a 32 desde libraedge v0.23.0: la `0033` llama a su `init_mapeo_schema`, que suma `libraedge_mapeo_texto`
+        # (ids provisorios de texto, ADR-026 de libraedge). LibraCargo no la usa: sus ids son enteros.
+        assert tablas - del_motor == 32
         eng.dispose()
     finally:
         if original:
