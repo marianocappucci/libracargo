@@ -25,13 +25,16 @@ from tests.nodo_apoyo import ticket_de_prueba
 from tests.test_cartas_porte import cpe
 from tests.test_emision_cpe import TITULAR, _datos, arca  # noqa: F401  (`arca` es un fixture)
 
+#: Un día que ARCA todavía admite (hasta 5 días atrás): una fecha fija vence sola con el calendario.
+RECIENTE = (hoy() - timedelta(days=2)).isoformat()
+
 
 def vuelve_la_conexion(escenario):
     escenario.en_linea(True)
     return asyncio.run(procesar_cola(offline.cola()))
 
 
-def orden(e, *, fecha="2026-10-20", tarifa="1000.00", cliente=None):
+def orden(e, *, fecha=RECIENTE, tarifa="1000.00", cliente=None):
     d = e.datos
     r = e.cliente.post("/api/ordenes", json={
         "fecha": fecha, "cliente_id": cliente or d["cliente"], "origen_id": d["origen"], "destino_id": d["destino"],
@@ -40,7 +43,7 @@ def orden(e, *, fecha="2026-10-20", tarifa="1000.00", cliente=None):
     return r.json()
 
 
-def facturar(e, ordenes, *, fecha="2026-10-20", tipo="factura_a"):
+def facturar(e, ordenes, *, fecha=RECIENTE, tipo="factura_a"):
     return e.cliente.post("/api/comprobantes/desde-ordenes", json={
         "fecha": fecha, "cliente_id": e.datos["cliente"], "tipo": tipo, "orden_ids": [o["id"] for o in ordenes]})
 
@@ -79,14 +82,14 @@ def test_sin_conexion_la_factura_queda_en_cola_y_no_sale_a_arca(con_arca):
 
 def test_al_volver_la_conexion_se_emite_una_sola_vez_con_el_numero_de_arca(con_arca):
     e = con_arca
-    o = orden(e, fecha="2026-10-20")
+    o = orden(e, fecha=RECIENTE)
     facturar(e, [o])
     salida = vuelve_la_conexion(e)
     assert [x["origen_tipo"] for x in salida["emitidos"]] == ["documento"] and salida["quedan"] == 0
 
     # Factura A, punto de venta 1, el número que dio ARCA y la fecha del hecho: ARCA todavía la admite (hasta 5 días).
     assert e.sql_nodo("SELECT tipo, punto_venta, numero, cae, fecha FROM facturas") == [
-        (1, 1, 1, "75123456789012", "2026-10-20")]
+        (1, 1, 1, "75123456789012", RECIENTE)]
     assert e.sql_nodo("SELECT estado FROM ordenes_carga") == [("facturada",)]
     assert len([p for p in e.arca if p[0] == "cae"]) == 1
     assert {s for s, _ in e.tickets} == {"wsfe"}, "el ticket de facturación lo presta el central"
@@ -153,7 +156,7 @@ def test_un_pedido_que_ya_se_sabe_invalido_no_se_encola(con_arca):
 def test_la_factura_directa_tambien_va_por_la_cola(con_arca):
     e = con_arca
     r = e.cliente.post("/api/comprobantes/directa", json={
-        "fecha": "2026-10-20", "cliente_id": e.datos["cliente"], "tipo": "factura_b",
+        "fecha": RECIENTE, "cliente_id": e.datos["cliente"], "tipo": "factura_b",
         "conceptos": [{"descripcion": "Estadía", "cantidad": "2", "precio_unitario": "500.00"}]})
     assert r.status_code == 202, r.text
     salida = vuelve_la_conexion(e)
@@ -187,7 +190,7 @@ def test_el_pedido_de_un_cliente_nuevo_sigue_valiendo_cuando_baja_su_id_definiti
         "condicion_iva": "responsable_inscripto"}).json()["id"]
     assert nuevo < 0
     r = e.cliente.post("/api/comprobantes/directa", json={
-        "fecha": "2026-10-20", "cliente_id": nuevo, "tipo": "factura_a",
+        "fecha": RECIENTE, "cliente_id": nuevo, "tipo": "factura_a",
         "conceptos": [{"descripcion": "Estadía", "cantidad": "1", "precio_unitario": "1000.00"}]})
     assert r.status_code == 202, r.text
 

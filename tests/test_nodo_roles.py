@@ -30,6 +30,7 @@ TABLA = {
     ("GET", "/sync/v1/pull"): NODO,
     ("POST", "/sync/v1/ticket-arca"): NODO,
     ("GET", "/sync/v1/carga-inicial"): NODO,
+    ("POST", "/sync/v1/estado-operaciones"): NODO,
     ("POST", "/sync/v1/vinculacion"): CODIGO,
     ("GET", "/sync/v1/salud"): SALUD,
     ("GET", "/sync/v1/salud/{node_id}"): SALUD,
@@ -70,6 +71,7 @@ CUERPOS = {
         "aggregate_type": "orden", "aggregate_id": "x:orden:1", "occurred_at": "2026-10-24T00:00:00+00:00",
         "schema_version": 1, "payload": {}},
     ("POST", "/sync/v1/ticket-arca"): {"node_id": "x", "emisor_id": None, "servicio": "wsfe"},
+    ("POST", "/sync/v1/estado-operaciones"): {"node_id": "x", "operation_ids": ["x:1"]},
 }
 
 
