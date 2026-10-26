@@ -30,6 +30,7 @@ TABLA = {
     ("GET", "/sync/v1/pull"): NODO,
     ("POST", "/sync/v1/ticket-arca"): NODO,
     ("GET", "/sync/v1/carga-inicial"): NODO,
+    ("POST", "/sync/v1/estado-operaciones"): NODO,
     ("POST", "/sync/v1/vinculacion"): CODIGO,
     ("GET", "/sync/v1/salud"): SALUD,
     ("GET", "/sync/v1/salud/{node_id}"): SALUD,
