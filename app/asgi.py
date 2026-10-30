@@ -8,20 +8,17 @@ para el `--reload`, y eso taparía cualquier build copiado adentro.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.frontend_dist import frontend_dist
 from app.main import crear_app
 from app.spa import TIPOS_PROPIOS, archivo_publico, es_ruta_de_api
 
 app = crear_app()
 
-_DIST_DOCKER = Path("/opt/frontend-dist")
-_DIST_LOCAL = Path(__file__).resolve().parent.parent / "frontend" / "dist"
-FRONTEND_DIST = _DIST_DOCKER if _DIST_DOCKER.is_dir() else _DIST_LOCAL
+FRONTEND_DIST = frontend_dist()
 
 #: 🔴 **`index.html` no se cachea, y esto no es una optimización: es lo que
 #: hace que un deploy se vea.**

@@ -37,12 +37,14 @@ from libracore.docs_api import cerrar_docs_de_la_api
 from libracore.errores import instalar_registro_de_errores
 from libracore.estado_del_sistema import build_estado_del_sistema_router
 from libracore.geografia import build_geo_router
+from libracore.marca_router import build_marca_admin_router, build_marca_router, es_marca_propia, nombre_de_marca
 from libracore.nodo_conexion_router import build_conexion_del_nodo_router
 from libracore.resguardo_enlace import build_resguardo_enlace_router
 from libracore.respaldo import Instancia
 from libracore.security_headers import CSP_SPA, SecurityHeadersMiddleware
 from libracore.smtp_router import build_smtp_probe_router
 from libracore.tema_router import build_tema_admin_router, build_tema_router
+from libracore.terminos_propios import leer_terminos_propios
 from libraedge.pantalla_del_central import create_canje_router, create_nodos_router
 
 from app import db, empresa_demo, offline
@@ -56,6 +58,7 @@ from app.auth import (
     require_staff,
 )
 from app.config import Config
+from app.frontend_dist import frontend_dist
 from app.routers import (
     auditoria,
     cartas_porte,
@@ -336,7 +339,12 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     #
     # 🔴 Sin esta linea el gate NO corta y la instancia no falla: se queda sin
     # gate, en silencio. Por eso cada producto tiene un test que lo prueba.
-    app.state.terminos = TerminosRepository(db.fabrica_de_sesiones())
+    #
+    # Marca blanca (ADR-092/093 del motor): una instancia con marca propia **exige** los Terminos de su revendedor
+    # y, sin ellos, queda frenada; nunca cae a los de la familia.
+    app.state.terminos = TerminosRepository(
+        db.fabrica_de_sesiones(), contrato_propio=leer_terminos_propios, exigir_propio=es_marca_propia
+    )
     app.include_router(build_smtp_settings_router())
     # `POST /admin/smtp/probar`: abre la conexion, negocia TLS y hace login.
     #
@@ -356,7 +364,8 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     app.include_router(build_terminos_router())
     app.state.password_reset = PasswordResetService(
         db.fabrica_de_sesiones(),
-        product_name="LibraCargo",
+        # CALLABLE: con marca propia el mail de recuperacion sale con el nombre del revendedor.
+        product_name=lambda: nombre_de_marca("LibraCargo"),
         reset_url_base=os.environ.get(
             "LIBRACARGO_RESET_URL_BASE", "https://dev.libracargo.com.ar/reset-password"
         ),
@@ -395,6 +404,11 @@ def crear_app(config: Config | None = None, *, sembrar_admin: bool = True) -> Fa
     # el token).
     app.include_router(build_tema_router())
     app.include_router(build_tema_admin_router(), dependencies=[Depends(require_admin_o_servicio)])
+    # La marca de la instancia (nombre, logo, color, iconos y manifest), para venderla a marca blanca. La lectura es
+    # publica (el login tambien lleva la marca) y va **antes** del catch-all de la SPA (`asgi.py`): si no,
+    # `/manifest.webmanifest` devolveria el `index.html`. Escribir es del admin o del backoffice (token de servicio).
+    app.include_router(build_marca_router(dist=frontend_dist()))
+    app.include_router(build_marca_admin_router(), dependencies=[Depends(require_admin_o_servicio)])
     # Configuración de ARCA: la pantalla compartida de la familia, con la
     # dependencia de rol de este producto —el router del motor no trae
     # ninguna, y acá se sube una clave privada—.
