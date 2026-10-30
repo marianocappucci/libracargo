@@ -125,7 +125,8 @@ dependencies = [
     # v1.204.0 -> v1.206.0 (2026-10-30): la marca de la instancia y sus Terminos propios (ADR-092 y ADR-093, marca blanca). Sin migracion.
     # v1.206.0 -> v1.207.0 (2026-10-30): el index.html sale con la marca de la instancia (ADR-095) y el resguardo lleva el nombre de la marca (ADR-094). Sin migracion.
     # v1.207.0 -> v1.207.1 (2026-10-30): la marca y los Terminos propios se leen sin el almacen de secretos (addendum ADR-095); v1.207.0 trae el index.html con la marca (ADR-095) y la carpeta del resguardo con el nombre de la marca (ADR-094). Sin migracion.
-    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.207.1",
+    # v1.207.1 -> v1.207.2 (2026-10-30): index_con_marca deja un solo icono, el de la marca (addendum 2 ADR-095); v1.207.1 lee la marca sin el almacen de secretos; v1.207.0 trae el index.html con la marca (ADR-095) y la carpeta del resguardo con el nombre de la marca (ADR-094). Sin migracion.
+    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.207.2",
     # libraedge (2026-10-24, PR 9 del plan «LibraCargo y LibraClub en la versión de escritorio», ADR-056 de este producto):
     # el nodo offline de LibraCargo. Dependencia NORMAL y no extra, como en VentaLibra y RestoLibra: el central monta
     # `/sync/v1/*` (push, pull, el ticket de ARCA prestado y la carga inicial) aunque no tenga nodos, y las tablas de
