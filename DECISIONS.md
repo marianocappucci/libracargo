@@ -1423,3 +1423,23 @@ La base `libracargo_core` vieja se conserva como respaldo; no se borra sin pregu
   1. Se monta `build_conexion_del_nodo_router(conexion=offline.CONEXION, usuario_actual=get_current_user)` detrás de `require_staff`, como el router de la cola y el de la barra de estado. `a_facturar` queda en 0: los productos con cola muestran los pedidos con `BandejaDeLaCola`, no con ese número. `Layout.tsx` borra `RUTA_DE_LA_CONEXION` y usa la ruta del kit.
   2. `comprobantes._respuesta_del_pedido` y `cartas_porte._emitir_en_el_nodo` contestan `respuesta_en_cola(pedido)`; el tipo `cpe` del pedido da `cpe_en_cola` y el mismo aviso legal. El cuerpo gana `en_cola: true`. El 502 `emision_a_revisar` / `emision_incierto` no es «en cola» y queda como estaba.
 - Consecuencias: la consulta del cartel es más liviana (ya no baja la lista de la cola). `tests/test_nodo_roles.py` suma la fila `GET /api/nodo/conexion` (STAFF: cualquier usuario de la instancia). Requiere libracore >= v1.195.0 en la imagen.
+
+
+## ADR-059 — La marca blanca: la instancia puede llevar el nombre, el logo, el color y los términos de un revendedor (2026-10-30)
+
+**Estado:** aceptada. Cableado del piloto de marca blanca (libracore ADR-092 y ADR-093, libraauth ADR-030, libra-ui ADR-098).
+
+**Decisión.**
+1. `app/main.py` monta `build_marca_router(dist=…)` (lectura pública, manifest e íconos) y `build_marca_admin_router()` detrás de
+   `require_admin_o_servicio`, igual que el tema: lo cambia el admin o el backoffice (token de servicio).
+2. 🔴 `TerminosRepository(contrato_propio=leer_terminos_propios, exigir_propio=es_marca_propia)`: con marca propia la instancia
+   **exige** los términos del revendedor y, sin ellos, queda frenada; nunca cae a los de la familia.
+3. `PasswordResetService(product_name=lambda: nombre_de_marca("LibraCargo"))`: el mail de recuperación sale con el nombre de la marca.
+4. El manifest tiene que ganarle al catch-all de la SPA (que arma `app/asgi.py`), así que `app/frontend_dist.py` resuelve el dist una
+   sola vez y lo usan `main.py` (el manifest de respaldo) y `asgi.py` (para servirlo).
+5. `main.tsx` espera `cargarMarca()` (tope de 2 s, no falla) antes de montar la SPA.
+
+**Pendiente a propósito.** `LIBRACARGO_RESET_URL_BASE` tiene por defecto `dev.libracargo.com.ar`: una instancia de revendedor tiene que
+definirla o el enlace de recuperación apunta al dominio equivocado. Tests: `tests/test_marca_blanca.py` y
+`tests/test_marca_blanca_terminos.py`.
+

@@ -182,6 +182,8 @@ def _arca_de_cero(tmp_path, monkeypatch):
     alcanza, y de paso el aislamiento es por test y no por corrida.
     """
     monkeypatch.setattr(config_manager, "CERTS_DIR", str(tmp_path / "arca_certs"))
+    # La marca de la instancia (logo y Terminos propios, ADR-092/093) tambien vive en disco.
+    monkeypatch.setattr(config_manager, "MARCA_DIR", str(tmp_path / "marca"))
     yield
     libracore_core.configure(URL_CORE)
     with libracore_core.get_connection() as conn:
