@@ -123,7 +123,8 @@ dependencies = [
     # v1.202.0 -> v1.202.1 (2026-10-28): avisos: la demo no manda mails y espera entre reintentos (addendum ADR-090). Sin migracion.
     # v1.202.1 -> v1.204.0 (2026-10-28): un aviso por un solo canal y demos sin mails (ADR-090 y ADR-091). Sin migracion.
     # v1.204.0 -> v1.206.0 (2026-10-30): la marca de la instancia y sus Terminos propios (ADR-092 y ADR-093, marca blanca). Sin migracion.
-    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.206.0",
+    # v1.206.0 -> v1.207.0 (2026-10-30): el index.html sale con la marca de la instancia (ADR-095) y el resguardo lleva el nombre de la marca (ADR-094). Sin migracion.
+    "libracore[migrations] @ git+https://github.com/marianocappucci/libracore.git@v1.207.0",
     # libraedge (2026-10-24, PR 9 del plan «LibraCargo y LibraClub en la versión de escritorio», ADR-056 de este producto):
     # el nodo offline de LibraCargo. Dependencia NORMAL y no extra, como en VentaLibra y RestoLibra: el central monta
     # `/sync/v1/*` (push, pull, el ticket de ARCA prestado y la carga inicial) aunque no tenga nodos, y las tablas de
