@@ -3,6 +3,11 @@
 Cambios funcionales y releases. Las tareas internas van en `TASKS.md`.
 
 
+## [Unreleased] — Marca blanca: la instancia lleva el nombre, el logo, el color y los términos de un revendedor (ADR-059)
+
+- `libracore` v1.204.0 -> **v1.206.0**, `libraauth` v0.56.0 -> **v0.57.0**, `libra-ui` v0.183.0 -> **v0.185.0**. **Sin migración.**
+- `/api/marca` y `/manifest.webmanifest`; con marca propia la instancia exige los Términos del revendedor y, sin ellos, queda frenada. Tests: `tests/test_marca_blanca.py`, `tests/test_marca_blanca_terminos.py`.
+
 ## [Unreleased] — Se adopta libracore v1.195.0: `GET /api/nodo/conexion` y una sola forma del 202 «en cola» (ADR-058)
 
 - **libracore v1.194.0 -> v1.195.0** (2026-10-25; libracore ADR-084). Sin migración y sin tocar el esquema.
